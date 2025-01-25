@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'rest_framework_swagger',
     'rest_framework.authtoken',
     'drf_yasg',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 REST_FRAMEWORK = {
@@ -99,6 +100,10 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'stockmanagement.wsgi.application'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
 
 
 # Database
@@ -147,6 +152,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+
+AUTH_USER_MODEL = 'authentication.User'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

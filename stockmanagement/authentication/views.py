@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.generics import CreateAPIView
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -8,8 +9,9 @@ from rest_framework.viewsets import ModelViewSet
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework_simplejwt.exceptions import TokenError
 
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, Token
 
 from authentication.models import User
 from authentication.serializers import (
@@ -21,8 +23,8 @@ from authentication.serializers import (
 
 class RegisterWholesaleClientView(APIView):
     @swagger_auto_schema(
-        request_body=RegisterWholesaleClientSerializer,  # Schéma pour le payload
-        responses={201: RegisterWholesaleClientSerializer},  # Schéma pour les réponses
+        request_body=RegisterWholesaleClientSerializer,
+        responses={201: RegisterWholesaleClientSerializer},
     )
     def post(self, request):
         try:
@@ -49,7 +51,6 @@ class UserCreateView(CreateAPIView):
     serializer_class = UserSerializer
 
 
-
 class LoginView(APIView):
     """
     API View for user login. Returns tokens and user data upon successful login.
@@ -72,7 +73,7 @@ class LoginView(APIView):
                 password = request.data.get('password')
 
                 user = authenticate(request, username=username, password=password)
-
+                print('======', user)
                 if user is not None:
                     # Generate JWT tokens
                     refresh = RefreshToken.for_user(user)
@@ -100,4 +101,30 @@ class LoginView(APIView):
                 {"error": "An error occurred during login", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class LogoutView(APIView):
+    """
+    Logout endpoint to invalidate the user's token.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        auth_header = request.headers.get("Authorization")
+
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return Response(
+                {"error": "Bearer token missing or invalid"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        token_key = auth_header.split(" ")[1]
+
+        try:
+            token = Token.objects.get(key=token_key)
+            token.delete()
+            return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+        except Token.DoesNotExist:
+            return Response({"error": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
 

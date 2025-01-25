@@ -1,8 +1,11 @@
+import uuid
+
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.db import models
 
 
 class Client(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=15, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
@@ -14,6 +17,8 @@ class Client(models.Model):
 
 
 class User(AbstractUser):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     ROLE_CHOICES = [
         ('manager', 'Manager'),
         ('cashier', 'Cashier'),
