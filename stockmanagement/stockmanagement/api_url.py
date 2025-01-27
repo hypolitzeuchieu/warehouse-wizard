@@ -22,9 +22,7 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('v1/', include('authentication.urls')),
-    path('v1/', include('inventory.urls')),
-    path('v1/', include('product.urls')),
+    path('v1/', include('stock.urls')),
     path('v1/', include('reports.urls')),
-    path('v1/', include('sales.urls')),
     path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
 ]
