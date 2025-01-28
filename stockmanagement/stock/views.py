@@ -145,9 +145,12 @@ class StockViewSet(viewsets.ViewSet):
         try:
             result = self.service.get_products_by_expiry_date()
             serializer = ProductSerializer(result['expired_products'], many=True)
+            near_expiry_product = ProductSerializer(result['near_expiry'], many=True)
             return Response({
                 'expired_products': serializer.data,
-                'count': result['count']
+                'expired_product_count': result['count'],
+                'near_expiry_products': near_expiry_product.data,
+                'near_expiry_products_count': result['near_expiry_count'],
             })
         except Exception as e:
             logger.error(f'Unexpected error occurred: {str(e)}')

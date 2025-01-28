@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -225,7 +225,7 @@ class StockService:
                 logger.info(
                     f"Stock updated for product {product.name}, "
                     f"category {category.name}, "
-                    f"subcategory {subcategory.name if subcategory else 'None'}. "
+                    f"subcategory {subcategory.name if subcategory else None}. "
                     f"New quantity: {stock.quantity}."
                 )
 
@@ -356,12 +356,25 @@ class StockService:
         Get all products that are expired or close to expiry.
         """
         try:
+            now = timezone.now()
+            soon = now + timedelta(days=14)
+
             expired_products = Product.objects.filter(
-                expiry_date__lt=timezone.now(), is_expired=False
+                expiry_date__lt=now, is_expired=False
             )
             expired_products.update(is_expired=True)
+
+            near_expiry = Product.objects.filter(
+                expiry_date__range=(now, soon),
+                is_expired=False
+            )
             logger.info(f"Retrieved {expired_products.count()} expired products.")
-            return {'expired_products': expired_products, 'count': expired_products.count()}
+            return {
+                'expired_products': expired_products,
+                'count': expired_products.count(),
+                'near_expiry': near_expiry,
+                'near_expiry_count': near_expiry.count()
+            }
         except Exception as e:
             logger.error(f"Error in get_products_by_expiry_date: {str(e)}")
             raise ValidationError({"error": f"An unexpected error occurred: {str(e)}"})
