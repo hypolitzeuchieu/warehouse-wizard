@@ -30,6 +30,7 @@ class Product(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
     quantity = models.PositiveIntegerField(default=0)
     min_quantity = models.PositiveIntegerField(default=10)
     expiry_date = models.DateTimeField(blank=True, null=True)
@@ -49,14 +50,8 @@ class Product(models.Model):
 
     def get_price(self):
         if self.on_promotion and self.promo_price is not None:
-            price = self.promo_price
-        else:
-            price = self.unit_price
-
-        if self.tax:
-            price += (price * self.tax.rate / 100)
-
-        return price
+            return self.promo_price
+        return self.unit_price
 
 
 class Stock(models.Model):
