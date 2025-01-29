@@ -183,7 +183,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 date = serializer.validated_data.get("date")
                 user = User.objects.get(id="b7d7811fd49e4146aaa01843ade401b4") #request.user
                 report = self.service.create_sales_report(date=date, user=user)
-                serializer = SalesReportSerializer(report, many=True)
+                serializer = SalesReportSerializer(report)
                 return Response(serializer.data, status.HTTP_201_CREATED)
             except Exception as e:
                 logger.error(f"Error in create_sales_report: {str(e)}")

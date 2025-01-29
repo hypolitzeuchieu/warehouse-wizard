@@ -4,7 +4,7 @@ from io import BytesIO
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Sum, F, Exists, OuterRef, Avg, Count
+from django.db.models import Sum, F, Exists, OuterRef, Count
 from django.utils import timezone
 from django.utils.timezone import now
 from django.template.loader import get_template
@@ -27,6 +27,11 @@ class ReportService:
         """
         Validate if sufficient stock is available for the given product and quantity.
         """
+        if quantity <= 0:
+            raise ValidationError(
+                f"Invalid quantity: {quantity}. Quantity must be greater than 0."
+            )
+
         if product.quantity < quantity:
             Notification.objects.create(
                 product=product,
@@ -42,6 +47,9 @@ class ReportService:
         """
         Update stock levels after a transaction and log the stock movement.
         """
+        if not ReportService.validate_stock(product, quantity):
+            raise ValidationError(f"Insufficient stock for {product.name}.")
+
         try:
             product.quantity -= quantity
             StockMovement.objects.create(
@@ -66,6 +74,10 @@ class ReportService:
         try:
             lines = invoice.lines.all()
             total = sum(line.line_total for line in lines)
+
+            if invoice.tax is None or invoice.tax < 0:
+                invoice.tax = Decimal('0.00')
+
             tax_amount = (total * invoice.tax) / 100
             invoice.total = total + tax_amount
             invoice.save()
@@ -81,20 +93,22 @@ class ReportService:
         if not date:
             date = timezone.now().date()
 
-        report, created = SalesReport.objects.get_or_create(
-            date=date,
-            defaults={
-                "total_sales": 0.00,
-                "total_invoices": 0,
-                "generated_by": user
-            }
-        )
+        reports = SalesReport.objects.filter(date=date)
+        if reports.exists():
+            report = reports.first()
+
+        else:
+            report = SalesReport.objects.create(
+                date=date,
+                total_sales=Decimal('0.00'),
+                total_invoices=0,
+                generated_by=user
+            )
         if not report.generated_by:
             report.generated_by = user
             report.save()
 
         return report
-
 
     @staticmethod
     def update_sales_report(invoice):
@@ -103,7 +117,9 @@ class ReportService:
         """
         try:
             report = ReportService.create_sales_report(invoice.created_at.date())
-            if invoice.status in ["COMPLETED", "CREDIT"] and invoice.advance_paid >= invoice.total:
+            advance_paid = invoice.advance_paid if invoice.advance_paid is not None else Decimal('0.00')
+
+            if invoice.status in ["COMPLETED", "CREDIT"] and advance_paid >= invoice.total:
                 report.total_sales = Decimal(report.total_sales)
                 report.total_sales += invoice.total
                 report.total_invoices += 1
@@ -122,13 +138,13 @@ class ReportService:
                 invoice = Invoice.objects.create(
                     client_name=data.get("client_name"),
                     cashier=user,
-                    tax=data.get("tax", 0.00),
+                    tax=data.get("tax", Decimal('0.00')),
                     status=data.get("status", "PENDING"),
                     reason=data.get("reason", ""),
-                    advance_paid=data.get("advance_paid", 0.00),
+                    advance_paid=data.get("advance_paid", Decimal('0.00')),
                 )
 
-                total_amount = 0.00
+                total_amount = Decimal('0.00')
 
                 for line_data in data["lines"]:
                     product_id = line_data["product_id"]
@@ -139,14 +155,12 @@ class ReportService:
                     except Product.DoesNotExist:
                         raise ValidationError(f"Product with ID {product_id} does not exist.")
 
-                    if invoice.status in ["PENDING", "COMPLETED", "CREDIT"]:
-                        if not ReportService.validate_stock(product, quantity):
-                            raise ValidationError(f"Insufficient stock for {product.name}.")
+                    if not ReportService.validate_stock(product, quantity):
+                        raise ValidationError(f"Insufficient stock for {product.name}.")
 
                     unit_price = product.get_price()
-                    discount = line_data.get("discount", 0.00)
+                    discount = line_data.get("discount", Decimal('0.00'))
                     line_total = (unit_price * quantity) - discount
-                    total_amount = Decimal(total_amount)
                     total_amount += line_total
                     invoice.lines.create(
                         product=product,
@@ -156,23 +170,21 @@ class ReportService:
                         line_total=line_total
                     )
 
-                    if invoice.status in ["PENDING", "COMPLETED", "CREDIT"]:
-                        ReportService.update_stock(
-                            product, quantity, user=user, reason="Sale transaction"
-                        )
+                    ReportService.update_stock(product, quantity, user, reason="Sale transaction")
+
                 invoice.total = total_amount
                 invoice.save()
 
                 if invoice.status == "COMPLETED" or (
-                        invoice.status == "CREDIT" and invoice.advance_paid >= invoice.total
-                ):
+                        invoice.status == "CREDIT" and invoice.advance_paid >= invoice.total):
                     ReportService.calculate_invoice_totals(invoice)
                     ReportService.update_sales_report(invoice)
 
                 return invoice
             except Exception as e:
                 logger.error(f"Error processing invoice: {e}")
-                raise ValidationError(f"An error occurred while processing the invoice: {e}")
+                raise ValidationError(f"An error occurred while processing the invoice: {str(e)}")
+
 
     @staticmethod
     def generate_inventory_report(start_date=None, end_date=None, user=None):
