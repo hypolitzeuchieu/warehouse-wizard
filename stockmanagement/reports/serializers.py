@@ -35,14 +35,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "number",
-            "date",
+            "created_at",
             "client_name",
             "cashier",
             "cashier_name",
             "status",
             "total",
             "tax",
-            "paid_amount",
+            "advance_paid",
             "due_date",
             "is_credit_settled",
             "lines",
@@ -97,12 +97,13 @@ class InventoryReportSerializer(serializers.ModelSerializer):
         model = InventoryReport
         fields = [
             "id",
-            "date",
+            "created_at",
             "generated_by",
             "generated_by_name",
             "total_products",
             "expired_products",
             "low_stock_products",
+            'date_range'
         ]
 
 
@@ -122,19 +123,30 @@ class SalesReportSerializer(serializers.ModelSerializer):
 
 
 class SalesSummaryQuerySerializer(serializers.Serializer):
-    start_date = serializers.DateField(required=False)
-    end_date = serializers.DateField(required=False)
     date = serializers.DateField(required=False)
+
+
+class InvoiceLineInputSerializer(serializers.Serializer):
+    product_id = serializers.CharField()
+    quantity = serializers.IntegerField(min_value=1)
+    discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
 
 class CreateInvoiceSerializer(serializers.Serializer):
     client_name = serializers.CharField()
-    tax = serializers.FloatField(required=False)
-    lines = serializers.ListField(
-        child=serializers.DictField()
-    )
+    tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    status = serializers.ChoiceField(choices=["PENDING", "COMPLETED", "CANCELLED", "CREDIT"], default="PENDING")
+    reason = serializers.CharField(required=False, allow_blank=True)
+    advance_paid = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    lines = serializers.ListSerializer(child=InvoiceLineInputSerializer())
+    due_date = serializers.DateField(required=False)
+
+    def validate_lines(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one line item is required.")
+        return value
 
 
 class InventoryQuerySerializer(serializers.Serializer):
-    start_date = serializers.DateField(required=False)
-    end_date = serializers.DateField(required=False)
+    start_date = serializers.DateTimeField(required=False)
+    end_date = serializers.DateTimeField(required=False)

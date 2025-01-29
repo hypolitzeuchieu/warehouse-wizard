@@ -1,27 +1,31 @@
 from django.db import models
+from django.utils import timezone
+
 from authentication.models import User
 from stock.models import Product
 
 class Invoice(models.Model):
     STATUS_CHOICES = [
-        ('paid', 'Paid'),
-        ('pending', 'Pending'),
-        ('credit', 'Credit'),
+        ("PENDING", "Pending"),
+        ("COMPLETED", "Completed"),
+        ("CANCELLED", "Cancelled"),
+        ("CREDIT", "Credit"),
     ]
 
     number = models.PositiveIntegerField(unique=True, editable=False)
-    date = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     client_name = models.CharField(max_length=100, blank=True, null=True)
     cashier = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="invoices")
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
-    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    reason = models.TextField(blank=True, null=True)
+    advance_paid = models.DecimalField(max_digits=10, decimal_places=2,default=0.00)
     due_date = models.DateField(blank=True, null=True)
     is_credit_settled = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ['-date']
+        ordering = ['-created_at']
         verbose_name = "Invoice"
         verbose_name_plural = "Invoices"
 
@@ -106,24 +110,25 @@ class Notification(models.Model):
 
 
 class InventoryReport(models.Model):
-    date = models.DateField(auto_now_add=True)
+    created_at = models.DateField(auto_now_add=True)
     generated_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, related_name="inventory_reports"
     )
     total_products = models.PositiveIntegerField(default=0)
     expired_products = models.PositiveIntegerField(default=0)
     low_stock_products = models.PositiveIntegerField(default=0)
+    date_range = models.CharField(max_length=255, default=None)
 
     class Meta:
         verbose_name = "Inventory Report"
         verbose_name_plural = "Inventory Reports"
 
     def __str__(self):
-        return f"Inventory Report - {self.date}"
+        return f"Inventory Report - {self.created_at}"
 
 
 class SalesReport(models.Model):
-    date = models.DateField(auto_now_add=True)
+    date = models.DateField(default=timezone.now, unique=True)
     total_sales = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total_invoices = models.PositiveIntegerField(default=0)
     generated_by = models.ForeignKey(

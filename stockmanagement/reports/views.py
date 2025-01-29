@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
+from authentication.models import User
 from reports.serializers import (
     InvoiceSerializer,
     InventoryReportSerializer,
@@ -41,7 +42,8 @@ class ReportsViewSet(viewsets.ViewSet):
         if serializer.is_valid():
             try:
                 data = serializer.validated_data
-                invoice = self.service.process_invoice(data=data, user=request.user)
+                user = User.objects.get(id="b7d7811fd49e4146aaa01843ade401b4") # user = request.user
+                invoice = self.service.process_invoice(data=data, user=user)
                 serializer = InvoiceSerializer(invoice)
                 return Response(serializer.data, status.HTTP_201_CREATED)
             except Exception as e:
@@ -92,9 +94,9 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 start_date = serializer.validated_data.get("start_date")
                 end_date = serializer.validated_data.get("end_date")
-
+                user = User.objects.get(id="b7d7811fd49e4146aaa01843ade401b4")  # user = request.user
                 report = self.service.generate_inventory_report(
-                    start_date=start_date,end_date=end_date, user=request.user
+                    start_date=start_date,end_date=end_date, user=user
                 )
                 serializer = InventoryReportSerializer(report)
                 return Response(serializer.data, status.HTTP_201_CREATED)
@@ -137,7 +139,7 @@ class ReportsViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         query_serializer=SalesSummaryQuerySerializer,
         operation_description="Retrieve a sales summary for a specific period.",
-        responses={200: "Sales summary data", 500: "Internal Server Error"},
+        responses={200: "Sales summary data", 400: "Bad Request", 500: "Internal Server Error"},
     )
     @action(methods=["GET"], detail=False, url_path="sales-summary")
     def get_sales_summary(self, request):
@@ -150,18 +152,20 @@ class ReportsViewSet(viewsets.ViewSet):
                 start_date = serializer.validated_data.get("start_date")
                 end_date = serializer.validated_data.get("end_date")
 
+                user = User.objects.get(id="b7d7811fd49e4146aaa01843ade401b4") #request.user
                 summary = self.service.get_sales_summary(
-                    start_date=start_date,end_date=end_date
+                    start_date=start_date, end_date=end_date, user=user
                 )
-                return Response(summary, status.HTTP_200_OK)
+                return Response(summary, status=status.HTTP_200_OK)
 
             except Exception as e:
                 logger.error(f"Error in get_sales_summary: {str(e)}")
                 return Response(
-                    {"error": str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        logger.error('Invalid data provided:', serializer.errors)
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         request_body=SalesSummaryQuerySerializer,
@@ -177,8 +181,9 @@ class ReportsViewSet(viewsets.ViewSet):
         if serializer.is_valid():
             try:
                 date = serializer.validated_data.get("date")
-                report = self.service.create_sales_report(date=date)
-                serializer = SalesReportSerializer(report)
+                user = User.objects.get(id="b7d7811fd49e4146aaa01843ade401b4") #request.user
+                report = self.service.create_sales_report(date=date, user=user)
+                serializer = SalesReportSerializer(report, many=True)
                 return Response(serializer.data, status.HTTP_201_CREATED)
             except Exception as e:
                 logger.error(f"Error in create_sales_report: {str(e)}")
