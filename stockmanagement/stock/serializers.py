@@ -87,7 +87,6 @@ class StockSerializer(serializers.ModelSerializer):
             'product',
             'category',
             'subcategory',
-            'quantity',
         ]
 
 

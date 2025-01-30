@@ -76,9 +76,8 @@ class StockService:
                     product.promotion_end_date = promotion_end_date
                     product.is_expired = False
                     product.save()
-
-                logger.info(f"Product {'created' if created else 'updated'}: {product.name}")
-                StockService.update_stock(product, category, subcategory, quantity)
+                    logger.info(f"Product {'created' if created else 'updated'}: {product.name}")
+                    StockService.update_stock(product, category, subcategory, quantity)
                 return product, created
 
         except Category.DoesNotExist:
@@ -146,7 +145,7 @@ class StockService:
                 product_id=product_id, category=category, subcategory=subcategory
             )
 
-            if stock.quantity == 0:
+            if stock.product.quantity == 0:
                 logger.info(
                     f"Product ID {product_id} is out of stock in category ID {category_id},"
                     f" subcategory ID {subcategory_id}"
@@ -158,11 +157,11 @@ class StockService:
                 }
 
             logger.info(
-                f"Stock quantity for product {stock.product.name} is {stock.quantity}"
+                f"Stock quantity for product {stock.product.name} is {stock.product.quantity}"
             )
             return {
                 "status": "success",
-                "quantity": stock.quantity,
+                "quantity": stock.product.quantity,
                 "message": "Stock retrieved successfully."
             }
         except Stock.DoesNotExist:
@@ -196,11 +195,8 @@ class StockService:
                 product=product,
                 category=category,
                 subcategory=subcategory,
-                defaults={
-                    'quantity': quantity
-                }
             )
-            if stock.quantity + quantity < 0:
+            if stock.product.quantity + quantity < 0:
                 logger.warning(
                     f"Insufficient stock for product {product.name}, category {category.name}, "
                     f"subcategory {subcategory.name if subcategory else 'None'}. "
@@ -210,23 +206,22 @@ class StockService:
                     f"Insufficient stock for this operation. "
                     f"Current quantity: {stock.quantity}."
                 )
-
-            stock.quantity += quantity
-            stock.save()
+            product.quantity += quantity
+            product.save()
 
             if created:
                 logger.info(
                     f"New stock created for product {product.name}, "
                     f"category {category.name}, "
-                    f"subcategory {subcategory.name if subcategory else 'None'}. "
-                    f"Initial quantity: {stock.quantity}."
+                    f"subcategory {subcategory.name if subcategory else None}. "
+                    f"Initial quantity: {stock.product.quantity}."
                 )
             else:
                 logger.info(
                     f"Stock updated for product {product.name}, "
                     f"category {category.name}, "
                     f"subcategory {subcategory.name if subcategory else None}. "
-                    f"New quantity: {stock.quantity}."
+                    f"New quantity: {stock.product.quantity}."
                 )
 
             return stock, created
@@ -333,12 +328,12 @@ class StockService:
             critical_stocks = []
             stocks = Stock.objects.select_related('product').all()
             for stock in stocks:
-                if stock.quantity < stock.product.min_quantity:
+                if stock.product.quantity < stock.product.min_quantity:
                     critical_stocks.append({
                         'product': stock.product.name,
                         'category': stock.category.name,
                         'subcategory': stock.subcategory.name,
-                        'quantity': stock.quantity,
+                        'quantity': stock.product.quantity,
                         'min_quantity': stock.product.min_quantity,
                     })
             logger.info(
