@@ -24,6 +24,7 @@ class User(AbstractUser):
         ('cashier', 'Cashier'),
         ('stock_keeper', 'Stock Keeper'),
         ('wholesale_client', 'Wholesale Client'),
+        ('sales_agent', 'Sales Agent'),
     ]
     role = models.CharField(max_length=30, choices=ROLE_CHOICES)
     phone_number = models.CharField(max_length=30)

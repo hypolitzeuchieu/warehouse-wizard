@@ -4,7 +4,8 @@ from authentication.views import (
     RegisterWholesaleClientView,
     UserCreateView,
     LoginView,
-    LogoutView
+    LogoutView,
+    RegisterSalesAgentView
 )
 
 
@@ -13,4 +14,5 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='user-login'),
     path('logout/', LogoutView.as_view(), name='user-logout'),
     path('register-wholesale-client/', RegisterWholesaleClientView.as_view(), name='register-wholesale-client'),
+    path('register-sales-agent/', RegisterSalesAgentView.as_view(), name='register-sales-agent'),
 ]
