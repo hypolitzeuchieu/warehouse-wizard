@@ -1,6 +1,3 @@
-from datetime import date
-
-from django.utils import timezone
 from rest_framework import serializers
 from stock.models import Product, Stock, Category, SubCategory, StockMovement
 
