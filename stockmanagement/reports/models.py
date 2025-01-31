@@ -1,12 +1,14 @@
+from decimal import Decimal
+
 from django.db import models
 from django.utils import timezone
 
 from authentication.models import User
 from stock.models import Product
 
+
 class Invoice(models.Model):
     STATUS_CHOICES = [
-        ("PENDING", "Pending"),
         ("COMPLETED", "Completed"),
         ("CANCELLED", "Cancelled"),
         ("CREDIT", "Credit"),
@@ -16,11 +18,12 @@ class Invoice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     client_name = models.CharField(max_length=100, blank=True, null=True)
     cashier = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="invoices")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     reason = models.TextField(blank=True, null=True)
     advance_paid = models.DecimalField(max_digits=10, decimal_places=2,default=0.00)
+    _remaining_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     due_date = models.DateField(blank=True, null=True)
     is_credit_settled = models.BooleanField(default=False)
 
@@ -32,8 +35,18 @@ class Invoice(models.Model):
     def __str__(self):
         return f"Invoice {self.number} - {self.status}"
 
+    @property
+    def remaining_amount(self):
+        if self.status == "CREDIT":
+            return max(self.total - self.advance_paid, Decimal('0.00'))
+        return Decimal('0.00')
+
+    @remaining_amount.setter
+    def remaining_amount(self, value):
+        self._remaining_amount = value
+
     def save(self, *args, **kwargs):
-        # Génère automatiquement un numéro si non défini
+        # automatically generate number if not define
         if not self.number:
             last_invoice = Invoice.objects.order_by('id').last()
             self.number = last_invoice.number + 1 if last_invoice else 1

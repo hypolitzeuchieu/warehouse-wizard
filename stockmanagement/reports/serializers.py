@@ -29,6 +29,7 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     lines = InvoiceLineSerializer(many=True, read_only=True)
     cashier_name = serializers.CharField(source="cashier.username", read_only=True)
+    remaining_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -43,15 +44,23 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "total",
             "tax",
             "advance_paid",
+            "remaining_amount",
             "due_date",
             "is_credit_settled",
             "lines",
         ]
 
+    def get_remaining_amount(self, obj):
+        """
+        Renvoie le montant restant à payer pour la facture.
+        """
+        return obj.remaining_amount
+
     def create(self, validated_data):
         # Gestion des lignes de facture lors de la création
         lines_data = self.context["request"].data.pop("lines", [])
         invoice = Invoice.objects.create(**validated_data)
+
         for line_data in lines_data:
             line_data["invoice"] = invoice
             InvoiceLine.objects.create(**line_data)
@@ -135,16 +144,25 @@ class InvoiceLineInputSerializer(serializers.Serializer):
 class CreateInvoiceSerializer(serializers.Serializer):
     client_name = serializers.CharField()
     tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    status = serializers.ChoiceField(choices=["PENDING", "COMPLETED", "CANCELLED", "CREDIT"], default="PENDING")
+    status = serializers.ChoiceField(choices=["COMPLETED", "CANCELLED", "CREDIT"])
     reason = serializers.CharField(required=False, allow_blank=True)
+    due_date = serializers.DateField(required=False, allow_null=True, default=None)
     advance_paid = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    remaining_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     lines = serializers.ListSerializer(child=InvoiceLineInputSerializer())
-    due_date = serializers.DateField(required=False)
 
     def validate_lines(self, value):
         if not value:
             raise serializers.ValidationError("At least one line item is required.")
         return value
+
+    def validate(self, data):
+        if data.get("status") == "CREDIT":
+            if not data.get("due_date"):
+                raise serializers.ValidationError({"due_date": "This field is required when the status is CREDIT."})
+            if not data.get("reason"):
+                raise serializers.ValidationError({"reason": "This field is required when the status is CREDIT."})
+        return data
 
 
 class InventoryQuerySerializer(serializers.Serializer):

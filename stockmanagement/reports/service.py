@@ -78,8 +78,15 @@ class ReportService:
             if invoice.tax is None or invoice.tax < 0:
                 invoice.tax = Decimal('0.00')
 
-            tax_amount = (total * invoice.tax) / 100
+            tax_amount = (total * Decimal(invoice.tax)) / Decimal('100')
             invoice.total = total + tax_amount
+
+            if invoice.status == "CREDIT" :
+                invoice.remaining_amount = invoice.total - invoice.advance_paid
+                invoice.is_credit_settled = invoice.remaining_amount <= 0
+            else:
+                invoice.remaining_amount = Decimal('0.00')
+
             invoice.save()
         except Exception as e:
             logger.error(f"Error calculating invoice totals for invoice {invoice.id}: {e}")
@@ -116,7 +123,7 @@ class ReportService:
         Update the sales report with the latest invoice data.
         """
         try:
-            report = ReportService.create_sales_report(invoice.created_at.date())
+            report = ReportService.create_sales_report(invoice.created_at.date(), invoice.cashier)
             advance_paid = invoice.advance_paid if invoice.advance_paid is not None else Decimal('0.00')
 
             if invoice.status in ["COMPLETED", "CREDIT"] and advance_paid >= invoice.total:
@@ -139,9 +146,10 @@ class ReportService:
                     client_name=data.get("client_name"),
                     cashier=user,
                     tax=data.get("tax", Decimal('0.00')),
-                    status=data.get("status", "PENDING"),
+                    status=data.get("status"),
                     reason=data.get("reason", ""),
                     advance_paid=data.get("advance_paid", Decimal('0.00')),
+                    due_date=data.get('due_date', '')
                 )
 
                 total_amount = Decimal('0.00')
@@ -184,7 +192,6 @@ class ReportService:
             except Exception as e:
                 logger.error(f"Error processing invoice: {e}")
                 raise ValidationError(f"An error occurred while processing the invoice: {str(e)}")
-
 
     @staticmethod
     def generate_inventory_report(start_date=None, end_date=None, user=None):
@@ -242,12 +249,12 @@ class ReportService:
                     "category": product.category.name,
                     "subcategory": product.subcategory.name if product.subcategory else None,
                     "unit_price": product.unit_price,
-                    "created_at": stock.created_at,
+                    "created_at": stock.product.created_at,
                     "expiry_date": product.expiry_date,
                     "is_expired": product.is_expired,
-                    "quantity": stock.quantity,
+                    "quantity": stock.product.quantity,
                     "min_quantity": product.min_quantity,
-                    "is_critical": stock.quantity < product.min_quantity,
+                    "is_critical": stock.product.quantity < product.min_quantity,
                 })
 
         logger.info(f"Inventory data generated for range: {start_date} to {end_date}.")
@@ -266,19 +273,23 @@ class ReportService:
         if end_date < start_date:
             raise ValidationError("End date cannot be earlier than start date.")
 
-        filters = {'date__range': (start_date, end_date)}
-        if user:
-            filters['generated_by'] = user
+        invoices = Invoice.objects.filter(created_at__range=(start_date, end_date))
 
-        sales = SalesReport.objects.filter(
-            date__range=(start_date, end_date)
-        ).aggregate(
-            total_revenue=Sum('total_sales'),
-            total_invoices=Count('id')
-        )
+        if user:
+            invoices = invoices.filter(cashier=user)
+
+        total_revenue = Decimal('0.00')
+        total_invoices = invoices.count()
+
+        for invoice in invoices:
+            total_revenue += invoice.total
 
         logger.info(f"Sales summary retrieved for period {start_date} to {end_date}.")
-        return sales
+
+        return {
+            "total_revenue": total_revenue,
+            "total_invoices": total_invoices
+        }
 
     @staticmethod
     def export_invoice_to_pdf(invoice_id):

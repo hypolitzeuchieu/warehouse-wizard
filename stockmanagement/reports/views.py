@@ -137,7 +137,7 @@ class ReportsViewSet(viewsets.ViewSet):
 
     # --- Sales Report Endpoints ---
     @swagger_auto_schema(
-        query_serializer=SalesSummaryQuerySerializer,
+        query_serializer=InventoryQuerySerializer,
         operation_description="Retrieve a sales summary for a specific period.",
         responses={200: "Sales summary data", 400: "Bad Request", 500: "Internal Server Error"},
     )
@@ -146,7 +146,7 @@ class ReportsViewSet(viewsets.ViewSet):
         """
         Retrieve a sales summary for a specific period.
         """
-        serializer = SalesSummaryQuerySerializer(data=request.query_params)
+        serializer = InventoryQuerySerializer(data=request.query_params)
         if serializer.is_valid():
             try:
                 start_date = serializer.validated_data.get("start_date")
