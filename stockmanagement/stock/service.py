@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
+from reports.service import ReportService
 from stock.models import Product, Stock, StockMovement, Category, SubCategory
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,8 @@ class StockService:
     """
     Service for handling stock-related operations.
     """
+
+    reports_service = ReportService()
 
     @staticmethod
     def create_or_update_product(
@@ -319,13 +322,13 @@ class StockService:
             logger.error(f"Error in get_product_stock_details: {str(e)}")
             raise ValidationError({"error": f"An unexpected error occurred: {str(e)}"})
 
-    @staticmethod
-    def check_critical_stock_levels():
+    def check_critical_stock_levels(self):
         """
         Check all products for critical stock levels and return alerts.
         """
         try:
             critical_stocks = []
+
             stocks = Stock.objects.select_related('product').all()
             for stock in stocks:
                 if stock.product.quantity < stock.product.min_quantity:
@@ -336,6 +339,15 @@ class StockService:
                         'quantity': stock.product.quantity,
                         'min_quantity': stock.product.min_quantity,
                     })
+
+                    message = (f"Critical stock for {stock.product.name}. "
+                               f"Available : {stock.product.quantity}")
+                    self.reports_service.create_notification(
+                        user=stock.product.manager,  # to checkkkkkkkkkkkkkkkkkkkkkk
+                        product=stock.product,
+                        notification_type="CRITICAL_STOCK",
+                        message=message
+                    )
             logger.info(
                 f"Checked critical stock levels."
                 f" Found {len(critical_stocks)} critical stock items."
@@ -345,8 +357,7 @@ class StockService:
             logger.error(f"Error in check_critical_stock_levels: {str(e)}")
             raise ValidationError({"error": f"An unexpected error occurred: {str(e)}"})
 
-    @staticmethod
-    def get_products_by_expiry_date():
+    def get_products_by_expiry_date(self):
         """
         Get all products that are expired or close to expiry.
         """
@@ -359,10 +370,32 @@ class StockService:
             )
             expired_products.update(is_expired=True)
 
+            for product in expired_products:
+
+                message = (f"The product {product.name} is expired. "
+                           f"Expired date : {product.expiry_date}")
+                self.reports_service.create_notification(
+                    user=product.manager, # to checkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+                    product=product,
+                    notification_type="EXPIRED",
+                    message=message
+                )
+
             near_expiry = Product.objects.filter(
                 expiry_date__range=(now, soon),
                 is_expired=False
             )
+
+            for product in near_expiry:
+
+                message = (f"The product {product.name} is near to expired."
+                           f" Expired date : {product.expiry_date}")
+                self.reports_service.create_notification(
+                    user=product.manager,  # to chekkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+                    product=product,
+                    notification_type="NEAR_EXPIRY",
+                    message=message
+                )
             logger.info(f"Retrieved {expired_products.count()} expired products.")
             return {
                 'expired_products': expired_products,
