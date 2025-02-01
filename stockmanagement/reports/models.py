@@ -100,18 +100,19 @@ class Report(models.Model):
 
 class Notification(models.Model):
     NOTIFICATION_TYPE_CHOICES = [
-        ('LOW_STOCK', 'Low Stock'),
+        ('CRITICAL_STOCK', 'Critical Stock'),
         ('EXPIRED', 'Expired Product'),
         ('NEAR_EXPIRY', 'Near Expiry'),
     ]
 
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, related_name="notifications"
     )
-    type = models.CharField(max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    resolved = models.BooleanField(default=False)
+    is_read = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-created_at']
@@ -133,6 +134,7 @@ class InventoryReport(models.Model):
     date_range = models.CharField(max_length=255, default=None)
 
     class Meta:
+        ordering = ['-created_at']
         verbose_name = "Inventory Report"
         verbose_name_plural = "Inventory Reports"
 
@@ -149,6 +151,7 @@ class SalesReport(models.Model):
     )
 
     class Meta:
+        ordering = ['-date']
         verbose_name = "Sales Report"
         verbose_name_plural = "Sales Reports"
 

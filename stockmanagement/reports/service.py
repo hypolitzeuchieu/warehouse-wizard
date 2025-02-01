@@ -23,7 +23,21 @@ class ReportService:
     """
 
     @staticmethod
-    def validate_stock(product, quantity):
+    def create_notification(user, product, notification_type, message):
+        try:
+            Notification.objects.create(
+                user=user,
+                product=product,
+                notification_type=notification_type,
+                message=message,
+            )
+        except Exception as e:
+            logger.error(f'Unexpected error occurred: {str(e)}')
+            raise f'Unexpected error occurred: {str(e)}'
+
+
+    @staticmethod
+    def validate_stock(user, product, quantity):
         """
         Validate if sufficient stock is available for the given product and quantity.
         """
@@ -33,11 +47,12 @@ class ReportService:
             )
 
         if product.quantity < quantity:
-            Notification.objects.create(
-                product=product,
-                type="LOW_STOCK",
-                message=f"Stock is low for {product.name}. "
-                        f"Available: {product.quantity}, Required: {quantity}"
+
+            message = f"Stock is low for {product.name}. "
+            f"Available: {product.quantity}, Required: {quantity}"
+
+            ReportService.create_notification(
+                user=user,product=product, notification_type="CRITICAL_STOCK", message=message
             )
             return False
         return True
@@ -47,7 +62,7 @@ class ReportService:
         """
         Update stock levels after a transaction and log the stock movement.
         """
-        if not ReportService.validate_stock(product, quantity):
+        if not ReportService.validate_stock(user, product, quantity):
             raise ValidationError(f"Insufficient stock for {product.name}.")
 
         try:
@@ -62,6 +77,16 @@ class ReportService:
                 reason=reason
             )
             product.save()
+
+            if product.quantity < product.min_quantity:
+                message = (f"Critical stock for {product.name}."
+                           f" Available quantity : {product.quantity}")
+                ReportService.create_notification(
+                    user=user,
+                    product=product,
+                    notification_type="CRITICAL_STOCK",
+                    message=message
+                )
         except Exception as e:
             logger.error(f"Error updating stock for product {product.name}: {e}")
             raise ValidationError(f"Failed to update stock for product {product.name}")
@@ -179,6 +204,16 @@ class ReportService:
                     )
 
                     ReportService.update_stock(product, quantity, user, reason="Sale transaction")
+
+                    if product.quantity < product.min_quantity:
+                        message = (f"Low stock for {product.name} after sale. "
+                                   f"Available: {product.quantity}")
+                        ReportService.create_notification(
+                            user=user,
+                            product=product,
+                            notification_type="CRITICAL_STOCK",
+                            message=message
+                        )
 
                 invoice.total = total_amount
                 invoice.save()
