@@ -42,8 +42,12 @@ class Product(models.Model):
     promo_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
-    subcategory = models.ForeignKey(SubCategory, on_delete=models.SET_NULL, null=True, blank=True,
-                                    related_name='products')
+    subcategory = models.ForeignKey(
+        SubCategory, on_delete=models.SET_NULL, null=True, blank=True,related_name='products'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.name} ({self.category.name})"
@@ -64,6 +68,9 @@ class Stock(models.Model):
         SubCategory, on_delete=models.CASCADE, related_name='stocks', null=True, blank=True
     )
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='stocks')
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.quantity} units in {self.category.name}"
@@ -87,6 +94,9 @@ class StockMovement(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     subcategory = models.ForeignKey(SubCategory, on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.movement_type} - {self.product.name} ({self.quantity})"
