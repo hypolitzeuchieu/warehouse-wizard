@@ -105,11 +105,14 @@ class Notification(models.Model):
         ('NEAR_EXPIRY', 'Near Expiry'),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="notifications", null=True, blank=True
+    )
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, related_name="notifications"
     )
-    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
+    notification_type = models.CharField(
+        max_length=20, choices=NOTIFICATION_TYPE_CHOICES, default='CRITICAL_STOCK')
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
