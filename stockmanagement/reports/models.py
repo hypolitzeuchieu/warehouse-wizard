@@ -55,9 +55,8 @@ class Invoice(models.Model):
         self._remaining_amount = value
 
     def save(self, *args, **kwargs):
-        # automatically generate number if not define
         if not self.number:
-            last_invoice = Invoice.objects.order_by('id').last()
+            last_invoice = Invoice.objects.order_by('-created_at').first()
             self.number = last_invoice.number + 1 if last_invoice else 1
         super().save(*args, **kwargs)
 

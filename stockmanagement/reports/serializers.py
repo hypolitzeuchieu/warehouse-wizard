@@ -156,9 +156,7 @@ class CreateInvoiceSerializer(serializers.Serializer):
     tax = serializers.DecimalField(
         max_digits=10, decimal_places=2, default=0.00
     )
-    status = serializers.ChoiceField(
-        choices=['COMPLETED', 'CANCELLED', 'CREDIT']
-    )
+    status = serializers.ChoiceField(choices=['COMPLETED', 'CANCELLED', 'CREDIT'])
     reason = serializers.CharField(required=False, allow_blank=True)
     due_date = serializers.DateField(
         required=False, allow_null=True, default=None
@@ -198,3 +196,7 @@ class CreateInvoiceSerializer(serializers.Serializer):
 class InventoryQuerySerializer(serializers.Serializer):
     start_date = serializers.DateTimeField(required=False)
     end_date = serializers.DateTimeField(required=False)
+
+
+class InvoiceQuerySerializer(serializers.Serializer):
+    invoice_id = serializers.CharField(required=True)

@@ -425,13 +425,13 @@ class ReportService:
         Export an invoice to PDF format.
         """
         try:
-            invoice = Invoice.objects.prefetch_related('lines__product').get(
-                id=invoice_id
-            )
+            invoice = Invoice.objects.prefetch_related('lines').get(id=invoice_id)
+            invoice_lines = invoice.lines.all()
+
             template = get_template('invoice_template.html')
             context = {
                 'invoice': invoice,
-                'lines': invoice.lines.all(),
+                'invoice_lines': invoice_lines,
             }
             html = template.render(context)
             pdf_buffer = BytesIO()
@@ -441,7 +441,7 @@ class ReportService:
                 logger.error(
                     f"Failed to generate PDF for invoice {invoice_id}."
                 )
-                return {'error': 'Failed to generate PDF.'}
+                raise {'error': 'Failed to generate PDF.'}
 
             pdf_buffer.seek(0)
             logger.info(
@@ -451,7 +451,7 @@ class ReportService:
 
         except Invoice.DoesNotExist:
             logger.error(f"Invoice with ID {invoice_id} does not exist.")
-            return {'error': f"Invoice with ID {invoice_id} does not exist."}
+            raise {'error': f"Invoice with ID {invoice_id} does not exist."}
         except Exception as e:
             logger.error(f"Error in export_invoice_to_pdf: {str(e)}")
-            return {'error': f"An unexpected error occurred: {str(e)}"}
+            raise {'error': f"An unexpected error occurred: {str(e)}"}

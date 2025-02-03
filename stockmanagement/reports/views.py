@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 
-from drf_yasg import openapi
+from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
 from reports.serializers import CreateInvoiceSerializer
 from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InventoryReportSerializer
+from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
 from reports.serializers import NotificationSerializer
 from reports.serializers import SalesReportSerializer
@@ -48,24 +49,17 @@ class ReportsViewSet(viewsets.ViewSet):
                 data = serializer.validated_data
                 user = request.user
                 invoice = self.service.process_invoice(data=data, user=user)
-                serializer = InvoiceSerializer(invoice)
-                return Response(serializer.data, status.HTTP_201_CREATED)
+                serializers = InvoiceSerializer(invoice)
+                return Response(serializers.data, status.HTTP_201_CREATED)
             except Exception as e:
                 logger.error(f"Error in create_invoice: {str(e)}")
                 return Response(
-                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {'error': invoice['error']}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        manual_parameters=[
-            openapi.Parameter(
-                'invoice_id',
-                openapi.IN_PATH,
-                description='ID of the invoice to export',
-                type=openapi.TYPE_INTEGER,
-            )
-        ],
+        query_serializer=InvoiceQuerySerializer,
         operation_description='Export an invoice to PDF format.',
         responses={
             200: 'PDF file',
@@ -73,25 +67,29 @@ class ReportsViewSet(viewsets.ViewSet):
             500: 'Internal Server Error',
         },
     )
-    @action(methods=['GET'], detail=True, url_path='export-pdf')
-    def export_invoice_to_pdf(self, request, pk=None):
+    @action(methods=['GET'], detail=False, url_path='export-pdf')
+    def export_invoice_to_pdf(self, request):
         """
-        Export an invoice to PDF format by ID.
+        Export an invoice to PDF format by invoice_id.
         """
-        try:
-            pdf_file = self.service.export_invoice_to_pdf(pk)
-            response = Response(
-                pdf_file.getvalue(), content_type='application/pdf'
-            )
-            response['Content-Disposition'] = (
-                f"attachment; filename=invoice_{pk}.pdf"
-            )
-            return response
-        except Exception as e:
-            logger.error(f"Error in export_invoice_to_pdf: {str(e)}")
-            return Response(
-                {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        serializer = InvoiceQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            try:
+                invoice_id = serializer.validated_data.get('invoice_id')
+
+                pdf_file = self.service.export_invoice_to_pdf(invoice_id)
+                response = HttpResponse(pdf_file.getvalue(), content_type='application/pdf')
+                response['Content-Disposition'] = (f'attachment; '
+                                                   f'filename=invoice_{invoice_id}.pdf')
+                return response
+            except Exception as e:
+                logger.error(f"Error in export_invoice_to_pdf: {str(e)}")
+                return Response(
+                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        logger.error(f'invalid data: {serializer.errors}')
+        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
 
     # --- Inventory Report Endpoints ---
     @swagger_auto_schema(
