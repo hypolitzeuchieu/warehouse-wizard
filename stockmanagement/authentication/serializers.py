@@ -1,5 +1,7 @@
-from rest_framework import serializers
+from __future__ import annotations
+
 from authentication.models import User
+from rest_framework import serializers
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -31,7 +33,12 @@ class RegisterWholesaleClientSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'phone_number', 'password',]
+        fields = [
+            'username',
+            'email',
+            'phone_number',
+            'password',
+        ]
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -40,15 +47,21 @@ class RegisterWholesaleClientSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             phone_number=validated_data['phone_number'],
             password=validated_data['password'],
-            role='wholesale_client'
+            role='wholesale_client',
         )
         return user
+
 
 class RegisterSalesAgentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'phone_number', 'password',]
+        fields = [
+            'username',
+            'email',
+            'phone_number',
+            'password',
+        ]
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -57,7 +70,7 @@ class RegisterSalesAgentSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             phone_number=validated_data['phone_number'],
             password=validated_data['password'],
-            role='sales_agent'
+            role='sales_agent',
         )
         return user
 

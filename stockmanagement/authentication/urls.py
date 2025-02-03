@@ -1,18 +1,25 @@
-from django.urls import path
+from __future__ import annotations
 
-from authentication.views import (
-    RegisterWholesaleClientView,
-    UserCreateView,
-    LoginView,
-    LogoutView,
-    RegisterSalesAgentView
-)
+from authentication.views import LoginView
+from authentication.views import LogoutView
+from authentication.views import RegisterSalesAgentView
+from authentication.views import RegisterWholesaleClientView
+from authentication.views import UserCreateView
+from django.urls import path
 
 
 urlpatterns = [
     path('register/', UserCreateView.as_view(), name='user-register'),
     path('login/', LoginView.as_view(), name='user-login'),
     path('logout/', LogoutView.as_view(), name='user-logout'),
-    path('register-wholesale-client/', RegisterWholesaleClientView.as_view(), name='register-wholesale-client'),
-    path('register-sales-agent/', RegisterSalesAgentView.as_view(), name='register-sales-agent'),
+    path(
+        'register-wholesale-client/',
+        RegisterWholesaleClientView.as_view(),
+        name='register-wholesale-client',
+    ),
+    path(
+        'register-sales-agent/',
+        RegisterSalesAgentView.as_view(),
+        name='register-sales-agent',
+    ),
 ]

@@ -1,6 +1,7 @@
-from rest_framework.routers import DefaultRouter
+from __future__ import annotations
 
 from reports.views import ReportsViewSet
+from rest_framework.routers import DefaultRouter
 
 
 router = DefaultRouter()

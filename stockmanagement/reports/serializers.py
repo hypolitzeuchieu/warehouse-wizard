@@ -1,53 +1,55 @@
+from __future__ import annotations
+
+from reports.models import InventoryReport
+from reports.models import Invoice
+from reports.models import InvoiceLine
+from reports.models import Notification
+from reports.models import Report
+from reports.models import SalesReport
 from rest_framework import serializers
-from reports.models import (
-    Invoice,
-    InvoiceLine,
-    Report,
-    Notification,
-    InventoryReport,
-    SalesReport,
-)
 
 
 class InvoiceLineSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_name = serializers.CharField(source='product.name', read_only=True)
 
     class Meta:
         model = InvoiceLine
         fields = [
-            "id",
-            "invoice",
-            "product",
-            "product_name",
-            "quantity",
-            "unit_price",
-            "discount",
-            "line_total",
+            'id',
+            'invoice',
+            'product',
+            'product_name',
+            'quantity',
+            'unit_price',
+            'discount',
+            'line_total',
         ]
 
 
 class InvoiceSerializer(serializers.ModelSerializer):
     lines = InvoiceLineSerializer(many=True, read_only=True)
-    cashier_name = serializers.CharField(source="cashier.username", read_only=True)
+    cashier_name = serializers.CharField(
+        source='cashier.username', read_only=True
+    )
     remaining_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
         fields = [
-            "id",
-            "number",
-            "created_at",
-            "client_name",
-            "cashier",
-            "cashier_name",
-            "status",
-            "total",
-            "tax",
-            "advance_paid",
-            "remaining_amount",
-            "due_date",
-            "is_credit_settled",
-            "lines",
+            'id',
+            'number',
+            'created_at',
+            'client_name',
+            'cashier',
+            'cashier_name',
+            'status',
+            'total',
+            'tax',
+            'advance_paid',
+            'remaining_amount',
+            'due_date',
+            'is_credit_settled',
+            'lines',
         ]
 
     def get_remaining_amount(self, obj):
@@ -58,76 +60,82 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         # Gestion des lignes de facture lors de la création
-        lines_data = self.context["request"].data.pop("lines", [])
+        lines_data = self.context['request'].data.pop('lines', [])
         invoice = Invoice.objects.create(**validated_data)
 
         for line_data in lines_data:
-            line_data["invoice"] = invoice
+            line_data['invoice'] = invoice
             InvoiceLine.objects.create(**line_data)
         return invoice
 
 
 class ReportSerializer(serializers.ModelSerializer):
-    generated_by_name = serializers.CharField(source="generated_by.username", read_only=True)
+    generated_by_name = serializers.CharField(
+        source='generated_by.username', read_only=True
+    )
 
     class Meta:
         model = Report
         fields = [
-            "id",
-            "type",
-            "generated_at",
-            "generated_by",
-            "generated_by_name",
-            "file_path",
-            "description",
+            'id',
+            'type',
+            'generated_at',
+            'generated_by',
+            'generated_by_name',
+            'file_path',
+            'description',
         ]
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_name = serializers.CharField(source='product.name', read_only=True)
 
     class Meta:
         model = Notification
         fields = [
-            "id",
-            "product",
-            "product_name",
-            "type",
-            "message",
-            "created_at",
-            "resolved",
+            'id',
+            'product',
+            'product_name',
+            'notification_type',
+            'message',
+            'created_at',
+            'is_read',
         ]
 
 
 class InventoryReportSerializer(serializers.ModelSerializer):
-    generated_by_name = serializers.CharField(source="generated_by.username", read_only=True)
+    generated_by_name = serializers.CharField(
+        source='generated_by.username', read_only=True
+    )
 
     class Meta:
         model = InventoryReport
         fields = [
-            "id",
-            "created_at",
-            "generated_by",
-            "generated_by_name",
-            "total_products",
-            "expired_products",
-            "low_stock_products",
-            'date_range'
+            'id',
+            'created_at',
+            'generated_by',
+            'generated_by_name',
+            'total_products',
+            'expired_products',
+            'low_stock_products',
+            'date_range',
         ]
 
 
 class SalesReportSerializer(serializers.ModelSerializer):
-    generated_by_name = serializers.CharField(source="generated_by.username", read_only=True)
+    generated_by_name = serializers.CharField(
+        source='generated_by.username', read_only=True
+    )
 
     class Meta:
         model = SalesReport
         fields = [
-            "id",
-            "date",
-            "total_sales",
-            "total_invoices",
-            "generated_by",
-            "generated_by_name",
+            'id',
+            'date',
+            'total_sales',
+            'total_invoices',
+            'generated_by',
+            'generated_by_name',
         ]
 
 
@@ -138,30 +146,52 @@ class SalesSummaryQuerySerializer(serializers.Serializer):
 class InvoiceLineInputSerializer(serializers.Serializer):
     product_id = serializers.CharField()
     quantity = serializers.IntegerField(min_value=1)
-    discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    discount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
 
 
 class CreateInvoiceSerializer(serializers.Serializer):
     client_name = serializers.CharField()
-    tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    status = serializers.ChoiceField(choices=["COMPLETED", "CANCELLED", "CREDIT"])
+    tax = serializers.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
+    status = serializers.ChoiceField(
+        choices=['COMPLETED', 'CANCELLED', 'CREDIT']
+    )
     reason = serializers.CharField(required=False, allow_blank=True)
-    due_date = serializers.DateField(required=False, allow_null=True, default=None)
-    advance_paid = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    remaining_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    due_date = serializers.DateField(
+        required=False, allow_null=True, default=None
+    )
+    advance_paid = serializers.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
+    remaining_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
     lines = serializers.ListSerializer(child=InvoiceLineInputSerializer())
 
     def validate_lines(self, value):
         if not value:
-            raise serializers.ValidationError("At least one line item is required.")
+            raise serializers.ValidationError(
+                'At least one line item is required.'
+            )
         return value
 
     def validate(self, data):
-        if data.get("status") == "CREDIT":
-            if not data.get("due_date"):
-                raise serializers.ValidationError({"due_date": "This field is required when the status is CREDIT."})
-            if not data.get("reason"):
-                raise serializers.ValidationError({"reason": "This field is required when the status is CREDIT."})
+        if data.get('status') == 'CREDIT':
+            if not data.get('due_date'):
+                raise serializers.ValidationError(
+                    {
+                        'due_date': 'This field is required when the status is CREDIT.'
+                    }
+                )
+            if not data.get('reason'):
+                raise serializers.ValidationError(
+                    {
+                        'reason': 'This field is required when the status is CREDIT.'
+                    }
+                )
         return data
 
 
