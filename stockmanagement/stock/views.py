@@ -56,6 +56,7 @@ class StockViewSet(viewsets.ViewSet):
                     subcategory_id=data.get('subcategory_id', ''),
                     expired_date=data.get('expiry_date'),
                     quantity=data.get('quantity'),
+                    image=data.get('image'),
                     on_promotion=data.get('on_promotion', False),
                     promo_price=data.get('promo_price'),
                     promotion_start_date=data.get('promotion_start_date'),
@@ -228,7 +229,7 @@ class StockViewSet(viewsets.ViewSet):
         serializer = StockMovementSerializer(data=request.data)
         if serializer.is_valid():
             data = serializer.validated_data
-            user = User.objects.get(id="b7d7811fd49e4146aaa01843ade401b4")
+            user = User.objects.get(id="6bbb9961-ee40-4e64-91e9-170a4ede3fd6")
             try:
                 result, status_code = StockService.process_stock_movement(
                     product=data['product'],

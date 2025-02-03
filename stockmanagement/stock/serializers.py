@@ -42,6 +42,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'unit_price',
+            'image',
+            'created_at',
             'quantity',
             'min_quantity',
             'is_expired',

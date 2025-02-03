@@ -31,6 +31,7 @@ class Product(models.Model):
     description = models.TextField(blank=True, null=True)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
+    image = models.ImageField(upload_to='products/', null=True, blank=True)
     quantity = models.PositiveIntegerField(default=0)
     min_quantity = models.PositiveIntegerField(default=10)
     expiry_date = models.DateTimeField(blank=True, null=True)

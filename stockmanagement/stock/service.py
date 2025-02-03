@@ -27,6 +27,7 @@ class StockService:
             subcategory_id,
             expired_date,
             quantity,
+            image=None,
             on_promotion=False,
             promo_price=None,
             promotion_start_date=None,
@@ -57,7 +58,8 @@ class StockService:
                         'description': description,
                         'unit_price': unit_price,
                         'expiry_date': expired_date,
-                        'quantity': quantity,
+                        'quantity': 0,
+                        'image': image,
                         'min_quantity': min_quantity,
                         'on_promotion': on_promotion,
                         'promo_price': promo_price,
@@ -71,7 +73,6 @@ class StockService:
                     product.description = description
                     product.unit_price = unit_price
                     product.expiry_date = expired_date
-                    product.quantity = quantity
                     product.min_quantity = min_quantity
                     product.on_promotion = on_promotion
                     product.promo_price = promo_price
@@ -80,7 +81,8 @@ class StockService:
                     product.is_expired = False
                     product.save()
                     logger.info(f"Product {'created' if created else 'updated'}: {product.name}")
-                    StockService.update_stock(product, category, subcategory, quantity)
+
+                StockService.update_stock(product, category, subcategory, quantity)
                 return product, created
 
         except Category.DoesNotExist:
@@ -342,12 +344,14 @@ class StockService:
 
                     message = (f"Critical stock for {stock.product.name}. "
                                f"Available : {stock.product.quantity}")
-                    self.reports_service.create_notification(
-                        user=stock.product.manager,  # to checkkkkkkkkkkkkkkkkkkkkkk
-                        product=stock.product,
-                        notification_type="CRITICAL_STOCK",
-                        message=message
-                    )
+                    users = self.reports_service.get_managers_and_store_keepers()
+                    for manager in users:
+                        ReportService.create_notification(
+                            user=manager,
+                            product=stock.product,
+                            notification_type="CRITICAL_STOCK",
+                            message=message
+                        )
             logger.info(
                 f"Checked critical stock levels."
                 f" Found {len(critical_stocks)} critical stock items."
@@ -374,12 +378,15 @@ class StockService:
 
                 message = (f"The product {product.name} is expired. "
                            f"Expired date : {product.expiry_date}")
-                self.reports_service.create_notification(
-                    user=product.manager, # to checkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
-                    product=product,
-                    notification_type="EXPIRED",
-                    message=message
-                )
+
+                users = ReportService.get_managers_and_store_keepers()
+                for manager in users:
+                    self.reports_service.create_notification(
+                        user=manager,
+                        product=product,
+                        notification_type="EXPIRED",
+                        message=message
+                    )
 
             near_expiry = Product.objects.filter(
                 expiry_date__range=(now, soon),
@@ -390,12 +397,15 @@ class StockService:
 
                 message = (f"The product {product.name} is near to expired."
                            f" Expired date : {product.expiry_date}")
-                self.reports_service.create_notification(
-                    user=product.manager,  # to chekkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
-                    product=product,
-                    notification_type="NEAR_EXPIRY",
-                    message=message
-                )
+
+                users = ReportService.get_managers_and_store_keepers()
+                for manager in users:
+                    self.reports_service.create_notification(
+                        user=manager,
+                        product=product,
+                        notification_type="NEAR_EXPIRY",
+                        message=message
+                    )
             logger.info(f"Retrieved {expired_products.count()} expired products.")
             return {
                 'expired_products': expired_products,
