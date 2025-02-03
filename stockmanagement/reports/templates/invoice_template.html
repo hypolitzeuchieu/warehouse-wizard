@@ -25,12 +25,13 @@
     <h1>Invoice #{{ invoice.number }}</h1>
     <p><strong>Client:</strong> {{ invoice.client_name }}</p>
     <p><strong>Status:</strong> {{ invoice.status }}</p>
-    <p><strong>Tax:</strong> ${{ invoice.cashier }}</p>
+    <p><strong>Cashier:</strong> {{ invoice.cashier }}</p>
     <p><strong>Created at:</strong> {{ invoice.created_at }}</p>
     <p><strong>Due Date:</strong> {{ invoice.due_date }}</p>
     <p><strong>Total:</strong> ${{ invoice.total }}</p>
     <p><strong>Tax:</strong> ${{ invoice.tax }}</p>
     <p><strong>Advance Paid:</strong> ${{ invoice.advance_paid }}</p>
+    <p><strong>Refund Paid:</strong> ${{ invoice.refund_amount }}</p>
     <p><strong>Remaining Amount:</strong> ${{ invoice.remaining_amount }}</p>
 
     <h3>Invoice Lines</h3>

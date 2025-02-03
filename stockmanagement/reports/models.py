@@ -27,6 +27,9 @@ class Invoice(models.Model):
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     tax = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     reason = models.TextField(blank=True, null=True)
+    refund_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
     advance_paid = models.DecimalField(
         max_digits=10, decimal_places=2, default=0.00
     )

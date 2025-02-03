@@ -47,6 +47,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'tax',
             'advance_paid',
             'remaining_amount',
+            'refund_amount',
             'due_date',
             'is_credit_settled',
             'lines',

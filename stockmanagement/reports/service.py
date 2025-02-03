@@ -209,86 +209,125 @@ class ReportService:
             return {'error': f"Error updating sales report.{str(e)}"}
 
     @staticmethod
+    def create_invoice(data, user):
+        """create new invoice."""
+
+        return Invoice.objects.create(
+            client_name=data.get('client_name'),
+            cashier=user,
+            tax=data.get('tax', Decimal('0.00')),
+            status=data.get('status'),
+            reason=data.get('reason', ''),
+            advance_paid=data.get('advance_paid', Decimal('0.00')),
+            due_date=data.get('due_date', None),
+        )
+
+    @staticmethod
+    def process_invoice_lines(invoice, lines_data, user):
+        """Traiter les lignes de facture et mettre à jour les stocks."""
+        total_amount = Decimal('0.00')
+        sold_products = []
+
+        for line_data in lines_data:
+            product_id = line_data['product_id']
+            quantity = line_data['quantity']
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return {'error': f"Product with ID {product_id} does not exist."}
+
+            if not ReportService.validate_stock(product, quantity):
+                return {'error': f"Insufficient stock for {product.name}."}
+
+            unit_price = product.get_price()
+            discount = line_data.get('discount', Decimal('0.00'))
+            line_total = (unit_price * quantity) - discount
+            total_amount += line_total
+
+            invoice.lines.create(
+                product=product,
+                quantity=quantity,
+                unit_price=unit_price,
+                discount=discount,
+                line_total=line_total,
+            )
+
+            ReportService.update_stock(product, quantity, user, reason='Sale transaction')
+            sold_products.append((product, quantity))
+
+        return total_amount, sold_products
+
+    @staticmethod
+    def handle_completed_or_credit(invoice):
+        """Gérer les statuts COMPLETED et CREDIT."""
+
+        if invoice.status == 'CREDIT':
+            invoice.remaining_amount = max(
+                invoice.total - invoice.advance_paid, Decimal('0.00'))
+
+            if invoice.advance_paid >= invoice.total:
+                invoice.status = 'COMPLETED'
+                invoice.is_credit_settled = True
+                invoice.refund_amount = invoice.advance_paid - invoice.total
+
+        elif invoice.status == 'COMPLETED':
+            invoice.remaining_amount = Decimal('0.00')
+            invoice.is_credit_settled = True
+
+    @staticmethod
+    def handle_cancelled_invoice(invoice, sold_products):
+        """Restaurer les stocks et annuler une facture CANCELLED."""
+
+        for product, quantity in sold_products:
+            product.quantity += quantity
+            product.save()
+
+        invoice.lines.all().delete()
+        invoice.total = Decimal('0.00')
+        invoice.remaining_amount = Decimal('0.00')
+        invoice.is_credit_settled = False
+        invoice.refund_amount = Decimal('0.00')
+
+    @staticmethod
+    def finalize_invoice(invoice):
+        """Calculer les totaux et mettre à jour les rapports."""
+
+        ReportService.calculate_invoice_totals(invoice)
+        if invoice.status != 'CANCELLED':
+            ReportService.update_sales_report(invoice)
+        invoice.save()
+
+    @staticmethod
     def process_invoice(data, user):
         """
         Handle the complete workflow for processing a sale and creating an invoice.
         """
         with transaction.atomic():
             try:
-                invoice = Invoice.objects.create(
-                    client_name=data.get('client_name'),
-                    cashier=user,
-                    tax=data.get('tax', Decimal('0.00')),
-                    status=data.get('status'),
-                    reason=data.get('reason', ''),
-                    advance_paid=data.get('advance_paid', Decimal('0.00')),
-                    due_date=data.get('due_date', ''),
-                )
-
-                total_amount = Decimal('0.00')
-
-                for line_data in data['lines']:
-                    product_id = line_data['product_id']
-                    quantity = line_data['quantity']
-
-                    try:
-                        product = Product.objects.get(id=product_id)
-                    except Product.DoesNotExist:
-                        return {
-                            'error': f"Product with ID {product_id} does not exist."
-                        }
-
-                    if not ReportService.validate_stock(product, quantity):
-                        return {
-                            'error': f"Insufficient stock for {product.name}."
-                        }
-
-                    unit_price = product.get_price()
-                    discount = line_data.get('discount', Decimal('0.00'))
-                    line_total = (unit_price * quantity) - discount
-                    total_amount += line_total
-                    invoice.lines.create(
-                        product=product,
-                        quantity=quantity,
-                        unit_price=unit_price,
-                        discount=discount,
-                        line_total=line_total,
-                    )
-
-                    ReportService.update_stock(
-                        product, quantity, user, reason='Sale transaction'
-                    )
-
-                    if product.quantity < product.min_quantity:
-                        message = (
-                            f"Low stock for {product.name} after sale. "
-                            f"Available: {product.quantity}"
-                        )
-                        users = ReportService.get_managers_and_store_keepers()
-                        for manager in users:
-                            ReportService.create_notification(
-                                user=manager,
-                                product=product,
-                                notification_type='CRITICAL_STOCK',
-                                message=message,
-                            )
+                invoice = ReportService.create_invoice(data, user)
+                total_amount, sold_products = ReportService.process_invoice_lines(
+                    invoice, data['lines'], user)
 
                 invoice.total = total_amount
                 invoice.save()
 
-                if invoice.status == 'COMPLETED' or (
-                    invoice.status == 'CREDIT'
-                    and invoice.advance_paid >= invoice.total
-                ):
-                    ReportService.calculate_invoice_totals(invoice)
-                    ReportService.update_sales_report(invoice)
+                if invoice.status in ['COMPLETED', 'CREDIT']:
+                    ReportService.handle_completed_or_credit(invoice)
+                elif invoice.status == 'CANCELLED':
+                    ReportService.handle_cancelled_invoice(invoice, sold_products)
 
+                ReportService.finalize_invoice(invoice)
                 return invoice
+
+            except ValidationError as e:
+                transaction.set_rollback(True)
+                return {'error': str(e)}
+
             except Exception as e:
+                transaction.set_rollback(True)
                 logger.error(f"Error processing invoice: {e}")
-                return {
-                    'error': f"Unexpected error in processing invoice: {str(e)}"
-                }
+                return {'error': f"Unexpected error in processing invoice: {str(e)}"}
 
     @staticmethod
     def generate_inventory_report(start_date=None, end_date=None, user=None):
