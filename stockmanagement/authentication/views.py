@@ -1,68 +1,42 @@
 from __future__ import annotations
 
+import logging
+
 from authentication.models import User
 from authentication.serializers import LoginSerializer
-from authentication.serializers import RegisterSalesAgentSerializer
-from authentication.serializers import RegisterWholesaleClientSerializer
+from authentication.serializers import RegisterUserSerializer
 from authentication.serializers import UserSerializer
 from django.contrib.auth import authenticate
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
-from rest_framework.authentication import TokenAuthentication
 from rest_framework.generics import CreateAPIView
 from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.tokens import Token
+
+logger = logging.getLogger(__name__)
 
 
-class RegisterWholesaleClientView(APIView):
+class RegisterUserView(APIView):
+
     @swagger_auto_schema(
-        request_body=RegisterWholesaleClientSerializer,
-        responses={201: RegisterWholesaleClientSerializer},
+        request_body=RegisterUserSerializer,
+        responses={201: RegisterUserSerializer},
     )
     def post(self, request):
         try:
-            serializer = RegisterWholesaleClientSerializer(data=request.data)
+            serializer = RegisterUserSerializer(data=request.data)
             if serializer.is_valid():
                 serializer.save()
-                return Response(
-                    serializer.data, status=status.HTTP_201_CREATED
-                )
-            return Response(
-                serializer.errors, status=status.HTTP_400_BAD_REQUEST
-            )
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
             return Response(
-                {'error': 'unexpected error occurred.', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-
-class RegisterSalesAgentView(APIView):
-    @swagger_auto_schema(
-        request_body=RegisterSalesAgentSerializer,
-        responses={201: RegisterSalesAgentSerializer},
-    )
-    def post(self, request):
-        try:
-            serializer = RegisterSalesAgentSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(
-                    serializer.data, status=status.HTTP_201_CREATED
-                )
-            return Response(
-                serializer.errors, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        except Exception as e:
-            return Response(
-                {'error': 'unexpected error occurred.', 'details': str(e)},
+                {'error': 'Unexpected error occurred.', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -104,7 +78,6 @@ class LoginView(APIView):
                 user = authenticate(
                     request, username=username, password=password
                 )
-                print('======', user)
                 if user is not None:
                     # Generate JWT tokens
                     refresh = RefreshToken.for_user(user)
@@ -139,27 +112,31 @@ class LogoutView(APIView):
     Logout endpoint to invalidate the user's token.
     """
 
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        auth_header = request.headers.get('Authorization')
+        refresh_token = request.data.get('refresh_token')
 
-        if not auth_header or not auth_header.startswith('Bearer '):
+        if not refresh_token:
+            auth_header = request.headers.get('Authorization')
+            if auth_header and auth_header.startswith('Bearer '):
+                refresh_token = auth_header.split(' ')[1]
+
+        if not refresh_token:
+            logger.error('No refresh_token found in request body or headers')
             return Response(
-                {'error': 'Bearer token missing or invalid'},
-                status=status.HTTP_401_UNAUTHORIZED,
+                {'error': 'Refresh token is required'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-
-        token_key = auth_header.split(' ')[1]
-
         try:
-            token = Token.objects.get(key=token_key)
-            token.delete()
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
             return Response(
-                {'message': 'Logout successful'}, status=status.HTTP_200_OK
+                {'message': 'Logout successful'}, status=status.HTTP_205_RESET_CONTENT
             )
-        except Token.DoesNotExist:
+        except Exception as e:
+            logger.error(f"Logout failed: {str(e)}")
             return Response(
-                {'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED
+                {'error': f'Invalid token:{str(e)}'}, status=status.HTTP_401_UNAUTHORIZED
             )
