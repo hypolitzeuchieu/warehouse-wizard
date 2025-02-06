@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'authentication',
     'stock',
     'reports',
+    'notifications',
 
     'rest_framework',
     'rest_framework_swagger',

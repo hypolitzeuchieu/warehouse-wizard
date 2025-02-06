@@ -29,6 +29,7 @@ urlpatterns = [
     path('v1/', include('authentication.urls')),
     path('v1/', include('stock.urls')),
     path('v1/', include('reports.urls')),
+    path('v1/', include('notifications.urls')),
     path(
         'docs/',
         schema_view.with_ui('swagger', cache_timeout=0),
