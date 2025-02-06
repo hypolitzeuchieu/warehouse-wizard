@@ -54,9 +54,9 @@ class ReportService:
 
         if product.quantity < quantity:
 
-            message = f"Stock is low for {product.name}. "
-            f"Available: {product.quantity}, Required: {quantity}"
-
+            message = (f"Stock is low for {product.name}."
+                       f"Available: {product.quantity}, Required: {quantity}")
+            print('message', message)
             users = ReportService.get_managers_and_store_keepers()
             for user in users:
                 self.notif_service.create_notification(
@@ -68,7 +68,6 @@ class ReportService:
             return False
         return True
 
-    @staticmethod
     def update_stock(self, product, quantity, user, reason):
         """
         Update stock levels after a transaction and log the stock movement.
@@ -209,7 +208,9 @@ class ReportService:
         )
 
     def process_invoice_lines(self, invoice, lines_data, user):
-        """Traiter les lignes de facture et mettre à jour les stocks."""
+        """
+        Process invoice lines and update stock.
+        """
         total_amount = Decimal('0.00')
         sold_products = []
 
