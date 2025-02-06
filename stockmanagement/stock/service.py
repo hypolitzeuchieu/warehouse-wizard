@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
+from notifications.service import NotificationService
 from reports.service import ReportService
 from rest_framework.exceptions import ValidationError
 from stock.models import Category
@@ -24,6 +25,7 @@ class StockService:
     """
 
     reports_service = ReportService()
+    notif_service = NotificationService()
 
     @staticmethod
     def create_or_update_product(
@@ -310,7 +312,7 @@ class StockService:
                         self.reports_service.get_managers_and_store_keepers()
                     )
                     for manager in users:
-                        ReportService.create_notification(
+                        self.notif_service.create_notification(
                             user=manager,
                             product=product,
                             notification_type='CRITICAL_STOCK',
@@ -423,7 +425,7 @@ class StockService:
                         self.reports_service.get_managers_and_store_keepers()
                     )
                     for manager in users:
-                        ReportService.create_notification(
+                        self.notif_service.create_notification(
                             user=manager,
                             product=stock.product,
                             notification_type='CRITICAL_STOCK',
@@ -463,7 +465,7 @@ class StockService:
                 )
 
                 for manager in users:
-                    self.reports_service.create_notification(
+                    self.notif_service.create_notification(
                         user=manager,
                         product=product,
                         notification_type='EXPIRED',
@@ -480,7 +482,7 @@ class StockService:
                     f" Expired date : {product.expiry_date}"
                 )
                 for manager in users:
-                    self.reports_service.create_notification(
+                    self.notif_service.create_notification(
                         user=manager,
                         product=product,
                         notification_type='NEAR_EXPIRY',

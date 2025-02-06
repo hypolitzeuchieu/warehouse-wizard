@@ -3,7 +3,6 @@ from __future__ import annotations
 from reports.models import InventoryReport
 from reports.models import Invoice
 from reports.models import InvoiceLine
-from reports.models import Notification
 from reports.models import Report
 from reports.models import SalesReport
 from rest_framework import serializers
@@ -85,22 +84,6 @@ class ReportSerializer(serializers.ModelSerializer):
             'generated_by_name',
             'file_path',
             'description',
-        ]
-
-
-class NotificationSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source='product.name', read_only=True)
-
-    class Meta:
-        model = Notification
-        fields = [
-            'id',
-            'product',
-            'product_name',
-            'notification_type',
-            'message',
-            'created_at',
-            'is_read',
         ]
 
 

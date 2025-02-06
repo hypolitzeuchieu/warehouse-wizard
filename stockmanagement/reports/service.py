@@ -13,9 +13,9 @@ from django.db.models import OuterRef
 from django.template.loader import get_template
 from django.utils import timezone
 from django.utils.timezone import now
+from notifications.service import NotificationService
 from reports.models import InventoryReport
 from reports.models import Invoice
-from reports.models import Notification
 from reports.models import SalesReport
 from rest_framework.exceptions import ValidationError
 from stock.models import Product
@@ -30,6 +30,7 @@ class ReportService:
     """
     Service for handling reports, invoices, and related operations.
     """
+    notif_service = NotificationService()
 
     @staticmethod
     def get_managers_and_store_keepers():
@@ -42,22 +43,7 @@ class ReportService:
             logger.error(f"Error fetching manager: {str(e)}")
             return {'error': f"An unexpected error occurred: {str(e)}"}
 
-    @staticmethod
-    def create_notification(user, product, notification_type, message):
-        try:
-            notif = Notification.objects.create(
-                user=user,
-                product=product,
-                notification_type=notification_type,
-                message=message,
-            )
-            return notif
-        except Exception as e:
-            logger.error(f"Unexpected error occurred: {str(e)}")
-            return {'error': f"Unexpected error occurred: {str(e)}"}
-
-    @staticmethod
-    def validate_stock(product, quantity):
+    def validate_stock(self, product, quantity):
         """
         Validate if sufficient stock is available for the given product and quantity.
         """
@@ -73,7 +59,7 @@ class ReportService:
 
             users = ReportService.get_managers_and_store_keepers()
             for user in users:
-                ReportService.create_notification(
+                self.notif_service.create_notification(
                     user=user,
                     product=product,
                     notification_type='CRITICAL_STOCK',
@@ -83,11 +69,11 @@ class ReportService:
         return True
 
     @staticmethod
-    def update_stock(product, quantity, user, reason):
+    def update_stock(self, product, quantity, user, reason):
         """
         Update stock levels after a transaction and log the stock movement.
         """
-        if not ReportService.validate_stock(product, quantity):
+        if not self.validate_stock(product, quantity):
             return {'error': f"Insufficient stock for {product.name}."}
 
         try:
@@ -112,7 +98,7 @@ class ReportService:
                 )
                 users = ReportService.get_managers_and_store_keepers()
                 for manager in users:
-                    ReportService.create_notification(
+                    self.notif_service.create_notification(
                         user=manager,
                         product=product,
                         notification_type='CRITICAL_STOCK',
@@ -222,8 +208,7 @@ class ReportService:
             due_date=data.get('due_date', None),
         )
 
-    @staticmethod
-    def process_invoice_lines(invoice, lines_data, user):
+    def process_invoice_lines(self, invoice, lines_data, user):
         """Traiter les lignes de facture et mettre à jour les stocks."""
         total_amount = Decimal('0.00')
         sold_products = []
@@ -237,7 +222,7 @@ class ReportService:
             except Product.DoesNotExist:
                 return {'error': f"Product with ID {product_id} does not exist."}
 
-            if not ReportService.validate_stock(product, quantity):
+            if not self.validate_stock(product, quantity):
                 return {'error': f"Insufficient stock for {product.name}."}
 
             unit_price = product.get_price()
@@ -253,7 +238,7 @@ class ReportService:
                 line_total=line_total,
             )
 
-            ReportService.update_stock(product, quantity, user, reason='Sale transaction')
+            self.update_stock(product, quantity, user, reason='Sale transaction')
             sold_products.append((product, quantity))
 
         return total_amount, sold_products
@@ -298,15 +283,14 @@ class ReportService:
             ReportService.update_sales_report(invoice)
         invoice.save()
 
-    @staticmethod
-    def process_invoice(data, user):
+    def process_invoice(self, data, user):
         """
         Handle the complete workflow for processing a sale and creating an invoice.
         """
         with transaction.atomic():
             try:
                 invoice = ReportService.create_invoice(data, user)
-                total_amount, sold_products = ReportService.process_invoice_lines(
+                total_amount, sold_products = self.process_invoice_lines(
                     invoice, data['lines'], user)
 
                 invoice.total = total_amount
@@ -342,9 +326,10 @@ class ReportService:
         if end_date < start_date:
             return {'error': 'End date cannot be earlier than start date.'}
 
-        total_products = Product.objects.count()
-        expired_products = Product.objects.filter(is_expired=True).count()
-        low_stock_products = Product.objects.filter(
+        products = Product.objects.filter(created_at__range=[start_date, end_date])
+        total_products = products.count()
+        expired_products = products.filter(is_expired=True).count()
+        low_stock_products = products.filter(
             quantity__lt=F('min_quantity')
         ).count()
 
@@ -448,15 +433,6 @@ class ReportService:
             'total_revenue': total_revenue,
             'total_invoices': total_invoices,
         }
-
-    @staticmethod
-    def get_all_notifications():
-        try:
-            notifications = Notification.objects.all()
-            return notifications
-        except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            return {'error': f"Unexpected error: {str(e)}"}
 
     @staticmethod
     def export_invoice_to_pdf(invoice_id):
