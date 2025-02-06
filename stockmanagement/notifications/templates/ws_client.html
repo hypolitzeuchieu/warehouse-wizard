@@ -1,0 +1,31 @@
+<script>
+    const socket = new WebSocket("ws://127.0.0.1:8000/ws/notifications/");
+
+    socket.onopen = function () {
+        console.log("✅ WebSocket connecté !");
+    };
+
+    socket.onmessage = function (event) {
+        console.log("🔔 Notification reçue :", event.data);
+
+        // Afficher la notification dans la page
+        const data = JSON.parse(event.data);
+        const notificationDiv = document.createElement("div");
+        notificationDiv.innerHTML = `
+            <p><strong>Type:</strong> ${data.notification_type}</p>
+            <p><strong>Message:</strong> ${data.message}</p>
+            <p><strong>Produit:</strong> ${data.product}</p>
+            <p><strong>Date:</strong> ${data.created_at}</p>
+            <hr>
+        `;
+        document.body.appendChild(notificationDiv);
+    };
+
+    socket.onerror = function (error) {
+        console.error("❌ WebSocket erreur:", error);
+    };
+
+    socket.onclose = function () {
+        console.log("❌ WebSocket déconnecté !");
+    };
+</script>
