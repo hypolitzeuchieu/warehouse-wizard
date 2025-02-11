@@ -133,7 +133,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 if not report.success:
                     return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
 
-                serializer = InventoryReportSerializer(report)
+                serializer = InventoryReportSerializer(report.data)
                 return Response(serializer.data, status.HTTP_201_CREATED)
             except Exception as e:
                 logger.error(f"Error in generate_inventory_report: {str(e)}")
@@ -238,7 +238,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 if not report.success:
                     return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
 
-                serializer = SalesReportSerializer(report)
+                serializer = SalesReportSerializer(report.data)
                 return Response(serializer.data, status.HTTP_201_CREATED)
 
             except Exception as e:
