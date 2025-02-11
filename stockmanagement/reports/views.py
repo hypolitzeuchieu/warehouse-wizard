@@ -48,14 +48,22 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 data = serializer.validated_data
                 user = request.user
-                invoice = self.service.process_invoice(data=data, user=user)
-                serializers = InvoiceSerializer(invoice)
-                return Response(serializers.data, status.HTTP_201_CREATED)
+                result = self.service.process_invoice(data=data, user=user)
+
+                if not result.success:
+                    return Response({'error': result.error}, status.HTTP_400_BAD_REQUEST)
+
+                invoice = result.data
+                serialized_invoice = InvoiceSerializer(invoice)
+                return Response(serialized_invoice.data, status.HTTP_201_CREATED)
+
             except Exception as e:
                 logger.error(f"Error in create_invoice: {str(e)}")
                 return Response(
                     {'error': invoice['error']}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+
+        logger.error(f"Invalid data provided: {serializer.errors}")
         return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
@@ -78,6 +86,12 @@ class ReportsViewSet(viewsets.ViewSet):
                 invoice_id = serializer.validated_data.get('invoice_id')
 
                 pdf_file = self.service.export_invoice_to_pdf(invoice_id)
+
+                if not pdf_file:
+                    return Response(
+                        {'error': 'Invoice not found'}, status.HTTP_404_NOT_FOUND
+                    )
+
                 response = HttpResponse(pdf_file.getvalue(), content_type='application/pdf')
                 response['Content-Disposition'] = (f'attachment; '
                                                    f'filename=invoice_{invoice_id}.pdf')
@@ -116,6 +130,9 @@ class ReportsViewSet(viewsets.ViewSet):
                 report = self.service.generate_inventory_report(
                     start_date=start_date, end_date=end_date, user=user
                 )
+                if not report.success:
+                    return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
+
                 serializer = InventoryReportSerializer(report)
                 return Response(serializer.data, status.HTTP_201_CREATED)
             except Exception as e:
@@ -145,12 +162,19 @@ class ReportsViewSet(viewsets.ViewSet):
                     start_date=start_date, end_date=end_date
                 )
 
-                return Response(inventory_data, status.HTTP_200_OK)
+                if not inventory_data.success:
+                    return Response(
+                        {'error': inventory_data.error}, status.HTTP_400_BAD_REQUEST
+                    )
+
+                return Response(inventory_data.data, status.HTTP_200_OK)
+
             except Exception as e:
                 logger.error(f"Error in get_inventory_data: {str(e)}")
                 return Response(
                     {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+        logger.error(f"Invalid data provided: {serializer.errors}")
         return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
 
     # --- Sales Report Endpoints ---
@@ -178,6 +202,10 @@ class ReportsViewSet(viewsets.ViewSet):
                 summary = self.service.get_sales_summary(
                     start_date=start_date, end_date=end_date, user=user
                 )
+                if not summary.success:
+                    return Response(
+                        {'error': summary.error}, status.HTTP_400_BAD_REQUEST
+                    )
                 return Response(summary, status=status.HTTP_200_OK)
 
             except Exception as e:
@@ -206,8 +234,13 @@ class ReportsViewSet(viewsets.ViewSet):
                 date = serializer.validated_data.get('date')
                 user = request.user
                 report = self.service.create_sales_report(date=date, user=user)
+
+                if not report.success:
+                    return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
+
                 serializer = SalesReportSerializer(report)
                 return Response(serializer.data, status.HTTP_201_CREATED)
+
             except Exception as e:
                 logger.error(f"Error in create_sales_report: {str(e)}")
                 return Response(
