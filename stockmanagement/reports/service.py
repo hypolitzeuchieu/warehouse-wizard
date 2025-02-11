@@ -26,6 +26,20 @@ from xhtml2pdf import pisa
 logger = logging.getLogger(__name__)
 
 
+class ServiceResponse:
+    def __init__(self, success, data=None, error=None):
+        self.success = success
+        self.data = data
+        self.error = error
+
+    def to_dict(self):
+        return {
+            'success': self.success,
+            'data': self.data,
+            'error': self.error
+        }
+
+
 class ReportService:
     """
     Service for handling reports, invoices, and related operations.
@@ -35,45 +49,49 @@ class ReportService:
     @staticmethod
     def get_managers_and_store_keepers():
         try:
-            manager = User.objects.filter(role__in=['stock_keeper', 'manager'])
-            if not manager:
-                raise ValidationError('No manager found.')
-            return manager
+            managers = User.objects.filter(role__in=['stock_keeper', 'manager'])
+            if not managers.exists():
+                return ServiceResponse(success=False, error='No manager found.')
+            return ServiceResponse(success=True, data=managers)
         except Exception as e:
-            logger.error(f"Error fetching manager: {str(e)}")
-            return {'error': f"An unexpected error occurred: {str(e)}"}
+            logger.error(f"Error fetching managers: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
 
     def validate_stock(self, product, quantity):
         """
         Validate if sufficient stock is available for the given product and quantity.
         """
         if quantity <= 0:
-            return {
-                'error': f"Invalid quantity: {quantity}. Quantity must be greater than 0."
-            }
+            return ServiceResponse(
+                success=False,
+                error=f"Invalid quantity: {quantity}. Quantity must be greater than 0."
+            )
 
         if product.quantity < quantity:
-
             message = (f"Stock is low for {product.name}."
                        f"Available: {product.quantity}, Required: {quantity}")
             print('message', message)
-            users = ReportService.get_managers_and_store_keepers()
-            for user in users:
+            users_response = ReportService.get_managers_and_store_keepers()
+            if not users_response.success:
+                return users_response
+
+            for user in users_response.data:
                 self.notif_service.create_notification(
                     user=user,
                     product=product,
                     notification_type='CRITICAL_STOCK',
                     message=message,
                 )
-            return False
-        return True
+            return ServiceResponse(success=False, error='Insufficient stock.')
+        return ServiceResponse(success=True)
 
     def update_stock(self, product, quantity, user, reason):
         """
         Update stock levels after a transaction and log the stock movement.
         """
-        if not self.validate_stock(product, quantity):
-            return {'error': f"Insufficient stock for {product.name}."}
+        stock_validation = self.validate_stock(product, quantity)
+        if not stock_validation.success:
+            return stock_validation
 
         try:
             product.quantity -= quantity
@@ -95,21 +113,26 @@ class ReportService:
                     f"Critical stock for {product.name}."
                     f" Available quantity : {product.quantity}"
                 )
-                users = ReportService.get_managers_and_store_keepers()
-                for manager in users:
+                users_response = ReportService.get_managers_and_store_keepers()
+                if not users_response.success:
+                    return users_response
+
+                for manager in users_response.data:
                     self.notif_service.create_notification(
                         user=manager,
                         product=product,
                         notification_type='CRITICAL_STOCK',
                         message=message,
                     )
+            return ServiceResponse(success=True)
         except Exception as e:
             logger.error(
                 f"Error updating stock for product {product.name}: {e}"
             )
-            return {
-                'error': f"Failed to update stock for product {product.name}: {str(e)}"
-            }
+            return ServiceResponse(
+                success=False,
+                error=f"Failed to update stock for product {product.name}: {str(e)}"
+            )
 
     @staticmethod
     def calculate_invoice_totals(invoice):
@@ -133,11 +156,14 @@ class ReportService:
                 invoice.remaining_amount = Decimal('0.00')
 
             invoice.save()
+            return ServiceResponse(success=True)
         except Exception as e:
             logger.error(
                 f"Error calculating invoice totals for invoice {invoice.id}: {e}"
             )
-            return {'error': f"calculating invoice totals.: {str(e)}"}
+            return ServiceResponse(
+                success=False, error=f"calculating invoice totals.: {str(e)}"
+            )
 
     @staticmethod
     def create_sales_report(date=None, user=None):
@@ -147,22 +173,25 @@ class ReportService:
         if not date:
             date = timezone.now().date()
 
-        reports = SalesReport.objects.filter(date=date)
-        if reports.exists():
-            report = reports.first()
+        try:
+            reports = SalesReport.objects.filter(date=date)
+            if reports.exists():
+                report = reports.first()
+            else:
+                report = SalesReport.objects.create(
+                    date=date,
+                    total_sales=Decimal('0.00'),
+                    total_invoices=0,
+                    generated_by=user,
+                )
+            if not report.generated_by:
+                report.generated_by = user
+                report.save()
 
-        else:
-            report = SalesReport.objects.create(
-                date=date,
-                total_sales=Decimal('0.00'),
-                total_invoices=0,
-                generated_by=user,
-            )
-        if not report.generated_by:
-            report.generated_by = user
-            report.save()
-
-        return report
+            return ServiceResponse(success=True, data=report)
+        except Exception as e:
+            logger.error(f"Error creating sales report: {e}")
+            return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
     def update_sales_report(invoice):
@@ -170,9 +199,13 @@ class ReportService:
         Update the sales report with the latest invoice data.
         """
         try:
-            report = ReportService.create_sales_report(
+            report_response = ReportService.create_sales_report(
                 invoice.created_at.date(), invoice.cashier
             )
+            if not report_response.success:
+                return report_response
+
+            report = report_response.data
             advance_paid = (
                 invoice.advance_paid
                 if invoice.advance_paid is not None
@@ -187,25 +220,32 @@ class ReportService:
                 report.total_sales += invoice.total
                 report.total_invoices += 1
                 report.save()
+            return ServiceResponse(success=True)
         except Exception as e:
             logger.error(
                 f"Error updating sales report for invoice {invoice.id}: {e}"
             )
-            return {'error': f"Error updating sales report.{str(e)}"}
+            return ServiceResponse(
+                success=False, error=f"Error updating sales report: {str(e)}"
+            )
 
     @staticmethod
     def create_invoice(data, user):
-        """create new invoice."""
-
-        return Invoice.objects.create(
-            client_name=data.get('client_name'),
-            cashier=user,
-            tax=data.get('tax', Decimal('0.00')),
-            status=data.get('status'),
-            reason=data.get('reason', ''),
-            advance_paid=data.get('advance_paid', Decimal('0.00')),
-            due_date=data.get('due_date', None),
-        )
+        """Create new invoice."""
+        try:
+            invoice = Invoice.objects.create(
+                client_name=data.get('client_name'),
+                cashier=user,
+                tax=data.get('tax', Decimal('0.00')),
+                status=data.get('status'),
+                reason=data.get('reason', ''),
+                advance_paid=data.get('advance_paid', Decimal('0.00')),
+                due_date=data.get('due_date', None),
+            )
+            return ServiceResponse(success=True, data=invoice)
+        except Exception as e:
+            logger.error(f"Error creating invoice: {e}")
+            return ServiceResponse(success=False, error=str(e))
 
     def process_invoice_lines(self, invoice, lines_data, user):
         """
@@ -221,10 +261,13 @@ class ReportService:
             try:
                 product = Product.objects.get(id=product_id)
             except Product.DoesNotExist:
-                return {'error': f"Product with ID {product_id} does not exist."}
+                return ServiceResponse(
+                    success=False, error=f"Product with ID {product_id} does not exist."
+                )
 
-            if not self.validate_stock(product, quantity):
-                return {'error': f"Insufficient stock for {product.name}."}
+            stock_validation = self.validate_stock(product, quantity)
+            if not stock_validation.success:
+                return stock_validation
 
             unit_price = product.get_price()
             discount = line_data.get('discount', Decimal('0.00'))
@@ -239,50 +282,75 @@ class ReportService:
                 line_total=line_total,
             )
 
-            self.update_stock(product, quantity, user, reason='Sale transaction')
+            stock_update_response = self.update_stock(
+                product, quantity, user, reason='Sale transaction'
+            )
+            if not stock_update_response.success:
+                return stock_update_response
+
             sold_products.append((product, quantity))
 
-        return total_amount, sold_products
+        return ServiceResponse(success=True, data=(total_amount, sold_products))
 
     @staticmethod
     def handle_completed_or_credit(invoice):
-        """Gérer les statuts COMPLETED et CREDIT."""
+        """Handle COMPLETED and CREDIT statuses."""
+        try:
+            if invoice.status == 'CREDIT':
+                invoice.remaining_amount = max(
+                    invoice.total - invoice.advance_paid, Decimal('0.00'))
 
-        if invoice.status == 'CREDIT':
-            invoice.remaining_amount = max(
-                invoice.total - invoice.advance_paid, Decimal('0.00'))
+                if invoice.advance_paid >= invoice.total:
+                    invoice.status = 'COMPLETED'
+                    invoice.is_credit_settled = True
+                    invoice.refund_amount = invoice.advance_paid - invoice.total
 
-            if invoice.advance_paid >= invoice.total:
-                invoice.status = 'COMPLETED'
+            elif invoice.status == 'COMPLETED':
+                invoice.remaining_amount = Decimal('0.00')
                 invoice.is_credit_settled = True
-                invoice.refund_amount = invoice.advance_paid - invoice.total
 
-        elif invoice.status == 'COMPLETED':
-            invoice.remaining_amount = Decimal('0.00')
-            invoice.is_credit_settled = True
+            return ServiceResponse(success=True)
+        except Exception as e:
+            logger.error(f"Error handling invoice status: {e}")
+            return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
     def handle_cancelled_invoice(invoice, sold_products):
-        """Restaurer les stocks et annuler une facture CANCELLED."""
+        """Restore stock and cancel a CANCELLED invoice."""
+        try:
+            for product, quantity in sold_products:
+                product.quantity += quantity
+                product.save()
 
-        for product, quantity in sold_products:
-            product.quantity += quantity
-            product.save()
+            invoice.lines.all().delete()
+            invoice.total = Decimal('0.00')
+            invoice.remaining_amount = Decimal('0.00')
+            invoice.is_credit_settled = False
+            invoice.refund_amount = Decimal('0.00')
 
-        invoice.lines.all().delete()
-        invoice.total = Decimal('0.00')
-        invoice.remaining_amount = Decimal('0.00')
-        invoice.is_credit_settled = False
-        invoice.refund_amount = Decimal('0.00')
+            return ServiceResponse(success=True)
+        except Exception as e:
+            logger.error(f"Error handling cancelled invoice: {e}")
+            return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
     def finalize_invoice(invoice):
-        """Calculer les totaux et mettre à jour les rapports."""
+        """Calculate totals and update reports."""
+        try:
+            totals_response = ReportService.calculate_invoice_totals(invoice)
+            if not totals_response.success:
+                return totals_response
 
-        ReportService.calculate_invoice_totals(invoice)
-        if invoice.status != 'CANCELLED':
-            ReportService.update_sales_report(invoice)
-        invoice.save()
+            if invoice.status != 'CANCELLED':
+                report_response = ReportService.update_sales_report(invoice)
+                if not report_response.success:
+                    return report_response
+
+            invoice.save()
+            return ServiceResponse(success=True)
+        except Exception as e:
+            logger.error(f"Error finalizing invoice: {e}")
+            return ServiceResponse(success=False, error=str(e))
 
     def process_invoice(self, data, user):
         """
@@ -290,150 +358,190 @@ class ReportService:
         """
         with transaction.atomic():
             try:
-                invoice = ReportService.create_invoice(data, user)
-                total_amount, sold_products = self.process_invoice_lines(
-                    invoice, data['lines'], user)
+                invoice_response = ReportService.create_invoice(data, user)
+                if not invoice_response.success:
+                    return invoice_response
 
+                invoice = invoice_response.data
+                lines_response = self.process_invoice_lines(invoice, data['lines'], user)
+                if not lines_response.success:
+                    transaction.set_rollback(True)
+                    return lines_response
+
+                total_amount, sold_products = lines_response.data
                 invoice.total = total_amount
                 invoice.save()
 
                 if invoice.status in ['COMPLETED', 'CREDIT']:
-                    ReportService.handle_completed_or_credit(invoice)
+                    status_response = ReportService.handle_completed_or_credit(invoice)
+                    if not status_response.success:
+                        transaction.set_rollback(True)
+                        return status_response
                 elif invoice.status == 'CANCELLED':
-                    ReportService.handle_cancelled_invoice(invoice, sold_products)
+                    cancel_response = ReportService.handle_cancelled_invoice(
+                        invoice, sold_products
+                    )
+                    if not cancel_response.success:
+                        transaction.set_rollback(True)
+                        return cancel_response
 
-                ReportService.finalize_invoice(invoice)
-                return invoice
+                finalize_response = ReportService.finalize_invoice(invoice)
+                if not finalize_response.success:
+                    transaction.set_rollback(True)
+                    return finalize_response
+
+                return ServiceResponse(success=True, data=invoice)
 
             except ValidationError as e:
                 transaction.set_rollback(True)
-                return {'error': str(e)}
+                return ServiceResponse(success=False, error=str(e))
 
             except Exception as e:
                 transaction.set_rollback(True)
                 logger.error(f"Error processing invoice: {e}")
-                return {'error': f"Unexpected error in processing invoice: {str(e)}"}
+                return ServiceResponse(
+                    success=False, error=f"Unexpected error in processing invoice: {str(e)}"
+                )
 
     @staticmethod
     def generate_inventory_report(start_date=None, end_date=None, user=None):
         """
         Generate a detailed inventory report with optional date filters.
         """
-        if not start_date:
-            start_date = now() - timedelta(days=30)
-        if not end_date:
-            end_date = now()
+        try:
+            if not start_date:
+                start_date = now() - timedelta(days=30)
+            if not end_date:
+                end_date = now()
 
-        if end_date < start_date:
-            return {'error': 'End date cannot be earlier than start date.'}
+            if end_date < start_date:
+                return ServiceResponse(
+                    success=False, error='End date cannot be earlier than start date.'
+                )
 
-        products = Product.objects.filter(created_at__range=[start_date, end_date])
-        total_products = products.count()
-        expired_products = products.filter(is_expired=True).count()
-        low_stock_products = products.filter(
-            quantity__lt=F('min_quantity')
-        ).count()
+            products = Product.objects.filter(created_at__range=[start_date, end_date])
+            total_products = products.count()
+            expired_products = products.filter(is_expired=True).count()
+            low_stock_products = products.filter(
+                quantity__lt=F('min_quantity')
+            ).count()
 
-        report = InventoryReport.objects.create(
-            generated_by=user,
-            total_products=total_products,
-            expired_products=expired_products,
-            low_stock_products=low_stock_products,
-            date_range=f"{start_date.date()} to {end_date.date()}",
-        )
+            report = InventoryReport.objects.create(
+                generated_by=user,
+                total_products=total_products,
+                expired_products=expired_products,
+                low_stock_products=low_stock_products,
+                date_range=f"{start_date.date()} to {end_date.date()}",
+            )
 
-        logger.info(f"Inventory report generated by {user}.")
-        return report
+            logger.info(f"Inventory report generated by {user}.")
+            return ServiceResponse(success=True, data=report)
+
+        except Exception as e:
+            logger.error(f"Error generating inventory report: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
     def get_inventory_data(start_date=None, end_date=None):
         """
         Generate data for inventory levels within a specific date range.
         """
+        try:
+            if not start_date:
+                start_date = now() - timedelta(days=30)
+            if not end_date:
+                end_date = now()
 
-        if not start_date:
-            start_date = now() - timedelta(days=30)
-        if not end_date:
-            end_date = now()
-
-        if end_date < start_date:
-            return {'error': 'End date cannot be earlier than start date.'}
-
-        products = Product.objects.filter(
-            Exists(
-                Stock.objects.filter(
-                    product=OuterRef('pk'),
-                    created_at__range=[start_date, end_date],
-                )
-            )
-        ).prefetch_related('stocks')
-
-        inventory_data = []
-        for product in products:
-            stocks_in_range = product.stocks.filter(
-                created_at__range=[start_date, end_date]
-            )
-
-            for stock in stocks_in_range:
-                inventory_data.append(
-                    {
-                        'product_name': product.name,
-                        'category': product.category.name,
-                        'subcategory': (
-                            product.subcategory.name
-                            if product.subcategory
-                            else None
-                        ),
-                        'unit_price': product.unit_price,
-                        'created_at': stock.product.created_at,
-                        'expiry_date': product.expiry_date,
-                        'is_expired': product.is_expired,
-                        'quantity': stock.product.quantity,
-                        'min_quantity': product.min_quantity,
-                        'is_critical': stock.product.quantity
-                        < product.min_quantity,
-                    }
+            if end_date < start_date:
+                return ServiceResponse(
+                    success=False, error='End date cannot be earlier than start date.'
                 )
 
-        logger.info(
-            f"Inventory data generated for range: {start_date} to {end_date}."
-        )
-        return inventory_data
+            products = Product.objects.filter(
+                Exists(
+                    Stock.objects.filter(
+                        product=OuterRef('pk'),
+                        created_at__range=[start_date, end_date],
+                    )
+                )
+            ).prefetch_related('stocks')
+
+            inventory_data = []
+            for product in products:
+                stocks_in_range = product.stocks.filter(
+                    created_at__range=[start_date, end_date]
+                )
+
+                for stock in stocks_in_range:
+                    inventory_data.append(
+                        {
+                            'product_name': product.name,
+                            'category': product.category.name,
+                            'subcategory': (
+                                product.subcategory.name
+                                if product.subcategory
+                                else None
+                            ),
+                            'unit_price': product.unit_price,
+                            'created_at': stock.product.created_at,
+                            'expiry_date': product.expiry_date,
+                            'is_expired': product.is_expired,
+                            'quantity': stock.product.quantity,
+                            'min_quantity': product.min_quantity,
+                            'is_critical': stock.product.quantity < product.min_quantity,
+                        }
+                    )
+
+            logger.info(
+                f"Inventory data generated for range: {start_date} to {end_date}."
+            )
+            return ServiceResponse(success=True, data=inventory_data)
+
+        except Exception as e:
+            logger.error(f"Error generating inventory data: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
     def get_sales_summary(start_date=None, end_date=None, user=None):
         """
         Get a summary of sales for a given period.
         """
-        if not start_date:
-            start_date = now() - timedelta(days=30)
-        if not end_date:
-            end_date = now()
+        try:
+            if not start_date:
+                start_date = now() - timedelta(days=30)
+            if not end_date:
+                end_date = now()
 
-        if end_date < start_date:
-            return {'error': 'End date cannot be earlier than start date.'}
+            if end_date < start_date:
+                return ServiceResponse(
+                    success=False, error='End date cannot be earlier than start date.'
+                )
 
-        invoices = Invoice.objects.filter(
-            created_at__range=(start_date, end_date)
-        )
+            invoices = Invoice.objects.filter(
+                created_at__range=(start_date, end_date)
+            )
 
-        if user:
-            invoices = invoices.filter(cashier=user)
+            if user:
+                invoices = invoices.filter(cashier=user)
 
-        total_revenue = Decimal('0.00')
-        total_invoices = invoices.count()
+            total_revenue = Decimal('0.00')
+            total_invoices = invoices.count()
 
-        for invoice in invoices:
-            total_revenue += invoice.total
+            for invoice in invoices:
+                total_revenue += invoice.total
 
-        logger.info(
-            f"Sales summary retrieved for period {start_date} to {end_date}."
-        )
+            logger.info(
+                f"Sales summary retrieved for period {start_date} to {end_date}."
+            )
 
-        return {
-            'total_revenue': total_revenue,
-            'total_invoices': total_invoices,
-        }
+            return ServiceResponse(success=True, data={
+                'total_revenue': total_revenue,
+                'total_invoices': total_invoices,
+            })
+
+        except Exception as e:
+            logger.error(f"Error generating sales summary: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
     def export_invoice_to_pdf(invoice_id):
@@ -457,17 +565,21 @@ class ReportService:
                 logger.error(
                     f"Failed to generate PDF for invoice {invoice_id}."
                 )
-                raise {'error': 'Failed to generate PDF.'}
+                return ServiceResponse(success=False, error='Failed to generate PDF.')
 
             pdf_buffer.seek(0)
             logger.info(
                 f"PDF generated successfully for invoice {invoice_id}."
             )
-            return pdf_buffer
+            return ServiceResponse(success=True, data=pdf_buffer)
 
         except Invoice.DoesNotExist:
             logger.error(f"Invoice with ID {invoice_id} does not exist.")
-            raise {'error': f"Invoice with ID {invoice_id} does not exist."}
+            return ServiceResponse(
+                success=False, error=f"Invoice with ID {invoice_id} does not exist."
+            )
         except Exception as e:
             logger.error(f"Error in export_invoice_to_pdf: {str(e)}")
-            raise {'error': f"An unexpected error occurred: {str(e)}"}
+            return ServiceResponse(
+                success=False, error=f"An unexpected error occurred: {str(e)}"
+            )
