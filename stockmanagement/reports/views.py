@@ -206,7 +206,7 @@ class ReportsViewSet(viewsets.ViewSet):
                     return Response(
                         {'error': summary.error}, status.HTTP_400_BAD_REQUEST
                     )
-                return Response(summary, status=status.HTTP_200_OK)
+                return Response(summary.data, status=status.HTTP_200_OK)
 
             except Exception as e:
                 logger.error(f"Error in get_sales_summary: {str(e)}")
