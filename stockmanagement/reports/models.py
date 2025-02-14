@@ -161,3 +161,52 @@ class SalesReport(models.Model):
 
     def __str__(self):
         return f"Sales Report - {self.date}"
+
+
+class InvoiceArchive(models.Model):
+    STATUS_CHOICES = [
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+        ('CREDIT', 'Credit'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    number = models.PositiveIntegerField(unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    client_name = models.CharField(max_length=100, blank=True, null=True)
+    cashier = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='archived_invoices'
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    tax = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    reason = models.TextField(blank=True, null=True)
+    refund_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
+    advance_paid = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
+    _remaining_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00
+    )
+    due_date = models.DateField(blank=True, null=True)
+    is_credit_settled = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Archived Invoice'
+        verbose_name_plural = 'Archived Invoices'
+
+    def __str__(self):
+        return f"Invoice {self.number} - {self.status}"
+
+    @property
+    def remaining_amount(self):
+        if self.status == 'CREDIT':
+            return max(self.total - self.advance_paid, Decimal('0.00'))
+        return Decimal('0.00')
+
+    @remaining_amount.setter
+    def remaining_amount(self, value):
+        self._remaining_amount = value

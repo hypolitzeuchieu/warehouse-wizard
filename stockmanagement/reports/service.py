@@ -16,6 +16,7 @@ from django.utils.timezone import now
 from notifications.service import NotificationService
 from reports.models import InventoryReport
 from reports.models import Invoice
+from reports.models import InvoiceArchive
 from reports.models import SalesReport
 from rest_framework.exceptions import ValidationError
 from stock.models import Product
@@ -665,4 +666,42 @@ class ReportService:
             logger.error(f"Payment processing failed for invoice ID {invoice_id}: {str(e)}")
             return ServiceResponse(
                 success=False, error='An error occurred while processing the payment.'
+            )
+
+    @staticmethod
+    def archive_and_delete_invoice(invoice_id):
+        try:
+            with transaction.atomic():
+                invoice = Invoice.objects.get(id=invoice_id)
+                # Crée une nouvelle instance d'InvoiceArchive avec les mêmes données
+                archived_invoice = InvoiceArchive(
+                    id=invoice.id,
+                    number=invoice.number,
+                    created_at=invoice.created_at,
+                    client_name=invoice.client_name,
+                    cashier=invoice.cashier,
+                    status=invoice.status,
+                    total=invoice.total,
+                    tax=invoice.tax,
+                    reason=invoice.reason,
+                    refund_amount=invoice.refund_amount,
+                    advance_paid=invoice.advance_paid,
+                    _remaining_amount=invoice._remaining_amount,
+                    due_date=invoice.due_date,
+                    is_credit_settled=invoice.is_credit_settled,
+                )
+                archived_invoice.save()
+                # Supprime la facture de la table principale
+                invoice.delete()
+                return ServiceResponse(
+                    success=True, data={invoice: f'Invoice {invoice_id} archived and deleted.'}
+                )
+        except Invoice.DoesNotExist:
+            # Gérer le cas où la facture n'existe pas
+            logger.error(f"Invoice with ID {invoice_id} does not exist.")
+            return ServiceResponse(success=False, error='Invoice not found.')
+        except Exception as e:
+            logger.error(f"Error archiving invoice: {str(e)}")
+            return ServiceResponse(
+                success=False, error='An error occurred while archiving the invoice.'
             )

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 
+from authentication.permissions import IsManagerPermission
 from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
+from reports.models import InvoiceArchive
 from reports.serializers import CreateInvoiceSerializer
 from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InventoryReportSerializer
@@ -16,6 +18,7 @@ from reports.service import ReportService
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 
@@ -280,6 +283,108 @@ class ReportsViewSet(viewsets.ViewSet):
 
             except Exception as e:
                 logger.error(f"Error in pay_debt: {str(e)}")
+                return Response(
+                    {'error': 'An internal error occurred.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        request_body=InvoiceQuerySerializer,
+        operation_description='Archive an invoice.',
+        responses={
+            200: 'Invoice archived successfully.',
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error'
+        },
+    )
+    @action(methods=['POST'], detail=False, url_path='archive-invoice')
+    def archive_invoice(self, request):
+        """
+        Archive an invoice.
+        """
+        serializer = InvoiceQuerySerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                invoice_id = serializer.validated_data.get('invoice_id')
+
+                response = self.service.archive_and_delete_invoice(invoice_id=invoice_id)
+
+                if not response.success:
+                    return Response(
+                        {'error': response.error}, status=status.HTTP_400_BAD_REQUEST
+                    )
+                logger.info(f"Invoice archived successfully for invoice {invoice_id}.")
+                return Response(response.data, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Error in archive_invoice: {str(e)}")
+                return Response(
+                    {'error': 'An internal error occurred.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ArchiveInvoiceVieSet(viewsets.ViewSet):
+    """
+        ViewSet for handling reports, invoices, and related operations.
+    """
+    permission_classes = [IsAuthenticated, IsManagerPermission]
+
+    @swagger_auto_schema(
+        operation_description='Retrieve Archive invoice',
+        responses={
+            200: 'Invoice retrieve successfully.',
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='all-archive-invoice')
+    def get_all_archives_invoices(self, request):
+        """
+        Retrieve Archive invoice
+        """
+        try:
+            invoice = InvoiceArchive.objects.all()
+            serializer = InvoiceSerializer(invoice, many=True)
+            logger.info('Invoice retrieve successfully.')
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error in archive_invoice: {str(e)}")
+            return Response(
+                {'error': 'An internal error occurred.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        query_serializer=InvoiceQuerySerializer,
+        operation_description='Retrieve Archive invoice by id',
+        responses={
+            200: 'Invoice retrieve successfully.',
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='archive-invoice-by-id')
+    def get_archive_invoice_by_id(self, request):
+        """
+        Retrieve Archive invoice by id
+        """
+        serializer = InvoiceQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            try:
+                invoice_id = serializer.validated_data.get('invoice_id')
+                invoice = InvoiceArchive.objects.filter(id=invoice_id).first()
+                serializer = InvoiceSerializer(invoice)
+                logger.info('Invoice retrieve successfully.')
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Error in archive_invoice: {str(e)}")
                 return Response(
                     {'error': 'An internal error occurred.'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
