@@ -9,6 +9,7 @@ from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InventoryReportSerializer
 from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
+from reports.serializers import PayDebtSerializer
 from reports.serializers import SalesReportSerializer
 from reports.serializers import SalesSummaryQuerySerializer
 from reports.service import ReportService
@@ -247,3 +248,41 @@ class ReportsViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        request_body=PayDebtSerializer,
+        operation_description='Process a payment for an outstanding invoice.',
+        responses={
+            200: 'Payment processed successfully.',
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error'
+        },
+    )
+    @action(methods=['POST'], detail=False, url_path='pay-debt')
+    def pay_debt(self, request):
+        """
+        Process a payment for an outstanding invoice.
+        """
+        serializer = PayDebtSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                invoice_id = serializer.validated_data.get('invoice_id')
+                amount = serializer.validated_data.get('amount')
+
+                response = self.service.pay_debt(invoice_id=invoice_id, amount=amount)
+
+                if not response.success:
+                    return Response(
+                        {'error': response.error}, status=status.HTTP_400_BAD_REQUEST
+                    )
+                logger.info(f"Payment processed successfully for invoice {invoice_id}.")
+                return Response(response.data, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Error in pay_debt: {str(e)}")
+                return Response(
+                    {'error': 'An internal error occurred.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
