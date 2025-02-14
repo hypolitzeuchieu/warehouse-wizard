@@ -366,7 +366,6 @@ class ReportService:
                 invoice = invoice_response.data
                 lines_response = self.process_invoice_lines(invoice, data['lines'], user)
                 if not lines_response.success:
-                    transaction.set_rollback(True)
                     return lines_response
 
                 total_amount, sold_products = lines_response.data
