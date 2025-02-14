@@ -133,3 +133,7 @@ class StockMovementSerializer(serializers.ModelSerializer):
             'user',
             'created_at',
         ]
+
+
+class ProductDetailSerializer(serializers.Serializer):
+    product_id = serializers.CharField(required=True)

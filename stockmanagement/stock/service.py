@@ -502,3 +502,21 @@ class StockService:
             raise ValidationError(
                 {'error': f"An unexpected error occurred: {str(e)}"}
             )
+
+    @staticmethod
+    def get_product_detail(product_id: str):
+        """
+        Get a product by its ID.
+        """
+        try:
+            product = Product.objects.get(id=product_id)
+            logger.info(f"Retrieved product: {product.name}")
+            return product
+        except Product.DoesNotExist:
+            logger.error(f"Product with ID {product_id} not found.")
+            raise ValidationError(f"Product with ID {product_id} not found.")
+        except Exception as e:
+            logger.error(f"Error in get_product_detail: {str(e)}")
+            raise ValidationError(
+                {'error': f"An unexpected error occurred: {str(e)}"}
+            )

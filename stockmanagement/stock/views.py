@@ -14,6 +14,7 @@ from stock.models import SubCategory
 from stock.serializers import CategorySerializer
 from stock.serializers import GetProductCategorySerializer
 from stock.serializers import GetProductSubCategorySerializer
+from stock.serializers import ProductDetailSerializer
 from stock.serializers import ProductSerializer
 from stock.serializers import QuantitySerializer
 from stock.serializers import StockMovementSerializer
@@ -417,4 +418,39 @@ class StockViewSet(viewsets.ViewSet):
                 )
 
         logger.error(f"Invalid subcategory data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        query_serializer=ProductDetailSerializer,
+        operation_description='Retrieve the product by id.',
+        responses={
+            200: ProductSerializer,
+            404: 'Product not found',
+            400: 'Bad Request',
+            500: 'Internal Server Error'
+        },
+    )
+    @action(methods=['GET'], detail=False, url_path='product/detail')
+    def get_product_detail(self, request):
+        """
+        Retrieve the product by id.
+        """
+        serializer = ProductDetailSerializer(data=request.query_params)
+        if serializer.is_valid():
+            product_id = serializer.validated_data.get('product_id')
+            try:
+                product = self.service.get_product_detail(product_id)
+                if product:
+                    return Response(
+                        ProductSerializer(product).data, status=status.HTTP_200_OK
+                    )
+                return Response(
+                    {'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid product_id data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
