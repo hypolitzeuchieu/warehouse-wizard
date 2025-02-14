@@ -583,3 +583,86 @@ class ReportService:
             return ServiceResponse(
                 success=False, error=f"An unexpected error occurred: {str(e)}"
             )
+
+    @staticmethod
+    def pay_debt(invoice_id: str, amount: float) -> ServiceResponse:
+        """
+        Process payment for an outstanding invoice marked as "CREDIT".
+        """
+        try:
+            invoice = Invoice.objects.get(id=invoice_id)
+        except Invoice.DoesNotExist:
+            logger.error(
+                f"Attempted payment on non-existent invoice (ID: {invoice_id})"
+            )
+            return ServiceResponse(success=False, error='Invoice not found.')
+
+        if invoice.status != 'CREDIT':
+            logger.error(f"Payment attempt on non-credit invoice (ID: {invoice_id})")
+            return ServiceResponse(
+                success=False, error='Only invoices with CREDIT status can be paid.'
+            )
+
+        if amount <= 0:
+            logger.error(f"Invalid payment amount: {amount} for invoice ID {invoice_id}")
+            return ServiceResponse(
+                success=False, error='The payment amount must be greater than zero.'
+            )
+
+        remaining_debt = invoice.total - invoice.advance_paid
+
+        if remaining_debt <= 0:
+            logger.info(f"Invoice ID {invoice_id} is already fully paid.")
+            return ServiceResponse(
+                success=False, error='This invoice is already fully paid.'
+            )
+
+        try:
+            with transaction.atomic():
+                invoice.advance_paid += amount
+                refund_amount = 0
+
+                if invoice.advance_paid >= invoice.total:
+                    refund_amount = invoice.advance_paid - invoice.total
+                    invoice.advance_paid = invoice.total
+                    invoice.remaining_amount = 0
+                    invoice.refund_amount = refund_amount
+                    invoice.is_credit_settled = True
+                    invoice.status = 'COMPLETED'
+
+                invoice.save()
+
+            if refund_amount > 0:
+                logger.info(
+                    f"Overpayment detected for invoice ID {invoice_id}."
+                    f" Refund amount: {refund_amount}."
+                )
+                return ServiceResponse(
+                    success=True,
+                    data={
+                        'message': 'Payment processed successfully.',
+                        'advance_paid': amount,
+                        'refund_amount': refund_amount,
+                        'remaining_amount': 0,
+                        'invoice_id': invoice_id,
+                        'status': invoice.status
+                    }
+                )
+            logger.info(
+                f"Payment of {amount} successfully applied to invoice ID {invoice_id}."
+            )
+            return ServiceResponse(
+                success=True,
+                data={
+                    'message': 'Payment processed successfully.',
+                    'refund_amount': refund_amount,
+                    'invoice_id': invoice_id,
+                    'status': invoice.status
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Payment processing failed for invoice ID {invoice_id}: {str(e)}")
+            return ServiceResponse(
+                success=False, error='An error occurred while processing the payment.'
+            )
