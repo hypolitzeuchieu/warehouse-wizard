@@ -184,3 +184,10 @@ class InventoryQuerySerializer(serializers.Serializer):
 
 class InvoiceQuerySerializer(serializers.Serializer):
     invoice_id = serializers.CharField(required=True)
+
+
+class PayDebtSerializer(serializers.Serializer):
+    invoice_id = serializers.CharField(required=True)
+    amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True
+    )
