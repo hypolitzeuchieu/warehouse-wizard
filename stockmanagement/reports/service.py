@@ -704,3 +704,45 @@ class ReportService:
             return ServiceResponse(
                 success=False, error='An error occurred while archiving the invoice.'
             )
+
+    @staticmethod
+    def get_archives_invoices(start_date=None, end_date=None):
+        """
+        Get a list of archived invoices within a specific date range.
+        """
+        try:
+            if not start_date:
+                start_date = now() - timedelta(days=30)
+            if not end_date:
+                end_date = now()
+
+            invoices = InvoiceArchive.objects.filter(
+                created_at__range=(start_date, end_date)
+            ).order_by('-created_at')
+
+            return ServiceResponse(success=True, data=invoices)
+
+        except Exception as e:
+            logger.error(f"Error fetching invoices: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
+
+    @staticmethod
+    def get_invoices(start_date=None, end_date=None):
+        """
+        Get a list of invoices within a specific date range.
+        """
+        try:
+            if not start_date:
+                start_date = now() - timedelta(days=30)
+            if not end_date:
+                end_date = now()
+
+            invoices = Invoice.objects.filter(
+                created_at__range=(start_date, end_date)
+            ).order_by('-created_at')
+
+            return ServiceResponse(success=True, data=invoices)
+
+        except Exception as e:
+            logger.error(f"Error fetching invoices: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
