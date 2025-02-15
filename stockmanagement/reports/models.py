@@ -172,6 +172,7 @@ class InvoiceArchive(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     number = models.PositiveIntegerField(unique=True, editable=False)
+    invoice_id = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     client_name = models.CharField(max_length=100, blank=True, null=True)
     cashier = models.ForeignKey(
@@ -210,3 +211,24 @@ class InvoiceArchive(models.Model):
     @remaining_amount.setter
     def remaining_amount(self, value):
         self._remaining_amount = value
+
+
+class InvoiceArchiveLine(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    invoice = models.ForeignKey(
+        InvoiceArchive, on_delete=models.CASCADE, related_name='lines'
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='archived_invoice_lines'
+    )
+    quantity = models.PositiveIntegerField()
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    discount = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    line_total = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        verbose_name = 'Archived Invoice Line'
+        verbose_name_plural = 'Archived Invoice Lines'
+
+    def __str__(self):
+        return f"{self.product.name} (x{self.quantity})"

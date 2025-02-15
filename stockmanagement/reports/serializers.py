@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from reports.models import InventoryReport
 from reports.models import Invoice
+from reports.models import InvoiceArchive
+from reports.models import InvoiceArchiveLine
 from reports.models import InvoiceLine
 from reports.models import Report
 from reports.models import SalesReport
@@ -191,3 +193,26 @@ class PayDebtSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=True
     )
+
+
+class InvoiceArchiveLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.name', read_only=True)
+
+    class Meta:
+        model = InvoiceArchiveLine
+        fields = '__all__'
+
+
+class InvoiceArchiveSerializer(serializers.ModelSerializer):
+    lines = InvoiceArchiveLineSerializer(many=True, read_only=True)
+    cashier_name = serializers.CharField(
+        source='cashier.username', read_only=True
+    )
+
+    class Meta:
+        model = InvoiceArchive
+        fields = [
+            'id', 'number', 'created_at', 'client_name', 'cashier', 'cashier_name',
+            'status', 'total', 'tax', 'advance_paid', 'remaining_amount',
+            'refund_amount', 'due_date', 'is_credit_settled', 'lines'
+        ]

@@ -17,6 +17,7 @@ from notifications.service import NotificationService
 from reports.models import InventoryReport
 from reports.models import Invoice
 from reports.models import InvoiceArchive
+from reports.models import InvoiceArchiveLine
 from reports.models import SalesReport
 from rest_framework.exceptions import ValidationError
 from stock.models import Product
@@ -671,10 +672,15 @@ class ReportService:
     def archive_and_delete_invoice(invoice_id):
         try:
             with transaction.atomic():
-                invoice = Invoice.objects.get(id=invoice_id)
-                # Crée une nouvelle instance d'InvoiceArchive avec les mêmes données
+                # Récupérer la facture
+                invoice = Invoice.objects.filter(id=invoice_id).first()
+                if not invoice:
+                    logger.error(f"Invoice with ID {invoice_id} does not exist.")
+                    return ServiceResponse(success=False, error='Invoice not found.')
+
+                # Créer une nouvelle instance d'InvoiceArchive avec les mêmes données
                 archived_invoice = InvoiceArchive(
-                    id=invoice.id,
+                    invoice_id=str(invoice.id),  # Convertir UUID en chaîne
                     number=invoice.number,
                     created_at=invoice.created_at,
                     client_name=invoice.client_name,
@@ -690,19 +696,31 @@ class ReportService:
                     is_credit_settled=invoice.is_credit_settled,
                 )
                 archived_invoice.save()
-                # Supprime la facture de la table principale
+
+                # Archiver les lignes de facture
+                for line in invoice.lines.all():
+                    InvoiceArchiveLine.objects.create(
+                        invoice=archived_invoice,
+                        product=line.product,
+                        quantity=line.quantity,
+                        unit_price=line.unit_price,
+                        discount=line.discount,
+                        line_total=line.line_total,
+                    )
+
+                # Supprimer la facture de la table principale
                 invoice.delete()
+
+                # Retourner une réponse réussie
                 return ServiceResponse(
-                    success=True, data={invoice: f'Invoice {invoice_id} archived and deleted.'}
+                    success=True,
+                    data={'message': f'Invoice {invoice_id} archived and deleted.'}
                 )
-        except Invoice.DoesNotExist:
-            # Gérer le cas où la facture n'existe pas
-            logger.error(f"Invoice with ID {invoice_id} does not exist.")
-            return ServiceResponse(success=False, error='Invoice not found.')
         except Exception as e:
-            logger.error(f"Error archiving invoice: {str(e)}")
+            logger.error(f"Error archiving invoice: {str(e)}", exc_info=True)
             return ServiceResponse(
-                success=False, error='An error occurred while archiving the invoice.'
+                success=False,
+                error=f'An error occurred while archiving the invoice: {str(e)}'
             )
 
     @staticmethod
