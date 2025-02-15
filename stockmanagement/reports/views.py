@@ -24,13 +24,13 @@ from rest_framework.response import Response
 
 logger = logging.getLogger(__name__)
 
+service = ReportService()
+
 
 class ReportsViewSet(viewsets.ViewSet):
     """
     ViewSet for handling reports, invoices, and related operations.
     """
-
-    service = ReportService()
 
     # --- Invoice Endpoints ---
     @swagger_auto_schema(
@@ -52,7 +52,7 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 data = serializer.validated_data
                 user = request.user
-                result = self.service.process_invoice(data=data, user=user)
+                result = service.process_invoice(data=data, user=user)
 
                 if not result.success:
                     return Response({'error': result.error}, status.HTTP_400_BAD_REQUEST)
@@ -89,7 +89,7 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 invoice_id = serializer.validated_data.get('invoice_id')
 
-                pdf_file = self.service.export_invoice_to_pdf(invoice_id)
+                pdf_file = service.export_invoice_to_pdf(invoice_id)
 
                 if not pdf_file:
                     return Response(
@@ -131,7 +131,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 start_date = serializer.validated_data.get('start_date')
                 end_date = serializer.validated_data.get('end_date')
                 user = request.user
-                report = self.service.generate_inventory_report(
+                report = service.generate_inventory_report(
                     start_date=start_date, end_date=end_date, user=user
                 )
                 if not report.success:
@@ -162,7 +162,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 start_date = serializer.validated_data.get('start_date')
                 end_date = serializer.validated_data.get('end_date')
 
-                inventory_data = self.service.get_inventory_data(
+                inventory_data = service.get_inventory_data(
                     start_date=start_date, end_date=end_date
                 )
 
@@ -203,7 +203,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 end_date = serializer.validated_data.get('end_date')
 
                 user = request.user
-                summary = self.service.get_sales_summary(
+                summary = service.get_sales_summary(
                     start_date=start_date, end_date=end_date, user=user
                 )
                 if not summary.success:
@@ -237,7 +237,7 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 date = serializer.validated_data.get('date')
                 user = request.user
-                report = self.service.create_sales_report(date=date, user=user)
+                report = service.create_sales_report(date=date, user=user)
 
                 if not report.success:
                     return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
@@ -272,7 +272,7 @@ class ReportsViewSet(viewsets.ViewSet):
                 invoice_id = serializer.validated_data.get('invoice_id')
                 amount = serializer.validated_data.get('amount')
 
-                response = self.service.pay_debt(invoice_id=invoice_id, amount=amount)
+                response = service.pay_debt(invoice_id=invoice_id, amount=amount)
 
                 if not response.success:
                     return Response(
@@ -309,7 +309,7 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 invoice_id = serializer.validated_data.get('invoice_id')
 
-                response = self.service.archive_and_delete_invoice(invoice_id=invoice_id)
+                response = service.archive_and_delete_invoice(invoice_id=invoice_id)
 
                 if not response.success:
                     return Response(
@@ -327,6 +327,42 @@ class ReportsViewSet(viewsets.ViewSet):
         logger.error(f"Invalid data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @swagger_auto_schema(
+        query_serializer=InventoryQuerySerializer,
+        operation_description='Retrieve all invoices.',
+        responses={
+            200: InvoiceSerializer,
+            400: 'Bad Request',
+            500: 'Internal Server Error'
+        },
+    )
+    @action(methods=['GET'], detail=False, url_path='invoices')
+    def get_invoices(self, request):
+        """
+        Retrieve all invoices.
+        """
+        serializer = InventoryQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            start_date = serializer.validated_data.get('start_date')
+            end_date = serializer.validated_data.get('end_date')
+            try:
+                invoices = service.get_invoices(
+                    start_date=start_date, end_date=end_date
+                )
+                if not invoices.success:
+                    return Response(
+                        {'error': invoices.error}, status=status.HTTP_400_BAD_REQUEST
+                    )
+                serializer = InvoiceSerializer(invoices, many=True)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class ArchiveInvoiceVieSet(viewsets.ViewSet):
     """
@@ -335,6 +371,7 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, IsManagerPermission]
 
     @swagger_auto_schema(
+        query_serializer=InventoryQuerySerializer,
         operation_description='Retrieve Archive invoice',
         responses={
             200: 'Invoice retrieve successfully.',
@@ -343,22 +380,35 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
         }
     )
     @action(methods=['GET'], detail=False, url_path='all-archive-invoice')
-    def get_all_archives_invoices(self, request):
+    def get_archives_invoices(self, request):
         """
         Retrieve Archive invoice
         """
-        try:
-            invoice = InvoiceArchive.objects.all()
-            serializer = InvoiceSerializer(invoice, many=True)
-            logger.info('Invoice retrieve successfully.')
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        serializer = InventoryQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            try:
+                start_date = serializer.validated_data.get('start_date')
+                end_date = serializer.validated_data.get('end_date')
+                invoices = InvoiceArchive.objects.filter(
+                    created_at__range=(start_date, end_date)
+                )
+                if not invoices.success:
+                    return Response(
+                        {'error': invoices.error},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                serializer = InvoiceSerializer(invoices, many=True)
+                logger.info('Invoice retrieve successfully.')
+                return Response(serializer.data, status=status.HTTP_200_OK)
 
-        except Exception as e:
-            logger.error(f"Error in archive_invoice: {str(e)}")
-            return Response(
-                {'error': 'An internal error occurred.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            except Exception as e:
+                logger.error(f"Error in archive_invoice: {str(e)}")
+                return Response(
+                    {'error': 'An internal error occurred.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=InvoiceQuerySerializer,
