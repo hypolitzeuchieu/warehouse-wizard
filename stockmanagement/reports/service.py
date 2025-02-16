@@ -246,6 +246,7 @@ class ReportService:
             )
             return ServiceResponse(success=True, data=invoice)
         except Exception as e:
+            transaction.set_rollback(True)
             logger.error(f"Error creating invoice: {e}")
             return ServiceResponse(success=False, error=str(e))
 
@@ -276,13 +277,21 @@ class ReportService:
             line_total = (unit_price * quantity) - discount
             total_amount += line_total
 
-            invoice.lines.create(
-                product=product,
-                quantity=quantity,
-                unit_price=unit_price,
-                discount=discount,
-                line_total=line_total,
-            )
+            try:
+                invoice.lines.create(
+                    product=product,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    discount=discount,
+                    line_total=line_total,
+                )
+            except Exception as e:
+                logger.error(f'Error in create invoices lines: {str(e)}')
+                transaction.set_rollback(True)
+                return ServiceResponse(
+                    success=False,
+                    error=f'Error in create invoices lines: {str(e)}'
+                )
 
             stock_update_response = self.update_stock(
                 product, quantity, user, reason='Sale transaction'
@@ -321,7 +330,9 @@ class ReportService:
             return ServiceResponse(success=True)
         except Exception as e:
             logger.error(f"Error handling invoice status: {e}")
-            return ServiceResponse(success=False, error=str(e))
+            return ServiceResponse(
+                success=False, error=f"Error handling invoice status: {str(e)}"
+            )
 
     @staticmethod
     def handle_cancelled_invoice(invoice, sold_products):
@@ -340,7 +351,9 @@ class ReportService:
             return ServiceResponse(success=True)
         except Exception as e:
             logger.error(f"Error handling cancelled invoice: {e}")
-            return ServiceResponse(success=False, error=str(e))
+            return ServiceResponse(
+                success=False, error=f"Error handling cancelled invoice: {str(e)}"
+            )
 
     @staticmethod
     def finalize_invoice(invoice):
@@ -359,7 +372,9 @@ class ReportService:
             return ServiceResponse(success=True)
         except Exception as e:
             logger.error(f"Error finalizing invoice: {e}")
-            return ServiceResponse(success=False, error=str(e))
+            return ServiceResponse(
+                success=False, error=f"Error finalizing invoice: {str(e)}"
+            )
 
     def process_invoice(self, data, user):
         """
