@@ -212,7 +212,7 @@ class InvoiceArchiveSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvoiceArchive
         fields = [
-            'id', 'number', 'created_at', 'client_name', 'cashier', 'cashier_name',
-            'status', 'total', 'tax', 'advance_paid', 'remaining_amount',
-            'refund_amount', 'due_date', 'is_credit_settled', 'lines'
+            'id', 'number', 'invoice_id', 'created_at', 'client_name', 'cashier',
+            'cashier_name', 'status', 'total', 'tax', 'advance_paid', 'remaining_amount',
+            'refund_amount', 'due_date', 'is_credit_settled', 'lines',
         ]
