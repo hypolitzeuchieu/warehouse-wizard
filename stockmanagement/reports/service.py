@@ -298,19 +298,26 @@ class ReportService:
     def handle_completed_or_credit(invoice):
         """Handle COMPLETED and CREDIT statuses."""
         try:
-            if invoice.status == 'CREDIT':
-                invoice.remaining_amount = max(
-                    invoice.total - invoice.advance_paid, Decimal('0.00'))
+            remaining_amount = invoice.total - invoice.advance_paid
 
-                if invoice.advance_paid >= invoice.total:
-                    invoice.status = 'COMPLETED'
-                    invoice.is_credit_settled = True
-                    invoice.refund_amount = invoice.advance_paid - invoice.total
+            if remaining_amount > Decimal('0.00'):
+                invoice.status = 'CREDIT'
+                invoice.remaining_amount = remaining_amount
+                invoice.is_credit_settled = False
 
-            elif invoice.status == 'COMPLETED':
+                if not invoice.due_date:
+                    invoice.due_date = timezone.now().date() + timedelta(days=30)
+                invoice.refund_amount = Decimal('0.00')
+            else:
+                invoice.status = 'COMPLETED'
                 invoice.remaining_amount = Decimal('0.00')
                 invoice.is_credit_settled = True
 
+                invoice.refund_amount = max(
+                    invoice.advance_paid - invoice.total, Decimal('0.00')
+                )
+
+            invoice.save()
             return ServiceResponse(success=True)
         except Exception as e:
             logger.error(f"Error handling invoice status: {e}")
