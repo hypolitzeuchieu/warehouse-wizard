@@ -311,17 +311,22 @@ class StockService:
                     users = (
                         self.reports_service.get_managers_and_store_keepers()
                     )
-                    for manager in users:
-                        self.notif_service.create_notification(
-                            user=manager,
-                            product=product,
-                            notification_type='CRITICAL_STOCK',
-                            message=message,
+                    if users.success:
+                        for manager in users.data:
+                            self.notif_service.create_notification(
+                                user=manager,
+                                product=product,
+                                notification_type='CRITICAL_STOCK',
+                                message=message,
+                            )
+                        raise ValidationError(
+                            f"Not enough stock for this exit movement. "
+                            f"Available: {current_stock}, Required: {quantity}"
                         )
-                    raise ValidationError(
-                        f"Not enough stock for this exit movement. "
-                        f"Available: {current_stock}, Required: {quantity}"
-                    )
+                    else:
+                        logger.warning(
+                            'No managers found to notify about critical stock levels.'
+                        )
             with transaction.atomic():
                 StockMovement.objects.create(
                     product=product,
@@ -424,12 +429,17 @@ class StockService:
                     users = (
                         self.reports_service.get_managers_and_store_keepers()
                     )
-                    for manager in users:
-                        self.notif_service.create_notification(
-                            user=manager,
-                            product=stock.product,
-                            notification_type='CRITICAL_STOCK',
-                            message=message,
+                    if users.success:
+                        for manager in users.data:
+                            self.notif_service.create_notification(
+                                user=manager,
+                                product=stock.product,
+                                notification_type='CRITICAL_STOCK',
+                                message=message,
+                            )
+                    else:
+                        logger.warning(
+                            'No managers found to notify about critical stock levels.'
                         )
             logger.info(
                 f"Checked critical stock levels."
@@ -456,26 +466,28 @@ class StockService:
             expired_products.update(
                 is_expired=True, expiry_date=F('expiry_date')
             )
-
             users = ReportService.get_managers_and_store_keepers()
             for product in expired_products:
                 message = (
                     f"The product {product.name} is expired. "
                     f"Expired date : {product.expiry_date}"
                 )
-
-                for manager in users:
-                    self.notif_service.create_notification(
-                        user=manager,
-                        product=product,
-                        notification_type='EXPIRED',
-                        message=message,
+                if users.success:
+                    for manager in users.data:
+                        self.notif_service.create_notification(
+                            user=manager,
+                            product=product,
+                            notification_type='EXPIRED',
+                            message=message,
+                        )
+                else:
+                    logger.warning(
+                        'No managers found to notify about critical stock levels.'
                     )
 
             near_expiry = Product.objects.filter(
                 expiry_date__range=(now, soon), is_expired=False
             ).select_related('category', 'subcategory')
-
             for product in near_expiry:
                 message = (
                     f"The product {product.name} is near to expired."
