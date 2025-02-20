@@ -44,6 +44,9 @@ class ProductSerializer(serializers.ModelSerializer):
     subcategory_id = serializers.CharField(
         allow_null=True, required=False, allow_blank=True
     )
+    purchase_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, write_only=True
+    )
 
     class Meta:
         model = Product
@@ -51,6 +54,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'description',
+            'purchase_price',
             'unit_price',
             'image',
             'created_at',
