@@ -139,6 +139,7 @@ AUTHENTICATION_BACKENDS = [
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 if os.getenv('PRODUCTION') == 'True':
+    SECRET_KEY = os.getenv('SECRET_KEY')
     DATABASES = {
         'default': dj_database_url.parse(os.getenv('PROD_DATABASE_URL'))
     }
