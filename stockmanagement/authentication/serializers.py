@@ -5,21 +5,18 @@ from rest_framework import serializers
 
 
 class UserSerializer(serializers.ModelSerializer):
+    role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
+
     class Meta:
         model = User
-        fields = [
-            'id', 'username', 'email', 'phone_number', 'password', 'role', 'is_active'
-        ]
-        extra_kwargs = {
-            'password': {'write_only': True},
-        }
+        fields = ['id', 'username', 'email', 'phone_number', 'password', 'role', 'is_active']
+        extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
-        password = validated_data.pop('password', None)
-        user = super().create(validated_data)
-        if password:
-            user.set_password(password)
-            user.save()
+        password = validated_data.pop('password')
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
         return user
 
     def update(self, instance, validated_data):
@@ -31,21 +28,22 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
-class RegisterUserSerializer(serializers.ModelSerializer):
-    role = serializers.ChoiceField(choices=['wholesale_client', 'sales_agent'])
-
-    class Meta:
-        model = User
-        fields = ['username', 'email', 'phone_number', 'password', 'role']
-        extra_kwargs = {'password': {'write_only': True}}
-
-    def create(self, validated_data):
-        role = validated_data.pop('role')
-        user = User.objects.create_user(**validated_data, role=role)
-        return user
-
-
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
     token = serializers.CharField(read_only=True)
+
+
+class AssignRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=User.ROLE_CHOICES, required=True)
+    user_id = serializers.CharField(required=True)
+
+    def validate_role(self, value):
+        """ Assurer que le rôle est valide avant l'assignation. """
+        if value not in dict(User.ROLE_CHOICES):
+            raise serializers.ValidationError('Invalid role.')
+        return value
+
+
+class UserManageSerializer(serializers.Serializer):
+    user_id = serializers.CharField(required=True)
