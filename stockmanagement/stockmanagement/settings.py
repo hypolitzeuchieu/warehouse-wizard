@@ -16,9 +16,8 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
-from dotenv import load_dotenv
+from decouple import config
 
-load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -146,21 +145,21 @@ AUTHENTICATION_BACKENDS = [
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-if os.getenv('PRODUCTION') == 'True':
-    SECRET_KEY = os.getenv('SECRET_KEY')
+if config('PRODUCTION') == 'True':
+    SECRET_KEY = config('SECRET_KEY')
     DATABASES = {
-        'default': dj_database_url.parse(os.getenv('PROD_DATABASE_URL'))
+        'default': dj_database_url.parse(config('PROD_DATABASE_URL'))
     }
 else:
-    SECRET_KEY = os.getenv('SECRET_KEY')
+    SECRET_KEY = config('SECRET_KEY')
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('LOCAL_DB_NAME'),
-            'USER': os.getenv('LOCAL_DB_USER'),
-            'PASSWORD': os.getenv('LOCAL_DB_PASSWORD'),
-            'HOST': os.getenv('LOCAL_DB_HOST'),
-            'PORT': os.getenv('LOCAL_DB_PORT'),
+            'NAME': config('DB_NAME'),
+            'USER': config('DB_USER'),
+            'PASSWORD': config('DB_PASSWORD'),
+            'HOST': config('DB_HOST'),
+            'PORT': config('DB_PORT'),
         },
     }
 
@@ -196,10 +195,10 @@ USE_TZ = True
 
 # AWS settings
 
-AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-AWS_REGION_NAME = os.getenv('AWS_REGION_NAME')
-AWS_BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
+AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
+AWS_REGION_NAME = config('AWS_REGION_NAME')
+AWS_BUCKET_NAME = config('AWS_BUCKET_NAME')
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
