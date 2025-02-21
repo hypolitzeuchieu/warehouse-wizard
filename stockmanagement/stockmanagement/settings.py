@@ -15,6 +15,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -137,16 +138,22 @@ AUTHENTICATION_BACKENDS = [
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('LOCAL_DB_NAME'),
-        'USER': os.getenv('LOCAL_DB_USER'),
-        'PASSWORD': os.getenv('LOCAL_DB_PASSWORD'),
-        'HOST': os.getenv('LOCAL_DB_HOST'),
-        'PORT': os.getenv('LOCAL_DB_PORT'),
-    },
-}
+if os.getenv('PRODUCTION') == 'True':
+    DATABASES = {
+        'default': dj_database_url.parse(os.getenv('PROD_DATABASE_URL'))
+    }
+else:
+    SECRET_KEY = os.getenv('LOCAL_SECRET_KEY')
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('LOCAL_DB_NAME'),
+            'USER': os.getenv('LOCAL_DB_USER'),
+            'PASSWORD': os.getenv('LOCAL_DB_PASSWORD'),
+            'HOST': os.getenv('LOCAL_DB_HOST'),
+            'PORT': os.getenv('LOCAL_DB_PORT'),
+        },
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

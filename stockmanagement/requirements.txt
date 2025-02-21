@@ -22,6 +22,7 @@ cryptography==44.0.0
 cssselect2==0.7.0
 daphne==4.1.2
 distlib==0.3.9
+dj-database-url==2.3.0
 Django==5.1.5
 django-rest-swagger==2.2.0
 django-storages==1.14.5
@@ -29,6 +30,7 @@ djangorestframework==3.15.2
 djangorestframework_simplejwt==5.4.0
 drf-yasg==1.21.8
 filelock==3.17.0
+gunicorn==23.0.0
 html5lib==1.1
 hyperlink==21.0.0
 identify==2.6.6
@@ -50,6 +52,8 @@ pathspec==0.12.1
 pillow==11.1.0
 platformdirs==4.3.6
 pre_commit==4.1.0
+psycopg2==2.9.10
+psycopg2-binary==2.9.10
 pyasn1==0.6.1
 pyasn1_modules==0.4.1
 pycparser==2.22

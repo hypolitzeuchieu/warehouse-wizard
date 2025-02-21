@@ -31,7 +31,7 @@ class User(AbstractUser):
         ('sales_agent', 'Sales Agent'),
     ]
     role = models.CharField(max_length=30, choices=ROLE_CHOICES)
-    phone_number = models.CharField(max_length=30)
+    phone_number = models.CharField(max_length=30, null=True, blank=True)
     is_active = models.BooleanField(default=False)
 
     groups = models.ManyToManyField(
