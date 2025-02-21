@@ -32,6 +32,7 @@ class User(AbstractUser):
     ]
     role = models.CharField(max_length=30, choices=ROLE_CHOICES)
     phone_number = models.CharField(max_length=30, null=True, blank=True)
+    address = models.TextField(null=True, blank=True)
     is_active = models.BooleanField(default=False)
 
     groups = models.ManyToManyField(
@@ -45,6 +46,17 @@ class User(AbstractUser):
         blank=True,
     )
 
+    def save(self, *args, **kwargs):
+        if self.role == 'manager':
+            self.is_superuser = True
+            self.is_staff = True
+            self.is_active = True
+
+        super().save(*args, **kwargs)
+        if self.role:
+            group, created = Group.objects.get_or_create(name=self.role)
+            self.groups.add(group)
+
     def is_manager(self):
         return self.role == 'manager'
 
@@ -56,3 +68,12 @@ class User(AbstractUser):
 
     def is_wholesale_client(self):
         return self.role == 'wholesale_client'
+
+
+class RevokedToken(models.Model):
+    token = models.CharField(max_length=1024, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def is_revoked(cls, token):
+        return cls.objects.filter(token=token).exists()
