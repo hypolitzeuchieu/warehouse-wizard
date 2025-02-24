@@ -23,14 +23,14 @@ from stock.models import SubCategory
 
 logger = logging.getLogger(__name__)
 
+reports_service = ReportService()
+notif_service = NotificationService()
+
 
 class StockService:
     """
     Service for handling stock-related operations.
     """
-
-    reports_service = ReportService()
-    notif_service = NotificationService()
 
     @staticmethod
     def validate_image_format(file):
@@ -101,81 +101,6 @@ class StockService:
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
             raise ValidationError(f"Unexpected error occurred: {str(e)}")
-
-    @staticmethod
-    def create_or_update_product(
-        name,
-        description,
-        unit_price,
-        category_id,
-        subcategory_id,
-        expired_date,
-        quantity,
-        image=None,
-        on_promotion=False,
-        promo_price=None,
-        promotion_start_date=None,
-        promotion_end_date=None,
-        min_quantity=0,
-    ):
-        """
-        Create a product or increment its stock if it already exists.
-        """
-        try:
-            category = Category.objects.get(id=category_id)
-            subcategory = None
-            if subcategory_id:
-                subcategory = SubCategory.objects.filter(
-                    id=subcategory_id
-                ).first()
-
-            if expired_date and expired_date.date() < date.today():
-                raise ValidationError(
-                    {
-                        'expired_date': f"The product cannot be created or updated because "
-                        f"it has already expired (expiry date: {expired_date.date()})."
-                    }
-                )
-            image_url = StockService.upload_file_to_s3(image) if image else None
-
-            with transaction.atomic():
-                product, created = Product.objects.get_or_create(
-                    name=name,
-                    category=category,
-                    subcategory=subcategory,
-                    defaults={
-                        'description': description,
-                        'unit_price': unit_price,
-                        'expiry_date': expired_date,
-                        'quantity': 0,
-                        'image': image_url,
-                        'min_quantity': min_quantity,
-                        'on_promotion': on_promotion,
-                        'promo_price': promo_price,
-                        'promotion_start_date': promotion_start_date,
-                        'promotion_end_date': promotion_end_date,
-                        'is_expired': False,
-                    },
-                )
-
-                StockService.update_stock(
-                    product, category, subcategory, quantity
-                )
-                return product, created
-
-        except Category.DoesNotExist:
-            logger.error(f"Category with ID {category_id} does not exist.")
-            raise ValidationError(
-                f"Category with ID {category_id} does not exist."
-            )
-        except ValidationError as ve:
-            logger.error(f"Validation error: {ve}")
-            raise ve
-        except Exception as e:
-            logger.error(f"Error in create_or_update_product: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
-            )
 
     @staticmethod
     def get_products_by_category(category_id):
@@ -370,11 +295,11 @@ class StockService:
                         f"Available : {product.quantity}"
                     )
                     users = (
-                        self.reports_service.get_managers_and_store_keepers()
+                        reports_service.get_managers_and_store_keepers()
                     )
                     if users.success:
                         for manager in users.data:
-                            self.notif_service.create_notification(
+                            notif_service.create_notification(
                                 user=manager,
                                 product=product,
                                 notification_type='CRITICAL_STOCK',
@@ -471,11 +396,11 @@ class StockService:
                         f"Available : {stock.product.quantity}"
                     )
                     users = (
-                        self.reports_service.get_managers_and_store_keepers()
+                        reports_service.get_managers_and_store_keepers()
                     )
                     if users.success:
                         for manager in users.data:
-                            self.notif_service.create_notification(
+                            notif_service.create_notification(
                                 user=manager,
                                 product=stock.product,
                                 notification_type='CRITICAL_STOCK',
@@ -496,69 +421,6 @@ class StockService:
                 {'error': f"An unexpected error occurred: {str(e)}"}
             )
 
-    def get_products_by_expiry_date(self):
-        """
-        Get all products that are expired or close to expiry.
-        """
-        try:
-            now = timezone.now()
-            soon = now + timedelta(days=14)
-
-            expired_products = Product.objects.filter(
-                expiry_date__lt=now
-            ).select_related('category', 'subcategory')
-            expired_products.update(
-                is_expired=True, expiry_date=F('expiry_date')
-            )
-            users = ReportService.get_managers_and_store_keepers()
-            for product in expired_products:
-                message = (
-                    f"The product {product.name} is expired. "
-                    f"Expired date : {product.expiry_date}"
-                )
-                if users.success:
-                    for manager in users.data:
-                        self.notif_service.create_notification(
-                            user=manager,
-                            product=product,
-                            notification_type='EXPIRED',
-                            message=message,
-                        )
-                else:
-                    logger.warning(
-                        'No managers found to notify about critical stock levels.'
-                    )
-
-            near_expiry = Product.objects.filter(
-                expiry_date__range=(now, soon), is_expired=False
-            ).select_related('category', 'subcategory')
-            for product in near_expiry:
-                message = (
-                    f"The product {product.name} is near to expired."
-                    f" Expired date : {product.expiry_date}"
-                )
-                for manager in users:
-                    self.notif_service.create_notification(
-                        user=manager,
-                        product=product,
-                        notification_type='NEAR_EXPIRY',
-                        message=message,
-                    )
-            logger.info(
-                f"Retrieved {expired_products.count()} expired products."
-            )
-            return {
-                'expired_products': expired_products,
-                'count': expired_products.count(),
-                'near_expiry': near_expiry,
-                'near_expiry_count': near_expiry.count(),
-            }
-        except Exception as e:
-            logger.error(f"Error in get_products_by_expiry_date: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
-            )
-
 
 class ServiceProductResponse:
     def __init__(self, success, data=None, error=None):
@@ -575,6 +437,9 @@ class ServiceProductResponse:
 
 
 class ProductService:
+    """
+        Service for handling Product operations.
+    """
     @staticmethod
     def create_product(
             name,
@@ -715,6 +580,73 @@ class ProductService:
             return ServiceProductResponse(success=True, data=stocks)
         except Exception as e:
             logger.error(f"Error in get_all_stock: {str(e)}")
+            return ServiceProductResponse(
+                False,
+                error=f"An unexpected error occurred: {str(e)}"
+            )
+
+    @staticmethod
+    def get_products_by_expiry_date():
+        """
+        Get all products that are expired or close to expiry.
+        """
+        try:
+            now = timezone.now()
+            soon = now + timedelta(days=14)
+
+            expired_products = Product.objects.filter(
+                expiry_date__lt=now
+            ).select_related('category', 'subcategory')
+            expired_products.update(
+                is_expired=True, expiry_date=F('expiry_date')
+            )
+            users = ReportService.get_managers_and_store_keepers()
+            for product in expired_products:
+                message = (
+                    f"The product {product.name} is expired. "
+                    f"Expired date : {product.expiry_date}"
+                )
+                if users.success:
+                    for manager in users.data:
+                        notif_service.create_notification(
+                            user=manager,
+                            product=product,
+                            notification_type='EXPIRED',
+                            message=message,
+                        )
+                else:
+                    logger.warning(
+                        'No managers found to notify about critical stock levels.'
+                    )
+
+            near_expiry = Product.objects.filter(
+                expiry_date__range=(now, soon), is_expired=False
+            ).select_related('category', 'subcategory')
+            for product in near_expiry:
+                message = (
+                    f"The product {product.name} is near to expired."
+                    f" Expired date : {product.expiry_date}"
+                )
+                for manager in users:
+                    notif_service.create_notification(
+                        user=manager,
+                        product=product,
+                        notification_type='NEAR_EXPIRY',
+                        message=message,
+                    )
+            logger.info(
+                f"Retrieved {expired_products.count()} expired products."
+            )
+            return ServiceProductResponse(
+                True,
+                {'expired_products': expired_products,
+                 'count': expired_products.count(),
+                 'near_expiry': near_expiry,
+                 'near_expiry_count': near_expiry.count()
+                 }
+            )
+        except Exception as e:
+            logger.error(f"Error in get_products_by_expiry_date: {str(e)}")
             return ServiceProductResponse(
                 False,
                 error=f"An unexpected error occurred: {str(e)}"

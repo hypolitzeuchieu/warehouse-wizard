@@ -94,37 +94,6 @@ class StockViewSet(viewsets.ViewSet):
         )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @swagger_auto_schema(
-        operation_description='Retrieve the product by expiry date.',
-        responses={200: ProductSerializer, 500: 'Internal Server Error'},
-    )
-    @action(detail=False, methods=['GET'], url_path='product/expiry_date')
-    def get_products_by_expiry_date(self, request):
-        """
-        Retrieve the product by expiry date.
-        """
-        try:
-            result = self.service.get_products_by_expiry_date()
-            serializer = ProductSerializer(
-                result['expired_products'], many=True
-            )
-            near_expiry_product = ProductSerializer(
-                result['near_expiry'], many=True
-            )
-            return Response(
-                {
-                    'expired_products': serializer.data,
-                    'expired_product_count': result['count'],
-                    'near_expiry_products': near_expiry_product.data,
-                    'near_expiry_products_count': result['near_expiry_count'],
-                }
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error occurred: {str(e)}")
-            return Response(
-                {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
     # --- Stocks ---
 
     @swagger_auto_schema(
@@ -347,6 +316,9 @@ class StockViewSet(viewsets.ViewSet):
 
 
 class ProductViewSet(viewsets.ViewSet):
+    """
+        A ViewSet for handling Product operations.
+    """
 
     product_service = ProductService
 
@@ -506,6 +478,40 @@ class ProductViewSet(viewsets.ViewSet):
                 serializer = StockSerializer(stocks.data, many=True)
                 return Response(serializer.data)
             return Response({'error': stocks.error}, status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error occurred: {str(e)}")
+            return Response(
+                {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description='Retrieve the product by expiry date.',
+        responses={200: ProductSerializer, 500: 'Internal Server Error'},
+    )
+    @action(detail=False, methods=['GET'], url_path='expiry_date')
+    def get_products_by_expiry_date(self, request):
+        """
+        Retrieve the product by expiry date.
+        """
+        try:
+            result = self.product_service.get_products_by_expiry_date()
+
+            if result.success:
+                serializer = ProductSerializer(
+                    result.data['expired_products'], many=True
+                )
+                near_expiry_product = ProductSerializer(
+                    result.data['near_expiry'], many=True
+                )
+                return Response(
+                    {
+                        'expired_products': serializer.data,
+                        'expired_product_count': result.data['count'],
+                        'near_expiry_products': near_expiry_product.data,
+                        'near_expiry_products_count': result.data['near_expiry_count'],
+                    }
+                )
+            return Response({'error': result.error}, status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
             return Response(
