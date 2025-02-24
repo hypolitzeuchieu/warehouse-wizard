@@ -16,10 +16,12 @@ from stock.serializers import GetProductCategorySerializer
 from stock.serializers import GetProductSubCategorySerializer
 from stock.serializers import ProductDetailSerializer
 from stock.serializers import ProductSerializer
+from stock.serializers import ProductUpdateSerializer
 from stock.serializers import QuantitySerializer
 from stock.serializers import StockMovementSerializer
 from stock.serializers import StockSerializer
 from stock.serializers import SubCategorySerializer
+from stock.service import ProductService
 from stock.service import StockService
 
 logger = logging.getLogger(__name__)
@@ -31,64 +33,6 @@ class StockViewSet(viewsets.ViewSet):
     """
 
     service = StockService()
-
-    @swagger_auto_schema(
-        operation_description='Create or update a product. If exists increment its stock.',
-        request_body=ProductSerializer,
-        responses={
-            201: ProductSerializer,
-            400: 'Bad Request',
-            404: 'Sector not found',
-            500: 'Internal Server Error',
-        },
-    )
-    @action(methods=['POST'], detail=False, url_path='product/create')
-    def create_or_update_product(self, request):
-        """
-        Create or update a product and associate it with a category or subcategory.
-        """
-        serializer = ProductSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.validated_data
-            try:
-                product, created = self.service.create_or_update_product(
-                    name=data.get('name'),
-                    description=data.get('description'),
-                    unit_price=data.get('unit_price'),
-                    category_id=data.get('category_id'),
-                    subcategory_id=data.get('subcategory_id', ''),
-                    expired_date=data.get('expiry_date'),
-                    quantity=data.get('quantity'),
-                    image=data.get('image'),
-                    on_promotion=data.get('on_promotion', False),
-                    promo_price=data.get('promo_price'),
-                    promotion_start_date=data.get('promotion_start_date'),
-                    promotion_end_date=data.get('promotion_end_date'),
-                    min_quantity=data.get('min_quantity'),
-                )
-
-                message = (
-                    'Product created successfully.'
-                    if created
-                    else 'Product updated successfully.'
-                )
-                logger.info(f"{message} ,Product: {product}")
-                return Response(
-                    {
-                        'message': message,
-                        'product': ProductSerializer(product).data,
-                    },
-                    status=status.HTTP_201_CREATED,
-                )
-            except Exception as e:
-                logger.error(f"An unexpected error occurred: {str(e)}")
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-
-        logger.error(f"Invalid product data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=GetProductCategorySerializer,
@@ -420,6 +364,117 @@ class StockViewSet(viewsets.ViewSet):
         logger.error(f"Invalid subcategory data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class ProductViewSet(viewsets.ViewSet):
+
+    product_service = ProductService
+
+    @swagger_auto_schema(
+        operation_description='Create a new product while managing stock.',
+        request_body=ProductSerializer,
+        responses={
+            201: ProductSerializer,
+            400: 'Bad Request',
+            404: 'Category not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['POST'], detail=False, url_path='create')
+    def create_product(self, request):
+        serializer = ProductSerializer(data=request.data)
+        if serializer.is_valid():
+            data = serializer.validated_data
+            try:
+                response = self.product_service.create_product(
+                    name=data.get('name'),
+                    description=data.get('description'),
+                    unit_price=data.get('unit_price'),
+                    category_id=data.get('category_id'),
+                    subcategory_id=data.get('subcategory_id', ''),
+                    expired_date=data.get('expiry_date'),
+                    quantity=data.get('quantity'),
+                    image=data.get('image'),
+                    on_promotion=data.get('on_promotion', False),
+                    promo_price=data.get('promo_price'),
+                    promotion_start_date=data.get('promotion_start_date'),
+                    promotion_end_date=data.get('promotion_end_date'),
+                    min_quantity=data.get('min_quantity'),
+                )
+                if response.success:
+                    return Response(
+                        ProductSerializer(response.data).data, status=status.HTTP_201_CREATED
+                    )
+                return Response(
+                    {'error': response.error}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        logger.error(f"Invalid product data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Update an existing product.',
+        request_body=ProductUpdateSerializer,
+        responses={
+            200: ProductSerializer,
+            400: 'Bad Request',
+            404: 'Product not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['PUT'], detail=False, url_path='update')
+    def update_product(self, request):
+        serializer = ProductUpdateSerializer(data=request.data)
+        if serializer.is_valid():
+            product_id = serializer.validated_data.pop('product_id')
+            response = self.product_service.update_product(
+                product_id, serializer.validated_data
+            )
+            if response.success:
+                return Response(
+                    ProductSerializer(response.data).data, status=status.HTTP_200_OK
+                )
+            return Response(
+                {'error': response.error}, status=status.HTTP_400_BAD_REQUEST
+            )
+        logger.error(f"Invalid product_id data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Delete a product by ID.',
+        query_serializer=ProductDetailSerializer,
+        responses={
+            204: 'No Content',
+            400: 'Bad Request',
+            404: 'Product not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['DELETE'], detail=False, url_path='delete')
+    def delete_product(self, request):
+        serializer = ProductDetailSerializer(data=request.query_params)
+        if serializer.is_valid():
+            product_id = serializer.validated_data.get('product_id')
+            try:
+                response = self.product_service.delete_product(product_id)
+                if response.success:
+                    return Response(
+                        {'message': response.data}, status=status.HTTP_204_NO_CONTENT
+                    )
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid product_id data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     @swagger_auto_schema(
         query_serializer=ProductDetailSerializer,
         operation_description='Retrieve the product by id.',
@@ -430,7 +485,7 @@ class StockViewSet(viewsets.ViewSet):
             500: 'Internal Server Error'
         },
     )
-    @action(methods=['GET'], detail=False, url_path='product/detail')
+    @action(methods=['GET'], detail=False, url_path='detail')
     def get_product_detail(self, request):
         """
         Retrieve the product by id.
@@ -439,10 +494,10 @@ class StockViewSet(viewsets.ViewSet):
         if serializer.is_valid():
             product_id = serializer.validated_data.get('product_id')
             try:
-                product = self.service.get_product_detail(product_id)
-                if product:
+                response = self.product_service.get_product_detail(product_id)
+                if response.success:
                     return Response(
-                        ProductSerializer(product).data, status=status.HTTP_200_OK
+                        ProductSerializer(response.data).data, status=status.HTTP_200_OK
                     )
                 return Response(
                     {'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND
