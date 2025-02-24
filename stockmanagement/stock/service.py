@@ -627,13 +627,14 @@ class ProductService:
                     f"The product {product.name} is near to expired."
                     f" Expired date : {product.expiry_date}"
                 )
-                for manager in users:
-                    notif_service.create_notification(
-                        user=manager,
-                        product=product,
-                        notification_type='NEAR_EXPIRY',
-                        message=message,
-                    )
+                if users.success:
+                    for manager in users.data:
+                        notif_service.create_notification(
+                            user=manager,
+                            product=product,
+                            notification_type='NEAR_EXPIRY',
+                            message=message,
+                        )
             logger.info(
                 f"Retrieved {expired_products.count()} expired products."
             )

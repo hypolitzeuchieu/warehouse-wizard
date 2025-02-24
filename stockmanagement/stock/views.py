@@ -495,7 +495,7 @@ class ProductViewSet(viewsets.ViewSet):
         """
         try:
             result = self.product_service.get_products_by_expiry_date()
-
+            print('result', result)
             if result.success:
                 serializer = ProductSerializer(
                     result.data['expired_products'], many=True
