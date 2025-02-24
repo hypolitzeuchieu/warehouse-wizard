@@ -158,22 +158,6 @@ class StockService:
                     },
                 )
 
-                if not created:
-                    product.description = description
-                    product.unit_price = unit_price
-                    product.expiry_date = expired_date
-                    product.min_quantity = min_quantity
-                    product.on_promotion = on_promotion
-                    product.image = image_url
-                    product.promo_price = promo_price
-                    product.promotion_start_date = promotion_start_date
-                    product.promotion_end_date = promotion_end_date
-                    product.is_expired = False
-                    product.save()
-                    logger.info(
-                        f"Product {'created' if created else 'updated'}: {product.name}"
-                    )
-
                 StockService.update_stock(
                     product, category, subcategory, quantity
                 )
@@ -592,6 +576,129 @@ class StockService:
                 {'error': f"An unexpected error occurred: {str(e)}"}
             )
 
+
+class ServiceProductResponse:
+    def __init__(self, success, data=None, error=None):
+        self.success = success
+        self.data = data
+        self.error = error
+
+    def to_dict(self):
+        return {
+            'success': self.success,
+            'data': self.data,
+            'error': self.error
+        }
+
+
+class ProductService:
+    @staticmethod
+    def create_product(
+            name,
+            description,
+            unit_price,
+            category_id,
+            subcategory_id,
+            expired_date,
+            quantity,
+            image=None,
+            on_promotion=False,
+            promo_price=None,
+            promotion_start_date=None,
+            promotion_end_date=None,
+            min_quantity=0,
+    ):
+        """
+        Create a product or increment its stock if it already exists.
+        """
+        try:
+            category = Category.objects.get(id=category_id)
+            subcategory = None
+            if subcategory_id:
+                subcategory = SubCategory.objects.filter(
+                    id=subcategory_id
+                ).first()
+
+            if expired_date and expired_date.date() < date.today():
+                return ServiceProductResponse(
+                    False,
+                    {'expired_date': f"The product cannot be created it has "
+                                     f"already expired (expiry date: {expired_date.date()})."
+                     }
+                )
+            image_url = StockService.upload_file_to_s3(image) if image else None
+
+            with transaction.atomic():
+                product, created = Product.objects.get_or_create(
+                    name=name,
+                    category=category,
+                    subcategory=subcategory,
+                    defaults={
+                        'description': description,
+                        'unit_price': unit_price,
+                        'expiry_date': expired_date,
+                        'quantity': 0,
+                        'image': image_url,
+                        'min_quantity': min_quantity,
+                        'on_promotion': on_promotion,
+                        'promo_price': promo_price,
+                        'promotion_start_date': promotion_start_date,
+                        'promotion_end_date': promotion_end_date,
+                        'is_expired': False,
+                    },
+                )
+
+                StockService.update_stock(
+                    product, category, subcategory, quantity
+                )
+                return ServiceProductResponse(True, data=product)
+
+        except Category.DoesNotExist:
+            return ServiceProductResponse(
+                False,
+                error=f"Category with ID {category_id} does not exist."
+            )
+        except Exception as e:
+            return ServiceProductResponse(
+                False, error=f"An unexpected error occurred: {str(e)}"
+            )
+
+    @staticmethod
+    def update_product(product_id, data):
+        try:
+            product = Product.objects.get(id=product_id)
+            for key, value in data.items():
+                setattr(product, key, value)
+            product.save()
+            logger.info(f"Product updated: {product.name}")
+            return ServiceProductResponse(True, data=product)
+
+        except Product.DoesNotExist:
+            return ServiceProductResponse(
+                False, error=f"Product with ID {product_id} not found."
+            )
+        except Exception as e:
+            return ServiceProductResponse(
+                False, error=f"An unexpected error occurred: {str(e)}"
+            )
+
+    @staticmethod
+    def delete_product(product_id):
+        try:
+            product = Product.objects.get(id=product_id)
+            product.delete()
+            logger.info(f"Product deleted: {product.name}")
+            return ServiceProductResponse(True, data='Product deleted successfully')
+
+        except Product.DoesNotExist:
+            return ServiceProductResponse(
+                False, error=f"Product with ID {product_id} not found."
+            )
+        except Exception as e:
+            return ServiceProductResponse(
+                False, error=f"An unexpected error occurred: {str(e)}"
+            )
+
     @staticmethod
     def get_product_detail(product_id: str):
         """
@@ -600,12 +707,14 @@ class StockService:
         try:
             product = Product.objects.get(id=product_id)
             logger.info(f"Retrieved product: {product.name}")
-            return product
+            return ServiceProductResponse(True, data=product)
         except Product.DoesNotExist:
             logger.error(f"Product with ID {product_id} not found.")
-            raise ValidationError(f"Product with ID {product_id} not found.")
+            return ServiceProductResponse(
+                False, error=f"Product with ID {product_id} not found."
+            )
         except Exception as e:
             logger.error(f"Error in get_product_detail: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
+            ServiceProductResponse(
+                False, error=f"An unexpected error occurred: {str(e)}"
             )
