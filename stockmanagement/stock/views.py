@@ -128,25 +128,6 @@ class StockViewSet(viewsets.ViewSet):
     # --- Stocks ---
 
     @swagger_auto_schema(
-        operation_description='Retrieve the stock.',
-        responses={200: StockSerializer, 500: 'Internal Server Error'},
-    )
-    @action(detail=False, methods=['GET'], url_path='products')
-    def get_all_stock(self, request):
-        """
-        Retrieve all the stock.
-        """
-        try:
-            stocks = StockService.get_all_stock()
-            serializer = StockSerializer(stocks, many=True)
-            return Response(serializer.data)
-        except Exception as e:
-            logger.error(f"Unexpected error occurred: {str(e)}")
-            return Response(
-                {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @swagger_auto_schema(
         query_serializer=QuantitySerializer,
         operation_description='Retrieve the product by category.',
         responses={200: ProductSerializer, 500: 'Internal Server Error'},
@@ -509,3 +490,24 @@ class ProductViewSet(viewsets.ViewSet):
                 )
         logger.error(f"Invalid product_id data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Retrieve products.',
+        responses={200: StockSerializer, 500: 'Internal Server Error'},
+    )
+    @action(detail=False, methods=['GET'], url_path='products')
+    def get_products(self, request):
+        """
+        Retrieve all the stock.
+        """
+        try:
+            stocks = self.product_service.get_all_stock()
+            if stocks.success:
+                serializer = StockSerializer(stocks.data, many=True)
+                return Response(serializer.data)
+            return Response({'error': stocks.error}, status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error occurred: {str(e)}")
+            return Response(
+                {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

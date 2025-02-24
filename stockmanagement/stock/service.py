@@ -427,23 +427,6 @@ class StockService:
             raise ValidationError({f"An unexpected error occurred: {str(e)}"})
 
     @staticmethod
-    def get_all_stock():
-        """
-        Get a list of all stock entries (product + category + subcategory + quantity).
-        """
-        try:
-            stocks = Stock.objects.select_related(
-                'category', 'subcategory'
-            ).all()
-            logger.info(f"Retrieved {stocks.count()} stock entries.")
-            return stocks
-        except Exception as e:
-            logger.error(f"Error in get_all_stock: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
-            )
-
-    @staticmethod
     def get_product_stock_details(product_id):
         """
         Get the stock details (quantity) of a product in all categories and subcategories.
@@ -717,4 +700,22 @@ class ProductService:
             logger.error(f"Error in get_product_detail: {str(e)}")
             ServiceProductResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
+            )
+
+    @staticmethod
+    def get_all_stock():
+        """
+        Get a list of all stock entries (product + category + subcategory + quantity).
+        """
+        try:
+            stocks = Stock.objects.select_related(
+                'category', 'subcategory'
+            ).all()
+            logger.info(f"Retrieved {stocks.count()} stock entries.")
+            return ServiceProductResponse(success=True, data=stocks)
+        except Exception as e:
+            logger.error(f"Error in get_all_stock: {str(e)}")
+            return ServiceProductResponse(
+                False,
+                error=f"An unexpected error occurred: {str(e)}"
             )
