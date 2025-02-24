@@ -141,3 +141,60 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
 class ProductDetailSerializer(serializers.Serializer):
     product_id = serializers.CharField(required=True)
+
+
+class ProductUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating an existing product.
+    """
+    product_id = serializers.CharField()
+    name = serializers.CharField(max_length=255, required=False)
+    description = serializers.CharField(allow_blank=True, required=False)
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    expired_date = serializers.DateTimeField(required=False)
+    image = serializers.ImageField(required=False, allow_null=True)
+    on_promotion = serializers.BooleanField(required=False)
+    promo_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True
+    )
+    promotion_start_date = serializers.DateTimeField(required=False, allow_null=True)
+    promotion_end_date = serializers.DateTimeField(required=False, allow_null=True)
+    quantity = serializers.IntegerField(min_value=0, required=False)
+    min_quantity = serializers.IntegerField(min_value=0, required=False)
+
+    def validate(self, attrs):
+        """
+        Validation for update constraints.
+        """
+        unit_price = attrs.get('unit_price')
+        promo_price = attrs.get('promo_price')
+        on_promotion = attrs.get('on_promotion', False)
+        promotion_start_date = attrs.get('promotion_start_date')
+        promotion_end_date = attrs.get('promotion_end_date')
+
+        # Promo price validation
+        if on_promotion:
+            if promo_price is None:
+                raise serializers.ValidationError(
+                    {'promo_price': 'Promo price is required '
+                                    'when the product is on promotion.'}
+                )
+            if unit_price is not None and promo_price >= unit_price:
+                raise serializers.ValidationError(
+                    {'promo_price': 'Promo price must be less than the unit price.'}
+                )
+
+        # Promotion dates validation
+        if promotion_start_date and promotion_end_date:
+            if promotion_start_date >= promotion_end_date:
+                raise serializers.ValidationError(
+                    {'promotion_end_date': 'Promotion end date must '
+                                           'be after promotion start date.'}
+                )
+        elif on_promotion and not (promotion_start_date or promotion_end_date):
+            raise serializers.ValidationError(
+                'At least one of promotion start date or promotion end date'
+                ' is required when the product is on promotion.'
+            )
+
+        return attrs
