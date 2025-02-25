@@ -15,7 +15,7 @@ from stock.models import Product
 from stock.models import Stock
 from stock.models import StockMovement
 from stock.models import SubCategory
-from stock.utils.s3_storage import upload_file_to_s3
+from utils.s3_storage import upload_file_to_s3
 
 logger = logging.getLogger(__name__)
 
