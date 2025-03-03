@@ -30,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG')
 
 ALLOWED_HOSTS = []
 
@@ -146,12 +146,10 @@ AUTHENTICATION_BACKENDS = [
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 if config('PRODUCTION') == 'True':
-    SECRET_KEY = config('SECRET_KEY')
     DATABASES = {
         'default': dj_database_url.parse(config('PROD_DATABASE_URL'))
     }
 else:
-    SECRET_KEY = config('SECRET_KEY')
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',

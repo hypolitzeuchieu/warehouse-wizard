@@ -12,6 +12,7 @@ from authentication.service import UserService
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
+from rest_framework import permissions
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -236,3 +237,26 @@ class UserManagementViewSet(viewsets.ViewSet):
                 {'error': f"Unexpected error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class UserUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        request_body=UserSerializer,
+        responses={
+            200: 'User updated successfully.',
+            400: 'Bad request.',
+        },
+    )
+    def patch(self, request):
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {'detail': 'User updated successfully.'}, status=status.HTTP_200_OK
+            )
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
