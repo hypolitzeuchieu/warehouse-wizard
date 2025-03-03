@@ -198,13 +198,18 @@ class StockViewSet(viewsets.ViewSet):
                 {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST
             )
 
+
+class CategoryViewSet(viewsets.ViewSet):
+    """
+        A ViewSet for managing categories operations.
+    """
     # --- Catégories ---
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',
-        responses={200: StockSerializer, 500: 'Internal Server Error'},
+        responses={200: CategorySerializer, 500: 'Internal Server Error'},
     )
-    @action(detail=False, methods=['GET'], url_path='category')
+    @action(detail=False, methods=['GET'], url_path='categories')
     def get_categories(self, request):
         """
         Retrieve all categories.
@@ -256,6 +261,164 @@ class StockViewSet(viewsets.ViewSet):
         logger.error(f"Invalid category data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @swagger_auto_schema(
+        operation_description='Update category.',
+        request_body=CategorySerializer,
+        responses={
+            200: CategorySerializer,
+            400: 'Bad Request',
+            404: 'Category not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['PUT'], detail=True, url_path='category/update')
+    def update_category(self, request, pk=None):
+        """
+        Update an existing category.
+        """
+        try:
+            category = Category.objects.get(pk=pk)
+        except Category.DoesNotExist:
+            return Response(
+                {'error': 'Category not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = CategorySerializer(category, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Delete category.',
+        responses={204: 'Category deleted', 404: 'Category not found'},
+    )
+    @action(methods=['DELETE'], detail=True, url_path='category/delete')
+    def delete_category(self, request, pk=None):
+        """
+        Delete a category.
+        """
+        try:
+            category = Category.objects.get(pk=pk)
+            category.delete()
+            return Response(
+                {'message': 'Category deleted successfully'},
+                status=status.HTTP_204_NO_CONTENT
+            )
+        except Category.DoesNotExist:
+            return Response(
+                {'error': 'Category not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description='Retrieve category details.',
+        responses={
+            200: CategorySerializer,
+            404: 'Category not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(detail=True, methods=['GET'], url_path='category/detail')
+    def get_category_detail(self, request, pk=None):
+        """
+        Retrieve details of a specific category.
+        """
+        try:
+            category = Category.objects.get(pk=pk)
+            serializer = CategorySerializer(category)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Category.DoesNotExist:
+            return Response(
+                {'error': 'Category not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    # ---Sub category-----
+
+    @swagger_auto_schema(
+        operation_description='Update subcategory.',
+        request_body=SubCategorySerializer,
+        responses={
+            200: SubCategorySerializer,
+            400: 'Bad Request',
+            404: 'Subcategory not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['PUT'], detail=True, url_path='subcategory/update')
+    def update_subcategory(self, request, pk=None):
+        """
+        Update an existing subcategory.
+        """
+        try:
+            subcategory = SubCategory.objects.get(pk=pk)
+        except SubCategory.DoesNotExist:
+            return Response(
+                {'error': 'Subcategory not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = SubCategorySerializer(
+            subcategory, data=request.data, partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Delete subcategory.',
+        responses={204: 'Subcategory deleted', 404: 'Subcategory not found'},
+    )
+    @action(methods=['DELETE'], detail=True, url_path='subcategory/delete')
+    def delete_subcategory(self, request, pk=None):
+        """
+        Delete a subcategory.
+        """
+        try:
+            subcategory = SubCategory.objects.get(pk=pk)
+            subcategory.delete()
+            return Response(
+                {'message': 'Subcategory deleted successfully'},
+                status=status.HTTP_204_NO_CONTENT
+            )
+        except SubCategory.DoesNotExist:
+            return Response(
+                {'error': 'Subcategory not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description='Retrieve subcategory details.',
+        responses={
+            200: SubCategorySerializer,
+            404: 'Subcategory not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(detail=True, methods=['GET'], url_path='subcategory/detail')
+    def get_subcategory_detail(self, request, pk=None):
+        """
+        Retrieve details of a specific subcategory.
+        """
+        try:
+            subcategory = SubCategory.objects.get(pk=pk)
+            serializer = SubCategorySerializer(subcategory)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except SubCategory.DoesNotExist:
+            return Response(
+                {'error': 'Subcategory not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description='Retrieve all category.',
+        responses={200: SubCategorySerializer, 500: 'Internal Server Error'},
+    )
     @action(detail=False, methods=['get'], url_path='subcategories')
     def get_subcategories(self, request):
         """
@@ -310,7 +473,6 @@ class StockViewSet(viewsets.ViewSet):
                     {'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-
         logger.error(f"Invalid subcategory data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
