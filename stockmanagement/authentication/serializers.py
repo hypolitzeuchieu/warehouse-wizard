@@ -81,8 +81,8 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
         # Build the reset link
         current_site = get_current_site(request).domain
-        reset_link = f"http://{current_site}{reverse(
-            'password-reset-confirm')}?token={token.token}"
+        reset_link = (f"http://{current_site}{reverse('password-reset-confirm')}?"
+                      f"token={token.token}")
 
         # Email content
         subject = 'Password Reset Request'
