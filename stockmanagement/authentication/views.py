@@ -7,6 +7,8 @@ from authentication.models import User
 from authentication.permissions import IsManagerPermission
 from authentication.serializers import AssignRoleSerializer
 from authentication.serializers import LoginSerializer
+from authentication.serializers import PasswordResetConfirmSerializer
+from authentication.serializers import PasswordResetRequestSerializer
 from authentication.serializers import UserSerializer
 from authentication.service import UserService
 from django.contrib.auth import authenticate
@@ -260,3 +262,41 @@ class UserUpdateView(APIView):
             )
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @swagger_auto_schema(
+        request_body=PasswordResetRequestSerializer,
+        responses={200: 'Password reset link sent successfully.'},
+    )
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(request)
+            return Response(
+                {'message': 'Password reset link sent successfully.'},
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @swagger_auto_schema(
+        request_body=PasswordResetConfirmSerializer,
+        responses={200: 'Password reset successfully.'},
+    )
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {'message': 'Password reset successfully.'},
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
