@@ -6,6 +6,7 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.models import Group
 from django.contrib.auth.models import Permission
 from django.db import models
+from django.utils import timezone
 
 
 class Client(models.Model):
@@ -77,3 +78,14 @@ class RevokedToken(models.Model):
     @classmethod
     def is_revoked(cls, token):
         return cls.objects.filter(token=token).exists()
+
+
+class PasswordResetToken(models.Model):
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='password_reset_tokens'
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        return (timezone.now() - self.created_at).seconds > 7200
