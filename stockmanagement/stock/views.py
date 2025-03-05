@@ -34,66 +34,6 @@ class StockViewSet(viewsets.ViewSet):
 
     service = StockService()
 
-    @swagger_auto_schema(
-        query_serializer=GetProductCategorySerializer,
-        operation_description='Retrieve the product by category.',
-        responses={200: ProductSerializer, 500: 'Internal Server Error'},
-    )
-    @action(methods=['GET'], detail=False, url_path='product/category')
-    def get_products_by_category(self, request):
-        """
-        Retrieve the product by category.
-        """
-        serializer = GetProductCategorySerializer(data=request.query_params)
-        if serializer.is_valid():
-            category_id = serializer.validated_data.get('category_id')
-            try:
-                products = self.service.get_products_by_category(category_id)
-                result = ProductSerializer(products, many=True)
-                return Response(result.data, status.HTTP_200_OK)
-
-            except Exception as e:
-                logger.error(f"Unexpected error occurred: {str(e)}")
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-        logger.error(
-            f"Invalid category_id data provided:{str(serializer.errors)}"
-        )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
-        query_serializer=GetProductSubCategorySerializer,
-        operation_description='Retrieve the product by category.',
-        responses={200: ProductSerializer, 500: 'Internal Server Error'},
-    )
-    @action(methods=['GET'], detail=False, url_path='product/subcategory')
-    def get_products_by_subcategory(self, request):
-        """
-        Retrieve the product by subcategory.
-        """
-        serializer = GetProductSubCategorySerializer(data=request.query_params)
-        if serializer.is_valid():
-            subcategory_id = serializer.validated_data.get('subcategory_id')
-            try:
-                products = self.service.get_products_by_subcategory(
-                    subcategory_id
-                )
-                result = ProductSerializer(products, many=True)
-                return Response(result.data, status.HTTP_200_OK)
-
-            except Exception as e:
-                logger.error(f"Unexpected error occurred: {str(e)}")
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-        logger.error(
-            f"Invalid subcategory_id data provided:{str(serializer.errors)}"
-        )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
     # --- Stocks ---
 
     @swagger_auto_schema(
@@ -474,6 +414,66 @@ class CategoryViewSet(viewsets.ViewSet):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         logger.error(f"Invalid subcategory data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        query_serializer=GetProductCategorySerializer,
+        operation_description='Retrieve the product by category.',
+        responses={200: ProductSerializer, 500: 'Internal Server Error'},
+    )
+    @action(methods=['GET'], detail=False, url_path='products')
+    def get_products_by_category(self, request):
+        """
+        Retrieve the product by category.
+        """
+        serializer = GetProductCategorySerializer(data=request.query_params)
+        if serializer.is_valid():
+            category_id = serializer.validated_data.get('category_id')
+            try:
+                products = StockService().get_products_by_category(category_id)
+                result = ProductSerializer(products, many=True)
+                return Response(result.data, status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        logger.error(
+            f"Invalid category_id data provided:{str(serializer.errors)}"
+        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        query_serializer=GetProductSubCategorySerializer,
+        operation_description='Retrieve the product by category.',
+        responses={200: ProductSerializer, 500: 'Internal Server Error'},
+    )
+    @action(methods=['GET'], detail=False, url_path='products')
+    def get_products_by_subcategory(self, request):
+        """
+        Retrieve the product by subcategory.
+        """
+        serializer = GetProductSubCategorySerializer(data=request.query_params)
+        if serializer.is_valid():
+            subcategory_id = serializer.validated_data.get('subcategory_id')
+            try:
+                products = StockService().get_products_by_subcategory(
+                    subcategory_id
+                )
+                result = ProductSerializer(products, many=True)
+                return Response(result.data, status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        logger.error(
+            f"Invalid subcategory_id data provided:{str(serializer.errors)}"
+        )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
