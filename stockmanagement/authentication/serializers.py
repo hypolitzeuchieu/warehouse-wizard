@@ -5,6 +5,7 @@ from authentication.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.exceptions import ValidationError
+from django.template.loader import render_to_string
 from django.urls import reverse
 from rest_framework import serializers
 from tasks.send_mail import send_email
@@ -87,13 +88,9 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         # Email content
         subject = 'Password Reset Request'
         message = f"Click the following link to reset your password: {reset_link}"
-        html_message = f"""
-        <p>Hello,</p>
-        <p>Click the link below to reset your password:</p>
-        <a href="{reset_link}">{reset_link}</a>
-        <p>If you did not request a password reset, please ignore this email.</p>
-        """
-
+        html_message = render_to_string(
+            'reset_password_email.html', {'reset_url': reset_link}
+        )
         # Send email using the generic function
         send_email.delay(subject, message, [email], html_message=html_message)
 
