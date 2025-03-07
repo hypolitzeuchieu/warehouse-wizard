@@ -50,3 +50,12 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             return {'error': f"Unexpected error: {str(e)}"}
+
+    @staticmethod
+    def get_notification(notif_id: str):
+        try:
+            notification = Notification.objects.filter(id=notif_id).first()
+            return notification
+        except Exception as e:
+            logger.error(f"Unexpected error: {str(e)}")
+            return {'error': f"Unexpected error: {str(e)}"}

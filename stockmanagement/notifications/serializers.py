@@ -18,3 +18,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'created_at',
             'is_read',
         ]
+
+
+class NotifSerializer(serializers.Serializer):
+    notif_id = serializers.UUIDField(required=True)
