@@ -49,14 +49,8 @@ class StockViewSet(viewsets.ViewSet):
         serializer = QuantitySerializer(data=request.query_params)
         if serializer.is_valid():
             product_id = serializer.validated_data.get('product_id')
-            category_id = serializer.validated_data.get('category_id')
-            subcategory_id = serializer.validated_data.get(
-                'subcategory_id', ''
-            )
             try:
-                result = self.service.get_stock_quantity(
-                    product_id, category_id, subcategory_id
-                )
+                result = self.service.get_stock_quantity(product_id)
                 if result['status'] == 'success':
                     return Response(result, status=status.HTTP_200_OK)
                 else:
@@ -93,8 +87,6 @@ class StockViewSet(viewsets.ViewSet):
             try:
                 result, status_code = self.service.process_stock_movement(
                     product=data['product'],
-                    category=data['category'],
-                    subcategory=data.get('subcategory'),
                     movement_type=data['movement_type'],
                     quantity=data['quantity'],
                     user=request.user,
@@ -609,7 +601,7 @@ class ProductViewSet(viewsets.ViewSet):
         if serializer.is_valid():
             product_id = serializer.validated_data.get('product_id')
             try:
-                response = self.product_service.get_product_detail(product_id)
+                response = self.product_service.get_product_by_id(product_id)
                 if response.success:
                     return Response(
                         ProductSerializer(response.data).data, status=status.HTTP_200_OK

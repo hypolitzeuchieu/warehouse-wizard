@@ -17,10 +17,6 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class QuantitySerializer(serializers.Serializer):
     product_id = serializers.CharField(required=True)
-    category_id = serializers.CharField(required=True)
-    subcategory_id = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
 
 
 class GetProductCategorySerializer(serializers.Serializer):
@@ -116,12 +112,6 @@ class StockMovementSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all()
     )
-    category = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all()
-    )
-    subcategory = serializers.PrimaryKeyRelatedField(
-        queryset=SubCategory.objects.all(), required=False, allow_null=True
-    )
     user = serializers.StringRelatedField(read_only=True)
 
     class Meta:
@@ -129,8 +119,6 @@ class StockMovementSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'product',
-            'category',
-            'subcategory',
             'movement_type',
             'quantity',
             'reason',

@@ -73,17 +73,18 @@ class StockService:
             )
 
     @staticmethod
-    def get_stock_quantity(product_id, category_id, subcategory_id):
+    def get_stock_quantity(product_id):
         """
         Get the current stock quantity of a product in a specific category and subcategory.
         """
         try:
-            if subcategory_id:
-                subcategory = SubCategory.objects.get(id=subcategory_id)
-                category = subcategory.category
-            else:
-                subcategory = None
-                category = Category.objects.get(id=category_id)
+            product_response = ProductService.get_product_by_id(product_id)
+            if not product_response.success:
+                raise ValidationError(product_response.error)
+
+            product = product_response.data
+            category = product.category
+            subcategory = product.subcategory
 
             stock = Stock.objects.get(
                 product_id=product_id,
@@ -93,8 +94,8 @@ class StockService:
 
             if stock.product.quantity == 0:
                 logger.info(
-                    f"Product ID {product_id} is out of stock in category ID {category_id},"
-                    f" subcategory ID {subcategory_id}"
+                    f"Product ID {product_id} is out of stock in category ID {category},"
+                    f" subcategory ID {subcategory}"
                 )
                 return {
                     'status': 'success',
@@ -113,7 +114,7 @@ class StockService:
         except Stock.DoesNotExist:
             logger.warning(
                 f"No stock record found for product ID {product_id},"
-                f" category ID {category_id}, subcategory ID {subcategory_id}"
+                f" category ID {category}, subcategory ID {subcategory}"
             )
             return {
                 'status': 'error',
@@ -128,20 +129,19 @@ class StockService:
             }
 
     @staticmethod
-    def update_stock(product, category, subcategory, quantity):
+    def update_stock(product, quantity):
         """
         Update or create stock for a product in a specific category and subcategory.
         """
         try:
-            if subcategory:
-                subcategory = SubCategory.objects.select_related(
-                    'category'
-                ).get(id=subcategory.id)
-                category = subcategory.category
+            product_response = ProductService.get_product_by_id(product.id)
+            if not product_response.success:
+                raise ValidationError(product_response.error)
 
-            else:
-                subcategory = None
-                category = Category.objects.get(id=category.id)
+            product = product_response.data
+            category = product.category
+            subcategory = product.subcategory
+
             stock, created = Stock.objects.get_or_create(
                 product=product,
                 category=category,
@@ -160,21 +160,6 @@ class StockService:
             product.quantity += quantity
             product.save()
 
-            if created:
-                logger.info(
-                    f"New stock created for product {product.name}, "
-                    f"category {category.name}, "
-                    f"subcategory {subcategory.name if subcategory else None}. "
-                    f"Initial quantity: {stock.product.quantity}."
-                )
-            else:
-                logger.info(
-                    f"Stock updated for product {product.name}, "
-                    f"category {category.name}, "
-                    f"subcategory {subcategory.name if subcategory else None}. "
-                    f"New quantity: {stock.product.quantity}."
-                )
-
             return stock, created
 
         except Category.DoesNotExist:
@@ -188,94 +173,131 @@ class StockService:
                 {'error': f"An unexpected error occurred: {str(e)}"}
             )
 
-    def process_stock_movement(
-        self,
-        product,
-        category,
-        subcategory,
-        movement_type,
-        quantity,
-        user,
-        reason=None,
-    ):
+    @staticmethod
+    def validate_product(product):
         """
-        Process a stock movement (entry or exit).
+        Validate the product and retrieve its details.
+        """
+        product_response = ProductService.get_product_by_id(product.id)
+        if not product_response.success:
+            raise ValidationError(product_response.error)
+        return product_response.data
+
+    @staticmethod
+    def handle_exit_movement(product, quantity):
+        """
+        Check if there is enough stock for an exit movement and notify managers if not.
+        """
+        current_stock = StockService.get_stock_quantity(product.id).get('quantity')
+
+        if quantity > current_stock:
+            message = (
+                f"Critical stock for {product.name}. "
+                f"Available: {current_stock}"
+            )
+            users = reports_service.get_managers_and_store_keepers()
+
+            if users.success:
+                for manager in users.data:
+                    notif_service.create_notification(
+                        user=manager,
+                        product=product,
+                        notification_type='CRITICAL_STOCK',
+                        message=message,
+                    )
+            else:
+                logger.warning('No managers found to notify about critical stock levels.')
+
+            raise ValidationError(
+                f"Not enough stock for this exit movement. "
+                f"Available: {current_stock}, Required: {quantity}"
+            )
+
+    @staticmethod
+    def update_stock_quantity(product, quantity, movement_type):
+        """
+        Update the stock quantity based on the movement type.
+        """
+        if movement_type == 'EXIT':
+            StockService.update_stock(product, -quantity)
+        elif movement_type == 'ENTRY':
+            StockService.update_stock(product, quantity)
+        # elif movement_type == "ADJUSTMENT":
+        #     StockService.set_stock(product, quantity)
+        else:
+            raise ValidationError('Invalid movement type.')
+
+    @staticmethod
+    def create_stock_movement(product, quantity, movement_type, user, reason):
+        """
+        Create a stock movement record.
+        """
+        return StockMovement.objects.create(
+            movement_type=movement_type,
+            quantity=quantity,
+            reason=reason,
+            user=user,
+            product=product,
+            category=product.category,
+            subcategory=product.subcategory,
+        )
+
+    @staticmethod
+    def send_low_stock_notification(product):
+        """
+        Send a notification if the stock is below the minimum quantity.
+        """
+        current_stock = StockService.get_stock_quantity(product.id).get('quantity')
+        if current_stock < product.min_quantity:
+            message = (
+                f"Warning: Low stock for {product.name}. "
+                f"Only {current_stock} left!"
+            )
+            users = reports_service.get_managers_and_store_keepers()
+            if users.success:
+                for manager in users.data:
+                    notif_service.create_notification(
+                        user=manager,
+                        product=product,
+                        notification_type='CRITICAL_STOCK',
+                        message=message,
+                    )
+            else:
+                logger.warning('No managers found to notify about low stock levels.')
+
+    @staticmethod
+    def process_stock_movement(product, quantity, movement_type, user, reason=None):
+        """
+        Process a stock movement: add, remove, or adjust quantity based on movement_type.
         """
         try:
-            product = Product.objects.get(id=product.id)
-            if subcategory:
-                subcategory = SubCategory.objects.get(id=subcategory.id)
-                category = subcategory.category
-            else:
-                category = Category.objects.get(id=category.id)
+            product = StockService.validate_product(product)
 
-            if movement_type == 'EXIT':
-                current_stock = StockService.get_stock_quantity(
-                    product.id,
-                    category.id,
-                    subcategory.id if subcategory else None,
-                ).get('quantity')
-                if quantity > current_stock:
-                    message = (
-                        f"Critical stock for {product.name}. "
-                        f"Available : {product.quantity}"
-                    )
-                    users = (
-                        reports_service.get_managers_and_store_keepers()
-                    )
-                    if users.success:
-                        for manager in users.data:
-                            notif_service.create_notification(
-                                user=manager,
-                                product=product,
-                                notification_type='CRITICAL_STOCK',
-                                message=message,
-                            )
-                        raise ValidationError(
-                            f"Not enough stock for this exit movement. "
-                            f"Available: {current_stock}, Required: {quantity}"
-                        )
-                    else:
-                        logger.warning(
-                            'No managers found to notify about critical stock levels.'
-                        )
             with transaction.atomic():
-                StockMovement.objects.create(
-                    product=product,
-                    category=category,
-                    subcategory=subcategory,
-                    movement_type=movement_type,
-                    quantity=quantity,
-                    reason=reason,
-                    user=user,
+                if movement_type == 'EXIT':
+                    StockService.handle_exit_movement(product, quantity)
+
+                StockService.update_stock_quantity(product, quantity, movement_type)
+                StockService.create_stock_movement(
+                    product, quantity, movement_type, user, reason
                 )
-                if movement_type == 'ENTRY':
-                    StockService.update_stock(
-                        product, category, subcategory, quantity
-                    )
-                elif movement_type == 'EXIT':
-                    StockService.update_stock(
-                        product, category, subcategory, -quantity
-                    )
+                StockService.send_low_stock_notification(product)
+
             return {
+                'status': 'success',
+                'message': 'Stock movement processed successfully.',
                 'product': product,
-                'category': category,
-                'subcategory': subcategory if subcategory else None,
                 'movement_type': movement_type,
                 'quantity': quantity,
-                'reason': reason,
+                'reason': reason
             }, 200
 
-        except Product.DoesNotExist:
-            raise ValidationError('Invalid product ID.')
-        except Category.DoesNotExist:
-            raise ValidationError('Invalid category ID.')
         except ValidationError as ve:
-            logger.error(f"Validation error: {str(ve)}")
+            logger.error(f"Validation error in process_stock_movement: {str(ve)}")
             raise ve
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            raise ValidationError({f"An unexpected error occurred: {str(e)}"})
+            logger.error(f"Unexpected error in process_stock_movement: {str(e)}")
+            raise ValidationError({'error': f"An unexpected error occurred: {str(e)}"})
 
     @staticmethod
     def get_product_stock_details(product_id):
@@ -297,7 +319,8 @@ class StockService:
                 {'error': f"An unexpected error occurred: {str(e)}"}
             )
 
-    def check_critical_stock_levels(self):
+    @staticmethod
+    def check_critical_stock_levels():
         """
         Check all products for critical stock levels and return alerts.
         """
@@ -474,7 +497,7 @@ class ProductService:
             )
 
     @staticmethod
-    def get_product_detail(product_id: str):
+    def get_product_by_id(product_id: str):
         """
         Get a product by its ID.
         """
@@ -488,7 +511,7 @@ class ProductService:
                 False, error=f"Product with ID {product_id} not found."
             )
         except Exception as e:
-            logger.error(f"Error in get_product_detail: {str(e)}")
+            logger.error(f"Error in get_product_by_id: {str(e)}")
             ServiceProductResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
             )
