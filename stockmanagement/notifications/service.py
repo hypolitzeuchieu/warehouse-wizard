@@ -17,13 +17,24 @@ class NotificationService:
     @staticmethod
     def create_notification(user, product, notification_type, message):
         try:
+            existing_notification = Notification.objects.filter(
+                user=user,
+                product=product,
+                notification_type=notification_type,
+                message=message,
+            ).exists()
+            if existing_notification:
+                logger.info(f"Notification already sent for"
+                            f" {notification_type} on {product.name}. Skipping.")
+                return None
+
             notif = Notification.objects.create(
                 user=user,
                 product=product,
                 notification_type=notification_type,
                 message=message,
             )
-            # send via WebSocket
+
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
                 'notifications',
@@ -37,6 +48,7 @@ class NotificationService:
                     },
                 },
             )
+
             return notif
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
