@@ -195,18 +195,11 @@ class StockService:
                 f"Critical stock for {product.name}. "
                 f"Available: {current_stock}"
             )
-            users = reports_service.get_managers_and_store_keepers()
-
-            if users.success:
-                for manager in users.data:
-                    notif_service.create_notification(
-                        user=manager,
-                        product=product,
-                        notification_type='CRITICAL_STOCK',
-                        message=message,
-                    )
-            else:
-                logger.warning('No managers found to notify about critical stock levels.')
+            StockService.send_notification(
+                product=product,
+                notification_type='CRITICAL_STOCK',
+                message=message,
+            )
 
             raise ValidationError(
                 f"Not enough stock for this exit movement. "
@@ -243,27 +236,38 @@ class StockService:
         )
 
     @staticmethod
+    def send_notification(product, notification_type, message):
+        """
+        Send a notification to managers and storekeepers.
+        """
+        users = reports_service.get_managers_and_store_keepers()
+        if users.success:
+            for manager in users.data:
+                notif_service.create_notification(
+                    user=manager,
+                    product=product,
+                    notification_type=notification_type,
+                    message=message,
+                )
+        else:
+            logger.warning('No managers found to notify about stock levels.')
+
+    @staticmethod
     def send_low_stock_notification(product):
         """
         Send a notification if the stock is below the minimum quantity.
         """
         current_stock = StockService.get_stock_quantity(product.id).get('quantity')
-        if current_stock < product.min_quantity:
+        if product.min_quantity > current_stock > 0:
             message = (
                 f"Warning: Low stock for {product.name}. "
                 f"Only {current_stock} left!"
             )
-            users = reports_service.get_managers_and_store_keepers()
-            if users.success:
-                for manager in users.data:
-                    notif_service.create_notification(
-                        user=manager,
-                        product=product,
-                        notification_type='CRITICAL_STOCK',
-                        message=message,
-                    )
-            else:
-                logger.warning('No managers found to notify about low stock levels.')
+            StockService.send_notification(
+                product=product,
+                notification_type='LOW_STOCK',
+                message=message,
+            )
 
     @staticmethod
     def process_stock_movement(product, quantity, movement_type, user, reason=None):
@@ -281,7 +285,8 @@ class StockService:
                 StockService.create_stock_movement(
                     product, quantity, movement_type, user, reason
                 )
-                StockService.send_low_stock_notification(product)
+                if movement_type != 'EXIT':
+                    StockService.send_low_stock_notification(product)
 
             return {
                 'status': 'success',
@@ -344,21 +349,12 @@ class StockService:
                         f"Critical stock for {stock.product.name}. "
                         f"Available : {stock.product.quantity}"
                     )
-                    users = (
-                        reports_service.get_managers_and_store_keepers()
+                    StockService.send_notification(
+                        product=stock.product,
+                        notification_type='CRITICAL_STOCK',
+                        message=message,
                     )
-                    if users.success:
-                        for manager in users.data:
-                            notif_service.create_notification(
-                                user=manager,
-                                product=stock.product,
-                                notification_type='CRITICAL_STOCK',
-                                message=message,
-                            )
-                    else:
-                        logger.warning(
-                            'No managers found to notify about critical stock levels.'
-                        )
+
             logger.info(
                 f"Checked critical stock levels."
                 f" Found {len(critical_stocks)} critical stock items."
