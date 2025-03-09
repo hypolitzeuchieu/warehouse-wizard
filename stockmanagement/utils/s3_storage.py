@@ -69,6 +69,7 @@ def upload_file_to_s3(file):
         )
         image_url = (f"https://{os.getenv('AWS_BUCKET_NAME')}.s3."
                      f"{os.getenv('AWS_REGION_NAME')}.amazonaws.com/{file_name}")
+        logger.info(f"Image successfully uploaded to S3: {image_url}")
         return image_url
 
     except NoCredentialsError:
