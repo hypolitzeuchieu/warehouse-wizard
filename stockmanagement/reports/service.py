@@ -72,18 +72,12 @@ class ReportService:
         if product.quantity < quantity:
             message = (f"Stock is low for {product.name}."
                        f"Available: {product.quantity}, Required: {quantity}")
-            print('message', message)
-            users_response = ReportService.get_managers_and_store_keepers()
-            if not users_response.success:
-                return users_response
 
-            for user in users_response.data:
-                self.notif_service.create_notification(
-                    user=user,
-                    product=product,
-                    notification_type='CRITICAL_STOCK',
-                    message=message,
-                )
+            self.notif_service.create_notification(
+                product=product,
+                notification_type='CRITICAL_STOCK',
+                message=message,
+            )
             return ServiceResponse(success=False, error='Insufficient stock.')
         return ServiceResponse(success=True)
 
@@ -115,17 +109,11 @@ class ReportService:
                     f"Critical stock for {product.name}."
                     f" Available quantity : {product.quantity}"
                 )
-                users_response = ReportService.get_managers_and_store_keepers()
-                if not users_response.success:
-                    return users_response
-
-                for manager in users_response.data:
-                    self.notif_service.create_notification(
-                        user=manager,
-                        product=product,
-                        notification_type='CRITICAL_STOCK',
-                        message=message,
-                    )
+                self.notif_service.create_notification(
+                    product=product,
+                    notification_type='CRITICAL_STOCK',
+                    message=message,
+                )
             return ServiceResponse(success=True)
         except Exception as e:
             logger.error(
