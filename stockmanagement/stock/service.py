@@ -23,6 +23,20 @@ reports_service = ReportService()
 notif_service = NotificationService()
 
 
+class StockServiceResponse():
+    def __init__(self, success, data=None, error=None):
+        self.success = success
+        self.data = data
+        self.error = error
+
+    def to_dict(self):
+        return {
+            'success': self.success,
+            'data': self.data,
+            'error': self.error
+        }
+
+
 class StockService:
     """
     Service for handling stock-related operations.
@@ -34,19 +48,21 @@ class StockService:
         Get all products in a specific category.
         """
         try:
-            category = Category.objects.get(id=category_id)
-            products = Product.objects.filter(category=category)
+            products = Product.objects.filter(category_id=category_id)
             logger.info(
-                f"Retrieved {products.count()} products for category: {category.name}"
+                f"Retrieved {products.count()} products for category: {category_id}"
             )
-            return products
+            return StockServiceResponse(success=True, data=products)
+
         except Category.DoesNotExist:
             logger.error(f"Category with id {category_id} not found.")
-            raise ValidationError(f"Category with id {category_id} not found.")
+            return StockServiceResponse(
+                success=False, error=f"Category with id {category_id} not found."
+            )
         except Exception as e:
             logger.error(f"Error in get_products_by_category: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
+            return StockServiceResponse(
+                success=False, error=f"An unexpected error occurred: {str(e)}"
             )
 
     @staticmethod
@@ -55,21 +71,22 @@ class StockService:
         Get all products in a specific category.
         """
         try:
-            subcategory = SubCategory.objects.get(id=subcategory_id)
-            products = Product.objects.filter(subcategory=subcategory)
+            products = Product.objects.filter(subcategory_id=subcategory_id)
             logger.info(
                 f"Retrieved {products.count()} products for category: {subcategory_id}"
             )
-            return products
+            return StockServiceResponse(success=True, data=products)
+
         except SubCategory.DoesNotExist:
             logger.error(f"subcategory with id {subcategory_id} not found.")
-            raise ValidationError(
-                f"subcategory with id {subcategory_id} not found."
+            return StockServiceResponse(
+                success=False, error=f"Category with id {subcategory_id} not found."
             )
+
         except Exception as e:
             logger.error(f"Error in get_products_by_subcategory: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
+            return StockServiceResponse(
+                success=False, error=f"An unexpected error occurred: {str(e)}"
             )
 
     @staticmethod
@@ -80,7 +97,7 @@ class StockService:
         try:
             product_response = ProductService.get_product_by_id(product_id)
             if not product_response.success:
-                raise ValidationError(product_response.error)
+                return StockServiceResponse(success=False, error=product_response.error)
 
             product = product_response.data
             category = product.category
@@ -97,48 +114,42 @@ class StockService:
                     f"Product ID {product_id} is out of stock in category ID {category},"
                     f" subcategory ID {subcategory}"
                 )
-                return {
-                    'status': 'success',
-                    'quantity': 0,
-                    'message': 'Product is out of stock.',
-                }
+                return StockServiceResponse(
+                    success=True,
+                    data={'quantity': 0, 'message': 'Product is out of stock.'}
+                )
 
             logger.info(
                 f"Stock quantity for product {stock.product.name} is {stock.product.quantity}"
             )
-            return {
-                'status': 'success',
-                'quantity': stock.product.quantity,
-                'message': 'Stock retrieved successfully.',
-            }
-        except Stock.DoesNotExist:
-            logger.warning(
-                f"No stock record found for product ID {product_id},"
-                f" category ID {category}, subcategory ID {subcategory}"
+            return StockServiceResponse(
+                success=True,
+                data={
+                    'message': 'Stock retrieved successfully.',
+                    'quantity': stock.product.quantity,
+                }
             )
-            return {
-                'status': 'error',
-                'message': 'Stock record not found for the given product and category.',
-            }
-
+        except Stock.DoesNotExist:
+            logger.warning(f"No stock record found for product ID {product_id},")
+            return StockServiceResponse(
+                success=False,
+                error='Stock record not found for the given product and category.'
+            )
         except Exception as e:
             logger.error(f"Error in get_stock_quantity: {str(e)}")
-            return {
-                'status': 'error',
-                'message': f"An unexpected error occurred: {str(e)}",
-            }
+            return StockServiceResponse(
+                success=False,
+                error=f"An unexpected error occurred: {str(e)}"
+            )
 
     @staticmethod
     def update_stock(product, quantity):
-        """
-        Update or create stock for a product in a specific category and subcategory.
-        """
         try:
             product_response = ProductService.get_product_by_id(product.id)
             if not product_response.success:
-                raise ValidationError(product_response.error)
+                return StockServiceResponse(success=False, error=product_response.error)
 
-            product = product_response.data
+            product = product_response.data  # Access the actual product instance
             category = product.category
             subcategory = product.subcategory
 
@@ -149,28 +160,36 @@ class StockService:
             )
             if stock.product.quantity + quantity < 0:
                 logger.warning(
-                    f"Insufficient stock for product {product.name}, category {category.name},"
-                    f"subcategory {subcategory.name if subcategory else 'None'}. "
-                    f"Current quantity: {stock.quantity}, Attempted adjustment: {quantity}."
+                    f"Insufficient stock for product {product.name}, "
+                    f"category {category.name},subcategory "
+                    f"{subcategory.name if subcategory else 'None'}. "
+                    f"Current quantity: {stock.quantity}, "
+                    f"Attempted adjustment: {quantity}."
                 )
-                raise ValidationError(
-                    f"Insufficient stock for this operation. "
-                    f"Current quantity: {stock.quantity}."
+                return StockServiceResponse(
+                    success=False,
+                    error=f"Insufficient stock for this operation."
+                          f" Current quantity: {stock.quantity}."
                 )
             product.quantity += quantity
             product.save()
 
-            return stock, created
+            return StockServiceResponse(
+                success=True,
+                data={'stock': stock, 'created': created}
+            )
 
         except Category.DoesNotExist:
             logger.error(f"Category with id {category.id} does not exist.")
-            raise ValidationError(
-                f"The category with ID {category.id} does not exist."
+            return StockServiceResponse(
+                success=False,
+                error=f"The category with ID {category.id} does not exist."
             )
         except Exception as e:
             logger.error(f"Unexpected error in update_stock: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
+            return StockServiceResponse(
+                success=False,
+                error=f"An unexpected error occurred: {str(e)}"
             )
 
     @staticmethod
@@ -180,15 +199,19 @@ class StockService:
         """
         product_response = ProductService.get_product_by_id(product.id)
         if not product_response.success:
-            raise ValidationError(product_response.error)
-        return product_response.data
+            return StockServiceResponse(success=False, error=product_response.error)
+        return StockServiceResponse(success=True, data=product_response.data)
 
     @staticmethod
     def handle_exit_movement(product, quantity):
         """
         Check if there is enough stock for an exit movement and notify managers if not.
         """
-        current_stock = StockService.get_stock_quantity(product.id).get('quantity')
+        current_stock_response = StockService.get_stock_quantity(product.id)
+        if not current_stock_response.success:
+            return current_stock_response
+
+        current_stock = current_stock_response.data.get('quantity')
 
         if quantity > current_stock:
             message = (
@@ -201,10 +224,12 @@ class StockService:
                 message=message,
             )
 
-            raise ValidationError(
-                f"Not enough stock for this exit movement. "
-                f"Available: {current_stock}, Required: {quantity}"
+            return StockServiceResponse(
+                success=False,
+                error=f"Not enough stock for this exit movement. "
+                      f"Available: {current_stock}, Required: {quantity}"
             )
+        return StockServiceResponse(success=True)
 
     @staticmethod
     def update_stock_quantity(product, quantity, movement_type):
@@ -212,52 +237,66 @@ class StockService:
         Update the stock quantity based on the movement type.
         """
         if movement_type == 'EXIT':
-            StockService.update_stock(product, -quantity)
+            return StockService.update_stock(product, -quantity)
         elif movement_type == 'ENTRY':
-            StockService.update_stock(product, quantity)
-        # elif movement_type == "ADJUSTMENT":
-        #     StockService.set_stock(product, quantity)
+            return StockService.update_stock(product, quantity)
         else:
-            raise ValidationError('Invalid movement type.')
+            return StockServiceResponse(
+                success=False,
+                error='Invalid movement type.'
+            )
 
     @staticmethod
     def create_stock_movement(product, quantity, movement_type, user, reason):
         """
         Create a stock movement record.
         """
-        return StockMovement.objects.create(
-            movement_type=movement_type,
-            quantity=quantity,
-            reason=reason,
-            user=user,
-            product=product,
-            category=product.category,
-            subcategory=product.subcategory,
-        )
+        try:
+            stock_movement = StockMovement.objects.create(
+                movement_type=movement_type,
+                quantity=quantity,
+                reason=reason,
+                user=user,
+                product=product,
+                category=product.category,
+                subcategory=product.subcategory,
+            )
+            return StockServiceResponse(success=True, data=stock_movement)
+        except Exception as e:
+            return StockServiceResponse(
+                success=False,
+                error=f"An unexpected error occurred: {str(e)}"
+            )
 
     @staticmethod
     def send_notification(product, notification_type, message):
         """
         Send a notification to managers and storekeepers.
         """
-        users = reports_service.get_managers_and_store_keepers()
-        if users.success:
-            for manager in users.data:
-                notif_service.create_notification(
-                    user=manager,
-                    product=product,
-                    notification_type=notification_type,
-                    message=message,
-                )
-        else:
-            logger.warning('No managers found to notify about stock levels.')
+        try:
+            notif = notif_service.create_notification(
+                product=product,
+                notification_type=notification_type,
+                message=message,
+            )
+            return StockServiceResponse(success=True, data=notif)
+        except Exception as e:
+            return StockServiceResponse(
+                success=False,
+                error=f"An unexpected error occurred: {str(e)}"
+            )
 
     @staticmethod
     def send_low_stock_notification(product):
         """
         Send a notification if the stock is below the minimum quantity.
         """
-        current_stock = StockService.get_stock_quantity(product.id).get('quantity')
+        current_stock_response = StockService.get_stock_quantity(product.id)
+        if not current_stock_response.success:
+            return current_stock_response
+
+        current_stock = current_stock_response.data.get('quantity')
+
         if product.min_quantity > current_stock > 0:
             message = (
                 f"Warning: Low stock for {product.name}. "
@@ -268,41 +307,62 @@ class StockService:
                 notification_type='LOW_STOCK',
                 message=message,
             )
+        return StockServiceResponse(success=True)
 
     @staticmethod
-    def process_stock_movement(product, quantity, movement_type, user, reason=None):
-        """
-        Process a stock movement: add, remove, or adjust quantity based on movement_type.
-        """
+    def process_stock_movement(
+            product, quantity, movement_type, user, reason=None
+    ):
         try:
             product = StockService.validate_product(product)
+            if not product.success:
+                return product
 
-            with transaction.atomic():
-                if movement_type == 'EXIT':
-                    StockService.handle_exit_movement(product, quantity)
-
-                StockService.update_stock_quantity(product, quantity, movement_type)
-                StockService.create_stock_movement(
-                    product, quantity, movement_type, user, reason
+            if movement_type == 'EXIT':
+                exit_response = StockService.handle_exit_movement(
+                    product.data, quantity
                 )
-                if movement_type != 'EXIT':
-                    StockService.send_low_stock_notification(product)
+                if not exit_response.success:
+                    return exit_response
 
-            return {
-                'status': 'success',
-                'message': 'Stock movement processed successfully.',
-                'product': product,
-                'movement_type': movement_type,
-                'quantity': quantity,
-                'reason': reason
-            }, 200
+            update_response = StockService.update_stock_quantity(
+                product.data, quantity, movement_type
+            )
+            if not update_response.success:
+                return update_response
+
+            movement_response = StockService.create_stock_movement(
+                product.data, quantity, movement_type, user, reason
+            )
+            if not movement_response.success:
+                return movement_response
+
+            if movement_type != 'EXIT':
+                StockService.send_low_stock_notification(product.data)
+
+            return StockServiceResponse(
+                success=True,
+                data={
+                    'message': 'Stock movement processed successfully.',
+                    'product': product.data,
+                    'movement_type': movement_type,
+                    'quantity': quantity,
+                    'reason': reason
+                }
+            )
 
         except ValidationError as ve:
             logger.error(f"Validation error in process_stock_movement: {str(ve)}")
-            raise ve
+            return StockServiceResponse(
+                success=False,
+                error=str(ve)
+            )
         except Exception as e:
             logger.error(f"Unexpected error in process_stock_movement: {str(e)}")
-            raise ValidationError({'error': f"An unexpected error occurred: {str(e)}"})
+            return StockServiceResponse(
+                success=False,
+                error=f"An unexpected error occurred: {str(e)}"
+            )
 
     @staticmethod
     def get_product_stock_details(product_id):
@@ -359,26 +419,16 @@ class StockService:
                 f"Checked critical stock levels."
                 f" Found {len(critical_stocks)} critical stock items."
             )
-            return critical_stocks
+            return StockServiceResponse(
+                success=True,
+                data=critical_stocks
+            )
         except Exception as e:
             logger.error(f"Error in check_critical_stock_levels: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
+            return StockServiceResponse(
+                success=False,
+                error=f"An unexpected error occurred: {str(e)}"
             )
-
-
-class ServiceProductResponse:
-    def __init__(self, success, data=None, error=None):
-        self.success = success
-        self.data = data
-        self.error = error
-
-    def to_dict(self):
-        return {
-            'success': self.success,
-            'data': self.data,
-            'error': self.error
-        }
 
 
 class ProductService:
@@ -413,7 +463,7 @@ class ProductService:
                 ).first()
 
             if expired_date and expired_date.date() < date.today():
-                return ServiceProductResponse(
+                return StockServiceResponse(
                     False,
                     {'expired_date': f"The product cannot be created it has "
                                      f"already expired (expiry date: {expired_date.date()})."
@@ -442,17 +492,17 @@ class ProductService:
                 )
 
                 StockService.update_stock(
-                    product, category, subcategory, quantity
+                    product, quantity
                 )
-                return ServiceProductResponse(True, data=product)
+                return StockServiceResponse(True, data=product)
 
         except Category.DoesNotExist:
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False,
                 error=f"Category with ID {category_id} does not exist."
             )
         except Exception as e:
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
             )
 
@@ -464,14 +514,14 @@ class ProductService:
                 setattr(product, key, value)
             product.save()
             logger.info(f"Product updated: {product.name}")
-            return ServiceProductResponse(True, data=product)
+            return StockServiceResponse(True, data=product)
 
         except Product.DoesNotExist:
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False, error=f"Product with ID {product_id} not found."
             )
         except Exception as e:
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
             )
 
@@ -481,14 +531,14 @@ class ProductService:
             product = Product.objects.get(id=product_id)
             product.delete()
             logger.info(f"Product deleted: {product.name}")
-            return ServiceProductResponse(True, data='Product deleted successfully')
+            return StockServiceResponse(True, data='Product deleted successfully')
 
         except Product.DoesNotExist:
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False, error=f"Product with ID {product_id} not found."
             )
         except Exception as e:
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
             )
 
@@ -500,15 +550,15 @@ class ProductService:
         try:
             product = Product.objects.get(id=product_id)
             logger.info(f"Retrieved product: {product.name}")
-            return ServiceProductResponse(True, data=product)
+            return StockServiceResponse(True, data=product)
         except Product.DoesNotExist:
             logger.error(f"Product with ID {product_id} not found.")
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False, error=f"Product with ID {product_id} not found."
             )
         except Exception as e:
             logger.error(f"Error in get_product_by_id: {str(e)}")
-            ServiceProductResponse(
+            StockServiceResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
             )
 
@@ -519,13 +569,15 @@ class ProductService:
         """
         try:
             stocks = Stock.objects.select_related(
-                'category', 'subcategory'
+                'product', 'category', 'subcategory'
             ).all()
+
             logger.info(f"Retrieved {stocks.count()} stock entries.")
-            return ServiceProductResponse(success=True, data=stocks)
+            return StockServiceResponse(success=True, data=stocks)
+
         except Exception as e:
             logger.error(f"Error in get_all_stock: {str(e)}")
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False,
                 error=f"An unexpected error occurred: {str(e)}"
             )
@@ -545,24 +597,16 @@ class ProductService:
             expired_products.update(
                 is_expired=True, expiry_date=F('expiry_date')
             )
-            users = ReportService.get_managers_and_store_keepers()
             for product in expired_products:
                 message = (
                     f"The product {product.name} is expired. "
                     f"Expired date : {product.expiry_date}"
                 )
-                if users.success:
-                    for manager in users.data:
-                        notif_service.create_notification(
-                            user=manager,
-                            product=product,
-                            notification_type='EXPIRED',
-                            message=message,
-                        )
-                else:
-                    logger.warning(
-                        'No managers found to notify about critical stock levels.'
-                    )
+                notif_service.create_notification(
+                    product=product,
+                    notification_type='EXPIRED',
+                    message=message,
+                )
 
             near_expiry = Product.objects.filter(
                 expiry_date__range=(now, soon), is_expired=False
@@ -572,18 +616,15 @@ class ProductService:
                     f"The product {product.name} is near to expired."
                     f" Expired date : {product.expiry_date}"
                 )
-                if users.success:
-                    for manager in users.data:
-                        notif_service.create_notification(
-                            user=manager,
-                            product=product,
-                            notification_type='NEAR_EXPIRY',
-                            message=message,
-                        )
+                notif_service.create_notification(
+                    product=product,
+                    notification_type='NEAR_EXPIRY',
+                    message=message,
+                )
             logger.info(
                 f"Retrieved {expired_products.count()} expired products."
             )
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 True,
                 {'expired_products': expired_products,
                  'count': expired_products.count(),
@@ -593,7 +634,7 @@ class ProductService:
             )
         except Exception as e:
             logger.error(f"Error in get_products_by_expiry_date: {str(e)}")
-            return ServiceProductResponse(
+            return StockServiceResponse(
                 False,
                 error=f"An unexpected error occurred: {str(e)}"
             )

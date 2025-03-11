@@ -6,7 +6,6 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from stock.models import Category
 from stock.models import StockMovement
@@ -51,15 +50,17 @@ class StockViewSet(viewsets.ViewSet):
             product_id = serializer.validated_data.get('product_id')
             try:
                 result = self.service.get_stock_quantity(product_id)
-                if result['status'] == 'success':
-                    return Response(result, status=status.HTTP_200_OK)
-                else:
-                    return Response(result, status=status.HTTP_404_NOT_FOUND)
-            except Exception as e:
+                if result.success:
+                    return Response(result.data, status=status.HTTP_200_OK)
                 return Response(
-                    {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST
+                    {'error': result.error}, status=status.HTTP_400_BAD_REQUEST
                 )
-
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
         logger.error(f"Invalid param provided:{str(serializer.errors)}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -85,27 +86,27 @@ class StockViewSet(viewsets.ViewSet):
         if serializer.is_valid():
             data = serializer.validated_data
             try:
-                result, status_code = self.service.process_stock_movement(
+                result = self.service.process_stock_movement(
                     product=data['product'],
                     movement_type=data['movement_type'],
                     quantity=data['quantity'],
                     user=request.user,
                     reason=data.get('reason'),
                 )
+                if result.success:
+                    return Response(
+                        StockMovementSerializer(result.data).data,
+                        status=status.HTTP_201_CREATED
+                    )
                 return Response(
-                    StockMovementSerializer(result).data, status=status_code
-                )
-            except ValidationError as e:
-                return Response(
-                    {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST
+                    {'error': result.error}, status=status.HTTP_400_BAD_REQUEST
                 )
             except Exception as e:
-                logger.error(f"Unexpected error: {str(e)}")
+                logger.error(f"Unexpected error occurred: {str(e)}")
                 return Response(
-                    {'error': f"An unexpected error occurred. {str(e)}"},
+                    {'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-
         logger.error(
             f"Invalid process movement data provided:{str(serializer.errors)}"
         )
@@ -113,7 +114,7 @@ class StockViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description='Retrieve all movements stock.',
-        responses={200: StockSerializer, 500: 'Internal Server Error'},
+        responses={200: StockMovementSerializer, 500: 'Internal Server Error'},
     )
     @action(detail=False, methods=['GET'], url_path='stock/movements')
     def get_stock_movements(self, request):
@@ -123,7 +124,8 @@ class StockViewSet(viewsets.ViewSet):
         try:
             movements = StockMovement.objects.all()
             serializer = StockMovementSerializer(movements, many=True)
-            return Response(serializer.data)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
             return Response(
@@ -423,8 +425,14 @@ class CategoryViewSet(viewsets.ViewSet):
             category_id = serializer.validated_data.get('category_id')
             try:
                 products = StockService().get_products_by_category(category_id)
-                result = ProductSerializer(products, many=True)
-                return Response(result.data, status.HTTP_200_OK)
+                if products.success:
+                    result = ProductSerializer(products.data, many=True)
+                    return Response(result.data, status.HTTP_200_OK)
+                else:
+                    return Response(
+                        {'error': products.error},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             except Exception as e:
                 logger.error(f"Unexpected error occurred: {str(e)}")
@@ -454,8 +462,14 @@ class CategoryViewSet(viewsets.ViewSet):
                 products = StockService().get_products_by_subcategory(
                     subcategory_id
                 )
-                result = ProductSerializer(products, many=True)
-                return Response(result.data, status.HTTP_200_OK)
+                if products.success:
+                    result = ProductSerializer(products.data, many=True)
+                    return Response(result.data, status.HTTP_200_OK)
+                else:
+                    return Response(
+                        {'error': products.error},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             except Exception as e:
                 logger.error(f"Unexpected error occurred: {str(e)}")
@@ -649,7 +663,6 @@ class ProductViewSet(viewsets.ViewSet):
         """
         try:
             result = self.product_service.get_products_by_expiry_date()
-            print('result', result)
             if result.success:
                 serializer = ProductSerializer(
                     result.data['expired_products'], many=True
