@@ -20,7 +20,7 @@ class NotificationService:
     @staticmethod
     def create_notification(product, notification_type, message):
         try:
-            time_threshold = now() - timedelta(minutes=1)
+            time_threshold = now() - timedelta(days=1)
 
             existing_notification = Notification.objects.filter(
                 product=product,
