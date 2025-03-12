@@ -23,7 +23,7 @@ reports_service = ReportService()
 notif_service = NotificationService()
 
 
-class StockServiceResponse():
+class StockServiceResponse:
     def __init__(self, success, data=None, error=None):
         self.success = success
         self.data = data
@@ -43,7 +43,7 @@ class StockService:
     """
 
     @staticmethod
-    def get_products_by_category(category_id):
+    def get_products_by_category(category_id) -> StockServiceResponse:
         """
         Get all products in a specific category.
         """
@@ -66,7 +66,7 @@ class StockService:
             )
 
     @staticmethod
-    def get_products_by_subcategory(subcategory_id):
+    def get_products_by_subcategory(subcategory_id) -> StockServiceResponse:
         """
         Get all products in a specific category.
         """
@@ -90,7 +90,7 @@ class StockService:
             )
 
     @staticmethod
-    def get_stock_quantity(product_id):
+    def get_stock_quantity(product_id) -> StockServiceResponse:
         """
         Get the current stock quantity of a product in a specific category and subcategory.
         """
@@ -143,7 +143,7 @@ class StockService:
             )
 
     @staticmethod
-    def update_stock(product, quantity):
+    def update_stock(product, quantity) -> StockServiceResponse:
         try:
             product_response = ProductService.get_product_by_id(product.id)
             if not product_response.success:
@@ -193,7 +193,7 @@ class StockService:
             )
 
     @staticmethod
-    def validate_product(product):
+    def validate_product(product) -> StockServiceResponse:
         """
         Validate the product and retrieve its details.
         """
@@ -203,7 +203,7 @@ class StockService:
         return StockServiceResponse(success=True, data=product_response.data)
 
     @staticmethod
-    def handle_exit_movement(product, quantity):
+    def handle_exit_movement(product, quantity) -> StockServiceResponse:
         """
         Check if there is enough stock for an exit movement and notify managers if not.
         """
@@ -232,7 +232,7 @@ class StockService:
         return StockServiceResponse(success=True)
 
     @staticmethod
-    def update_stock_quantity(product, quantity, movement_type):
+    def update_stock_quantity(product, quantity, movement_type) -> StockServiceResponse:
         """
         Update the stock quantity based on the movement type.
         """
@@ -247,7 +247,9 @@ class StockService:
             )
 
     @staticmethod
-    def create_stock_movement(product, quantity, movement_type, user, reason):
+    def create_stock_movement(
+            product, quantity, movement_type, user, reason
+    ) -> StockServiceResponse:
         """
         Create a stock movement record.
         """
@@ -269,7 +271,7 @@ class StockService:
             )
 
     @staticmethod
-    def send_notification(product, notification_type, message):
+    def send_notification(product, notification_type, message) -> StockServiceResponse:
         """
         Send a notification to managers and storekeepers.
         """
@@ -287,7 +289,7 @@ class StockService:
             )
 
     @staticmethod
-    def send_low_stock_notification(product):
+    def send_low_stock_notification(product) -> StockServiceResponse:
         """
         Send a notification if the stock is below the minimum quantity.
         """
@@ -312,7 +314,7 @@ class StockService:
     @staticmethod
     def process_stock_movement(
             product, quantity, movement_type, user, reason=None
-    ):
+    ) -> StockServiceResponse:
         try:
             product = StockService.validate_product(product)
             if not product.success:
@@ -365,7 +367,7 @@ class StockService:
             )
 
     @staticmethod
-    def get_product_stock_details(product_id):
+    def get_product_stock_details(product_id) -> StockServiceResponse:
         """
         Get the stock details (quantity) of a product in all categories and subcategories.
         """
@@ -374,18 +376,19 @@ class StockService:
             logger.info(
                 f"Retrieved stock details for {product_id}: {stock_details.count()} entries."
             )
-            return {
+            data = {
                 'expired_products': stock_details,
                 'count': stock_details.count(),
             }
+            return StockServiceResponse(success=True, data=data)
         except Exception as e:
             logger.error(f"Error in get_product_stock_details: {str(e)}")
-            raise ValidationError(
-                {'error': f"An unexpected error occurred: {str(e)}"}
+            return StockServiceResponse(
+                success=False, error=f"An unexpected error occurred: {str(e)}"
             )
 
     @staticmethod
-    def check_critical_stock_levels():
+    def check_critical_stock_levels() -> StockServiceResponse:
         """
         Check all products for critical stock levels and return alerts.
         """
@@ -450,7 +453,7 @@ class ProductService:
             promotion_start_date=None,
             promotion_end_date=None,
             min_quantity=0,
-    ):
+    ) -> StockServiceResponse:
         """
         Create a product or increment its stock if it already exists.
         """
@@ -507,7 +510,7 @@ class ProductService:
             )
 
     @staticmethod
-    def update_product(product_id, data):
+    def update_product(product_id, data) -> StockServiceResponse:
         try:
             product = Product.objects.get(id=product_id)
             for key, value in data.items():
@@ -526,7 +529,7 @@ class ProductService:
             )
 
     @staticmethod
-    def delete_product(product_id):
+    def delete_product(product_id) -> StockServiceResponse:
         try:
             product = Product.objects.get(id=product_id)
             product.delete()
@@ -543,7 +546,7 @@ class ProductService:
             )
 
     @staticmethod
-    def get_product_by_id(product_id: str):
+    def get_product_by_id(product_id: str) -> StockServiceResponse:
         """
         Get a product by its ID.
         """
@@ -563,7 +566,7 @@ class ProductService:
             )
 
     @staticmethod
-    def get_all_stock():
+    def get_all_stock() -> StockServiceResponse:
         """
         Get a list of all stock entries (product + category + subcategory + quantity).
         """
@@ -583,7 +586,7 @@ class ProductService:
             )
 
     @staticmethod
-    def get_products_by_expiry_date():
+    def get_products_by_expiry_date() -> StockServiceResponse:
         """
         Get all products that are expired or close to expiry.
         """

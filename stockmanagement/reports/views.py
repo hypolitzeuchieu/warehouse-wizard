@@ -93,15 +93,18 @@ class ReportsViewSet(viewsets.ViewSet):
 
                 pdf_file = service.export_invoice_to_pdf(invoice_id)
 
-                if not pdf_file:
-                    return Response(
-                        {'error': 'Invoice not found'}, status.HTTP_404_NOT_FOUND
+                if pdf_file.success:
+                    response = HttpResponse(
+                        pdf_file.data.getvalue(), content_type='application/pdf'
                     )
+                    response['Content-Disposition'] = (f'attachment; '
+                                                       f'filename=invoice_{invoice_id}.pdf')
+                    return response
 
-                response = HttpResponse(pdf_file.getvalue(), content_type='application/pdf')
-                response['Content-Disposition'] = (f'attachment; '
-                                                   f'filename=invoice_{invoice_id}.pdf')
-                return response
+                return Response(
+                    {'error': 'Invoice not found'}, status.HTTP_404_NOT_FOUND
+                )
+
             except Exception as e:
                 logger.error(f"Error in export_invoice_to_pdf: {str(e)}")
                 return Response(

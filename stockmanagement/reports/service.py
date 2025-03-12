@@ -49,7 +49,7 @@ class ReportService:
     notif_service = NotificationService()
 
     @staticmethod
-    def get_managers_and_store_keepers():
+    def get_managers_and_store_keepers() -> ServiceResponse:
         try:
             managers = User.objects.filter(role__in=['stock_keeper', 'manager'])
             if not managers.exists():
@@ -59,7 +59,7 @@ class ReportService:
             logger.error(f"Error fetching managers: {str(e)}")
             return ServiceResponse(success=False, error=str(e))
 
-    def validate_stock(self, product, quantity):
+    def validate_stock(self, product, quantity) -> ServiceResponse:
         """
         Validate if sufficient stock is available for the given product and quantity.
         """
@@ -81,7 +81,7 @@ class ReportService:
             return ServiceResponse(success=False, error='Insufficient stock.')
         return ServiceResponse(success=True)
 
-    def update_stock(self, product, quantity, user, reason):
+    def update_stock(self, product, quantity, user, reason) -> ServiceResponse:
         """
         Update stock levels after a transaction and log the stock movement.
         """
@@ -125,7 +125,7 @@ class ReportService:
             )
 
     @staticmethod
-    def calculate_invoice_totals(invoice):
+    def calculate_invoice_totals(invoice) -> ServiceResponse:
         """
         Calculate the total amount for an invoice, including applicable taxes.
         """
@@ -156,7 +156,7 @@ class ReportService:
             )
 
     @staticmethod
-    def create_sales_report(date=None, user=None):
+    def create_sales_report(date=None, user=None) -> ServiceResponse:
         """
         Create or retrieve a daily sales report.
         """
@@ -184,7 +184,7 @@ class ReportService:
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def update_sales_report(invoice):
+    def update_sales_report(invoice) -> ServiceResponse:
         """
         Update the sales report with the latest invoice data.
         """
@@ -238,7 +238,7 @@ class ReportService:
             logger.error(f"Error creating invoice: {e}")
             return ServiceResponse(success=False, error=str(e))
 
-    def process_invoice_lines(self, invoice, lines_data, user):
+    def process_invoice_lines(self, invoice, lines_data, user) -> ServiceResponse:
         """
         Process invoice lines and update stock.
         """
@@ -292,7 +292,7 @@ class ReportService:
         return ServiceResponse(success=True, data=(total_amount, sold_products))
 
     @staticmethod
-    def handle_completed_or_credit(invoice):
+    def handle_completed_or_credit(invoice) -> ServiceResponse:
         """Handle COMPLETED and CREDIT statuses."""
         try:
             remaining_amount = invoice.total - invoice.advance_paid
@@ -344,7 +344,7 @@ class ReportService:
             )
 
     @staticmethod
-    def finalize_invoice(invoice):
+    def finalize_invoice(invoice) -> ServiceResponse:
         """Calculate totals and update reports."""
         try:
             totals_response = ReportService.calculate_invoice_totals(invoice)
@@ -364,7 +364,7 @@ class ReportService:
                 success=False, error=f"Error finalizing invoice: {str(e)}"
             )
 
-    def process_invoice(self, data, user):
+    def process_invoice(self, data, user) -> ServiceResponse:
         """
         Handle the complete workflow for processing a sale and creating an invoice.
         """
@@ -415,7 +415,9 @@ class ReportService:
                 )
 
     @staticmethod
-    def generate_inventory_report(start_date=None, end_date=None, user=None):
+    def generate_inventory_report(
+            start_date=None, end_date=None, user=None
+    ) -> ServiceResponse:
         """
         Generate a detailed inventory report with optional date filters.
         """
@@ -453,7 +455,7 @@ class ReportService:
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def get_inventory_data(start_date=None, end_date=None):
+    def get_inventory_data(start_date=None, end_date=None) -> ServiceResponse:
         """
         Generate data for inventory levels within a specific date range.
         """
@@ -513,7 +515,7 @@ class ReportService:
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def get_sales_summary(start_date=None, end_date=None, user=None):
+    def get_sales_summary(start_date=None, end_date=None, user=None) -> ServiceResponse:
         """
         Get a summary of sales for a given period.
         """
@@ -555,7 +557,7 @@ class ReportService:
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def export_invoice_to_pdf(invoice_id):
+    def export_invoice_to_pdf(invoice_id) -> ServiceResponse:
         """
         Export an invoice to PDF format.
         """
@@ -679,7 +681,7 @@ class ReportService:
             )
 
     @staticmethod
-    def archive_and_delete_invoice(invoice_id):
+    def archive_and_delete_invoice(invoice_id) -> ServiceResponse:
         try:
             with transaction.atomic():
                 # Récupérer la facture
@@ -734,7 +736,7 @@ class ReportService:
             )
 
     @staticmethod
-    def get_archives_invoices(start_date=None, end_date=None):
+    def get_archives_invoices(start_date=None, end_date=None) -> ServiceResponse:
         """
         Get a list of archived invoices within a specific date range.
         """
@@ -755,7 +757,7 @@ class ReportService:
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def get_invoices(start_date=None, end_date=None):
+    def get_invoices(start_date=None, end_date=None) -> ServiceResponse:
         """
         Get a list of invoices within a specific date range.
         """
