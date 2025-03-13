@@ -461,13 +461,18 @@ class CategoryViewSet(viewsets.ViewSet):
         Retrieve the product by category.
         """
         serializer = GetProductCategorySerializer(data=request.query_params)
+
         if serializer.is_valid():
             category_id = serializer.validated_data.get('category_id')
+            page_size = serializer.validated_data.get('page_size', 10)
             try:
                 products = StockService().get_products_by_category(category_id)
                 if products.success:
-                    result = ProductSerializer(products.data, many=True)
-                    return Response(result.data, status.HTTP_200_OK)
+                    paginator = CustomPagination()
+                    paginator.page_size = page_size
+                    result_page = paginator.paginate_queryset(products.data, request)
+                    serializer = ProductSerializer(result_page, many=True)
+                    return paginator.get_paginated_response(serializer.data)
                 else:
                     return Response(
                         {'error': products.error},
@@ -487,10 +492,10 @@ class CategoryViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         query_serializer=GetProductSubCategorySerializer,
-        operation_description='Retrieve the product by category.',
+        operation_description='Retrieve the product by subcategory.',
         responses={200: ProductSerializer, 500: 'Internal Server Error'},
     )
-    @action(methods=['GET'], detail=False, url_path='products')
+    @action(methods=['GET'], detail=False, url_path='sub/products')
     def get_products_by_subcategory(self, request):
         """
         Retrieve the product by subcategory.
@@ -498,13 +503,17 @@ class CategoryViewSet(viewsets.ViewSet):
         serializer = GetProductSubCategorySerializer(data=request.query_params)
         if serializer.is_valid():
             subcategory_id = serializer.validated_data.get('subcategory_id')
+            page_size = serializer.validated_data.get('page_size', 10)
             try:
                 products = StockService().get_products_by_subcategory(
                     subcategory_id
                 )
                 if products.success:
-                    result = ProductSerializer(products.data, many=True)
-                    return Response(result.data, status.HTTP_200_OK)
+                    paginator = CustomPagination()
+                    paginator.page_size = page_size
+                    result_page = paginator.paginate_queryset(products.data, request)
+                    serializer = ProductSerializer(result_page, many=True)
+                    return paginator.get_paginated_response(serializer.data)
                 else:
                     return Response(
                         {'error': products.error},
