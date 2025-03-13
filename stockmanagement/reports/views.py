@@ -441,7 +441,7 @@ class GeneralReportViewSet(viewsets.ViewSet):
             500: 'Internal Server Error'
         }
     )
-    @action(methods=['GET'], detail=False, url_path='general-report')
+    @action(methods=['GET'], detail=False, url_path='generate')
     def get_general_report(self, request):
         """
         Retrieve General report
