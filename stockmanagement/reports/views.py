@@ -14,8 +14,10 @@ from reports.serializers import InvoiceArchiveSerializer
 from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
 from reports.serializers import PayDebtSerializer
+from reports.serializers import ReportQuerySerializer
 from reports.serializers import SalesReportSerializer
 from reports.serializers import SalesSummaryQuerySerializer
+from reports.service import GenerateReportService
 from reports.service import ReportService
 from rest_framework import status
 from rest_framework import viewsets
@@ -465,3 +467,44 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
                 )
         logger.error(f"Invalid data provided: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GeneralReportViewSet(viewsets.ViewSet):
+    # permission_classes = [IsAuthenticated, IsManagerPermission]
+
+    @swagger_auto_schema(
+        query_serializer=ReportQuerySerializer,
+        operation_description='Retrieve General report',
+        responses={
+            200: ReportQuerySerializer,
+            400: 'Invalid data ',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='general-report')
+    def get_general_report(self, request):
+        """
+        Retrieve General report
+        """
+        query_serializer = ReportQuerySerializer(data=request.query_params)
+        if query_serializer.is_valid():
+            try:
+                report_type = query_serializer.validated_data.get('report_type')
+                user = request.user
+                general_report = GenerateReportService.generate_report(report_type, user)
+                if not general_report.success:
+                    return Response(
+                        {'error': general_report.error},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return Response(
+                    {'report_data': general_report.data}, status=status.HTTP_200_OK
+                )
+            except Exception as e:
+                logger.error(f"Error in get_general_report: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {query_serializer.errors}")
+        return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)

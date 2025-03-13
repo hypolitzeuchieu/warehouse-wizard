@@ -5,6 +5,7 @@ from reports.models import Invoice
 from reports.models import InvoiceArchive
 from reports.models import InvoiceArchiveLine
 from reports.models import InvoiceLine
+from reports.models import Report
 from reports.models import SalesReport
 from rest_framework import serializers
 
@@ -189,6 +190,10 @@ class PayDebtSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=True
     )
+
+
+class ReportQuerySerializer(serializers.Serializer):
+    report_type = serializers.ChoiceField(choices=Report.REPORT_TYPE_CHOICES)
 
 
 class InvoiceArchiveLineSerializer(serializers.ModelSerializer):
