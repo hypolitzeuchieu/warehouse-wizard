@@ -76,6 +76,7 @@ CHANNEL_LAYERS = {
     },
 }
 
+
 SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
         'Bearer': {
@@ -148,6 +149,15 @@ AUTHENTICATION_BACKENDS = [
 if config('PRODUCTION') == 'True':
     DATABASES = {
         'default': dj_database_url.parse(config('PROD_DATABASE_URL'))
+    }
+
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [('redis', 6379)],
+            },
+        },
     }
 else:
     DATABASES = {
