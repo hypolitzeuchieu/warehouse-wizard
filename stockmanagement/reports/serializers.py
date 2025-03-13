@@ -5,7 +5,6 @@ from reports.models import Invoice
 from reports.models import InvoiceArchive
 from reports.models import InvoiceArchiveLine
 from reports.models import InvoiceLine
-from reports.models import Report
 from reports.models import SalesReport
 from rest_framework import serializers
 
@@ -71,24 +70,6 @@ class InvoiceSerializer(serializers.ModelSerializer):
         return invoice
 
 
-class ReportSerializer(serializers.ModelSerializer):
-    generated_by_name = serializers.CharField(
-        source='generated_by.username', read_only=True
-    )
-
-    class Meta:
-        model = Report
-        fields = [
-            'id',
-            'type',
-            'generated_at',
-            'generated_by',
-            'generated_by_name',
-            'file_path',
-            'description',
-        ]
-
-
 class InventoryReportSerializer(serializers.ModelSerializer):
     generated_by_name = serializers.CharField(
         source='generated_by.username', read_only=True
@@ -106,6 +87,20 @@ class InventoryReportSerializer(serializers.ModelSerializer):
             'low_stock_products',
             'date_range',
         ]
+
+
+class InventoryDataSerializer(serializers.Serializer):
+    generated_by_name = serializers.CharField(allow_null=True)
+    product_name = serializers.CharField()
+    category = serializers.CharField()
+    subcategory = serializers.CharField(allow_null=True)
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    created_at = serializers.DateTimeField()
+    expiry_date = serializers.DateTimeField(allow_null=True)
+    is_expired = serializers.BooleanField()
+    quantity = serializers.IntegerField()
+    min_quantity = serializers.IntegerField()
+    is_critical = serializers.BooleanField()
 
 
 class SalesReportSerializer(serializers.ModelSerializer):

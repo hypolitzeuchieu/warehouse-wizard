@@ -7,6 +7,7 @@ from authentication.models import User
 from django.db import models
 from django.utils import timezone
 from stock.models import Product
+from stock.models import Stock
 
 
 class Invoice(models.Model):
@@ -119,7 +120,7 @@ class Report(models.Model):
 
 class InventoryReport(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    created_at = models.DateField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     generated_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -130,6 +131,7 @@ class InventoryReport(models.Model):
     expired_products = models.PositiveIntegerField(default=0)
     low_stock_products = models.PositiveIntegerField(default=0)
     date_range = models.CharField(max_length=255, default=None)
+    stocks = models.ManyToManyField(Stock)
 
     class Meta:
         ordering = ['-created_at']

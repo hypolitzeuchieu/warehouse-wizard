@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
 from reports.models import InvoiceArchive
 from reports.serializers import CreateInvoiceSerializer
+from reports.serializers import InventoryDataSerializer
 from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InventoryReportSerializer
 from reports.serializers import InvoiceArchiveSerializer
@@ -166,6 +167,10 @@ class ReportsViewSet(viewsets.ViewSet):
             try:
                 start_date = serializer.validated_data.get('start_date')
                 end_date = serializer.validated_data.get('end_date')
+                page_size = serializer.validated_data.get('page_size', 10)
+
+                paginator = CustomPagination()
+                paginator.page_size = page_size
 
                 inventory_data = service.get_inventory_data(
                     start_date=start_date, end_date=end_date
@@ -176,7 +181,11 @@ class ReportsViewSet(viewsets.ViewSet):
                         {'error': inventory_data.error}, status.HTTP_400_BAD_REQUEST
                     )
 
-                return Response(inventory_data.data, status.HTTP_200_OK)
+                paginated_data = paginator.paginate_queryset(
+                    inventory_data.data, request, view=self
+                )
+                serializer = InventoryDataSerializer(paginated_data, many=True)
+                return paginator.get_paginated_response(serializer.data)
 
             except Exception as e:
                 logger.error(f"Error in get_inventory_data: {str(e)}")
