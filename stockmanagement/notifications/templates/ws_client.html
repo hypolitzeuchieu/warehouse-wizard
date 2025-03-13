@@ -1,31 +1,43 @@
 <script>
-    const socket = new WebSocket("ws://127.0.0.1:8000/ws/notifications/");
+    // Récupérer le token depuis votre système d'authentification
+    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzQxOTQyMzgzLCJpYXQiOjE3NDE4NTU5ODMsImp0aSI6IjQ5MWU3YjZjODY5YzQwYzRiYWUxM2NiOTNhNTZjMjcwIiwidXNlcl9pZCI6IjgzNjM3MDQzLWRlY2UtNDFiMS1iOTY4LWI5NGMwOGNlMTAyZCJ9.U6zCC-OZKjKwpVhXnwx0iECVPe3RLQRgO3ElmOqRMy8";  // Ce token doit être généré par votre backend
+
+    // Connexion WebSocket avec token
+   const socket = new WebSocket(`ws://127.0.0.1:8000/ws/notifications/?token=${token}`);
 
     socket.onopen = function () {
         console.log("✅ WebSocket connecté !");
     };
 
     socket.onmessage = function (event) {
-        console.log("🔔 Notification reçue :", event.data);
+        console.log("🔔 Message reçu :", event.data);
 
-        // Afficher la notification dans la page
-        const data = JSON.parse(event.data);
-        const notificationDiv = document.createElement("div");
-        notificationDiv.innerHTML = `
-            <p><strong>Type:</strong> ${data.notification_type}</p>
-            <p><strong>Message:</strong> ${data.message}</p>
-            <p><strong>Produit:</strong> ${data.product}</p>
-            <p><strong>Date:</strong> ${data.created_at}</p>
-            <hr>
-        `;
-        document.body.appendChild(notificationDiv);
+        try {
+            const data = JSON.parse(event.data);
+
+            // Afficher la notification dans la page
+            const notificationDiv = document.createElement("div");
+            notificationDiv.className = "notification";
+            notificationDiv.innerHTML = `
+                <p><strong>Type:</strong> ${data.notification_type || 'N/A'}</p>
+                <p><strong>Message:</strong> ${data.message || 'N/A'}</p>
+                <p><strong>Produit:</strong> ${data.product || 'N/A'}</p>
+                <p><strong>Date:</strong> ${data.created_at || 'N/A'}</p>
+                <hr>
+            `;
+            document.getElementById("notifications-container").appendChild(notificationDiv);
+        } catch (error) {
+            console.error("Erreur lors du traitement du message:", error);
+        }
     };
 
     socket.onerror = function (error) {
         console.error("❌ WebSocket erreur:", error);
     };
 
-    socket.onclose = function () {
-        console.log("❌ WebSocket déconnecté !");
+    socket.onclose = function (event) {
+        console.log(`❌ WebSocket déconnecté ! Code: ${event.code}, Raison: ${event.reason}`);
     };
 </script>
+
+<div id="notifications-container"></div>

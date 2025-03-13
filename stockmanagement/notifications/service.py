@@ -20,7 +20,7 @@ class NotificationService:
     @staticmethod
     def create_notification(product, notification_type, message):
         try:
-            time_threshold = now() - timedelta(days=1)
+            time_threshold = now() - timedelta(minutes=1)
 
             existing_notification = Notification.objects.filter(
                 product=product,
@@ -57,7 +57,7 @@ class NotificationService:
             logger.warning('No managers found to notify.')
             return
 
-        print(f"Sending notification to {managers.count()} managers")
+        logger.info(f"Sending notification to {managers.count()} managers")
 
         channel_layer = get_channel_layer()
 
@@ -74,7 +74,7 @@ class NotificationService:
                     },
                 },
             )
-        print('Ws Notification sent to manager')
+        logger.info('Ws Notification sent to manager')
 
     @staticmethod
     def get_all_notifications():

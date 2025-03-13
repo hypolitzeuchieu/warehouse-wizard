@@ -12,10 +12,14 @@ def send_notification_ws(sender, instance, created, **kwargs):
     if created:
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"notifications_{instance.user.id}",
+            f"notifications_{instance.product.user.id}",
             {
                 'type': 'send_notification',
-                'message': instance.message,
-                'created_at': instance.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                'data': {
+                    'notification_type': instance.notification_type,
+                    'message': instance.message,
+                    'product': instance.product.name if instance.product else 'N/A',
+                    'created_at': instance.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                },
             }
         )
