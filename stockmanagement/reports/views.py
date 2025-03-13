@@ -199,46 +199,6 @@ class ReportsViewSet(viewsets.ViewSet):
 
     # --- Sales Report Endpoints ---
     @swagger_auto_schema(
-        query_serializer=InventoryQuerySerializer,
-        operation_description='Retrieve a sales summary for a specific period.',
-        responses={
-            200: 'Sales summary data',
-            400: 'Bad Request',
-            500: 'Internal Server Error',
-        },
-    )
-    @action(methods=['GET'], detail=False, url_path='sales-summary')
-    def get_sales_summary(self, request):
-        """
-        Retrieve a sales summary for a specific period.
-        """
-        serializer = InventoryQuerySerializer(data=request.query_params)
-        if serializer.is_valid():
-            try:
-                start_date = serializer.validated_data.get('start_date')
-                end_date = serializer.validated_data.get('end_date')
-
-                user = request.user
-                summary = service.get_sales_summary(
-                    start_date=start_date, end_date=end_date, user=user
-                )
-                if not summary.success:
-                    return Response(
-                        {'error': summary.error}, status.HTTP_400_BAD_REQUEST
-                    )
-                return Response(summary.data, status=status.HTTP_200_OK)
-
-            except Exception as e:
-                logger.error(f"Error in get_sales_summary: {str(e)}")
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-
-        logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
         request_body=SalesSummaryQuerySerializer,
         operation_description='Create or retrieve a daily sales report.',
         responses={201: SalesReportSerializer, 500: 'Internal Server Error'},

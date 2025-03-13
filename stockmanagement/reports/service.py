@@ -507,55 +507,6 @@ class ReportService:
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def get_sales_summary(start_date=None, end_date=None, user=None) -> ServiceResponse:
-        """
-        Generate data for sales report, listing all sold products.
-        """
-        try:
-            completed_invoices = Invoice.objects.filter(status='COMPLETED')
-
-            if not completed_invoices.exists():
-                return ServiceResponse(success=True, data={
-                    'total_sales': 0,
-                    'total_revenue': 0.00,
-                    'products_sold': []
-                })
-
-            invoice_lines = InvoiceLine.objects.filter(invoice__in=completed_invoices)
-
-            # Nombre total de factures complétées
-            total_sales = completed_invoices.count()
-
-            # Correction du calcul du chiffre d'affaires
-            total_revenue = invoice_lines.aggregate(total=Sum('line_total'))['total'] or 0
-            logger.info('Total Revenue:', total_revenue)
-
-            # Lister tous les produits vendus avec leur quantité totale
-            sold_products = (
-                InvoiceLine.objects
-                .filter(invoice__status='COMPLETED')
-                .values('product__name')
-                .annotate(
-                    total_quantity=Sum('quantity'),
-                    total_revenue=Sum('line_total')
-                )
-                .order_by('-total_quantity')
-            )
-
-            # Structurer les données
-            report_data = {
-                'total_sales': total_sales,
-                'total_revenue': total_revenue,
-                'products_sold': list(sold_products),
-            }
-
-            return ServiceResponse(success=True, data=report_data)
-
-        except Exception as e:
-            logger.error(f"Error generating sales report: {str(e)}")
-            return ServiceResponse(success=False, error=str(e))
-
-    @staticmethod
     def export_invoice_to_pdf(invoice_id) -> ServiceResponse:
         """
         Export an invoice to PDF format.
