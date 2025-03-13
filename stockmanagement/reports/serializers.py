@@ -182,6 +182,7 @@ class CreateInvoiceSerializer(serializers.Serializer):
 class InventoryQuerySerializer(serializers.Serializer):
     start_date = serializers.DateTimeField(required=False)
     end_date = serializers.DateTimeField(required=False)
+    page_size = serializers.IntegerField(required=False, min_value=1, default=10)
 
 
 class InvoiceQuerySerializer(serializers.Serializer):

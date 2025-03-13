@@ -6,6 +6,7 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from stock.models import Category
 from stock.models import StockMovement
@@ -13,6 +14,7 @@ from stock.models import SubCategory
 from stock.serializers import CategorySerializer
 from stock.serializers import GetProductCategorySerializer
 from stock.serializers import GetProductSubCategorySerializer
+from stock.serializers import PaginationQuerySerializer
 from stock.serializers import ProductDetailSerializer
 from stock.serializers import ProductSerializer
 from stock.serializers import ProductUpdateSerializer
@@ -24,6 +26,12 @@ from stock.service import ProductService
 from stock.service import StockService
 
 logger = logging.getLogger(__name__)
+
+
+class CustomPagination(PageNumberPagination):
+    page_size_query_param = 'page_size'
+    page_size = 10
+    max_page_size = 100
 
 
 class StockViewSet(viewsets.ViewSet):
@@ -114,6 +122,7 @@ class StockViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description='Retrieve all movements stock.',
+        query_serializer=PaginationQuerySerializer,
         responses={200: StockMovementSerializer, 500: 'Internal Server Error'},
     )
     @action(detail=False, methods=['GET'], url_path='stock/movements')
@@ -122,9 +131,19 @@ class StockViewSet(viewsets.ViewSet):
         Retrieve all movements in stock.
         """
         try:
-            movements = StockMovement.objects.all()
-            serializer = StockMovementSerializer(movements, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            query_serializer = PaginationQuerySerializer(data=request.query_params)
+            query_serializer.is_valid(raise_exception=True)
+
+            paginator = CustomPagination()
+            paginator.page_size = query_serializer.validated_data['page_size']
+
+            page = paginator.paginate_queryset(
+                queryset=StockMovement.objects.all(),
+                request=request,
+                view=self
+            )
+            serializer = StockMovementSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
 
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
@@ -141,6 +160,7 @@ class CategoryViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',
+        query_serializer=PaginationQuerySerializer,
         responses={200: CategorySerializer, 500: 'Internal Server Error'},
     )
     @action(detail=False, methods=['GET'], url_path='categories')
@@ -149,9 +169,20 @@ class CategoryViewSet(viewsets.ViewSet):
         Retrieve all categories.
         """
         try:
-            categories = Category.objects.all()
-            serializer = CategorySerializer(categories, many=True)
-            return Response(serializer.data)
+            query_serializer = PaginationQuerySerializer(data=request.query_params)
+            query_serializer.is_valid(raise_exception=True)
+
+            page_size = query_serializer.validated_data.get('page_size', 10)
+            paginator = CustomPagination()
+            paginator.page_size = page_size
+
+            page = paginator.paginate_queryset(
+                queryset=Category.objects.all(),
+                request=request,
+                view=self
+            )
+            serializer = CategorySerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
             return Response(
@@ -351,6 +382,7 @@ class CategoryViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',
+        query_serializer=PaginationQuerySerializer,
         responses={200: SubCategorySerializer, 500: 'Internal Server Error'},
     )
     @action(detail=False, methods=['get'], url_path='subcategories')
@@ -359,9 +391,17 @@ class CategoryViewSet(viewsets.ViewSet):
         Retrieve all sub-categories.
         """
         try:
-            subcategories = SubCategory.objects.all()
-            serializer = SubCategorySerializer(subcategories, many=True)
-            return Response(serializer.data)
+            query_serializer = PaginationQuerySerializer(data=request.query_params)
+            query_serializer.is_valid(raise_exception=True)
+            page_size = query_serializer.validated_data.get('page_size', 10)
+            paginator = CustomPagination()
+            paginator.page_size = page_size
+
+            page = paginator.paginate_queryset(
+                SubCategory.objects.all(), request, view=self
+            )
+            serializer = SubCategorySerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
         except Exception as e:
             return Response(
                 {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST
@@ -632,20 +672,31 @@ class ProductViewSet(viewsets.ViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        operation_description='Retrieve products.',
-        responses={200: StockSerializer, 500: 'Internal Server Error'},
+        operation_description='Retrieve products with pagination.',
+        query_serializer=PaginationQuerySerializer,  # Serializer pour gérer les query params
+        responses={200: StockSerializer(many=True), 500: 'Internal Server Error'},
     )
     @action(detail=False, methods=['GET'], url_path='products')
     def get_products(self, request):
         """
-        Retrieve all the stock.
+        Retrieve all the stock with pagination.
         """
         try:
+            query_serializer = PaginationQuerySerializer(data=request.query_params)
+            query_serializer.is_valid(raise_exception=True)
+
+            page_size = query_serializer.validated_data.get('page_size', 10)
+
             stocks = self.product_service.get_all_stock()
             if stocks.success:
-                serializer = StockSerializer(stocks.data, many=True)
-                return Response(serializer.data)
-            return Response({'error': stocks.error}, status.HTTP_400_BAD_REQUEST)
+                paginator = CustomPagination()
+                paginator.page_size = page_size
+                result_page = paginator.paginate_queryset(stocks.data, request)
+                serializer = StockSerializer(result_page, many=True)
+                return paginator.get_paginated_response(serializer.data)
+
+            return Response({'error': stocks.error}, status=status.HTTP_400_BAD_REQUEST)
+
         except Exception as e:
             logger.error(f"Unexpected error occurred: {str(e)}")
             return Response(

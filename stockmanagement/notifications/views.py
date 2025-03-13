@@ -10,6 +10,8 @@ from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from stock.serializers import PaginationQuerySerializer
+from stock.views import CustomPagination
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class NotificationsViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description='Retrieve all notifications.',
+        query_serializer=PaginationQuerySerializer,
         responses={
             200: NotificationSerializer(many=True),
             500: 'Internal Server Error',
@@ -34,9 +37,18 @@ class NotificationsViewSet(viewsets.ViewSet):
         Retrieve all notifications for stock levels and other alerts.
         """
         try:
-            notifications = self.service.get_all_notifications()
-            serializer = NotificationSerializer(notifications, many=True)
-            return Response(serializer.data, status.HTTP_200_OK)
+            query_serializer = PaginationQuerySerializer(data=request.query_params)
+            query_serializer.is_valid(raise_exception=True)
+
+            paginator = CustomPagination()
+            paginator.page_size = query_serializer.validated_data['page_size']
+
+            page = paginator.paginate_queryset(
+                self.service.get_all_notifications(), request, view=self
+            )
+            serializer = NotificationSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
         except Exception as e:
             logger.error(f"Error in get_notifications: {str(e)}")
             return Response(

@@ -21,7 +21,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
+from stock.views import CustomPagination
 
 logger = logging.getLogger(__name__)
 
@@ -309,10 +309,10 @@ class ReportsViewSet(viewsets.ViewSet):
         """
         Retrieve all invoices.
         """
-        serializer = InventoryQuerySerializer(data=request.query_params)
-        if serializer.is_valid():
-            start_date = serializer.validated_data.get('start_date')
-            end_date = serializer.validated_data.get('end_date')
+        query_serializer = InventoryQuerySerializer(data=request.query_params)
+        if query_serializer.is_valid():
+            start_date = query_serializer.validated_data.get('start_date')
+            end_date = query_serializer.validated_data.get('end_date')
             try:
                 invoices = service.get_invoices(
                     start_date=start_date, end_date=end_date
@@ -321,15 +321,21 @@ class ReportsViewSet(viewsets.ViewSet):
                     return Response(
                         {'error': invoices.error}, status=status.HTTP_400_BAD_REQUEST
                     )
-                serializer = InvoiceArchiveSerializer(invoices.data, many=True)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+                paginator = CustomPagination()  #
+                page_size = query_serializer.validated_data.get('page_size', 10)
+                paginator.page_size = page_size
+
+                result_page = paginator.paginate_queryset(invoices.data, request)
+                serializer = InvoiceSerializer(result_page, many=True)
+                return paginator.get_paginated_response(serializer.data)
+
             except Exception as e:
                 logger.error(f"Unexpected error occurred: {str(e)}")
                 return Response(
                     {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Invalid data provided: {query_serializer.errors}")
+        return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ArchiveInvoiceVieSet(viewsets.ViewSet):
@@ -389,20 +395,26 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
         """
         Retrieve Archive invoice
         """
-        serializer = InventoryQuerySerializer(data=request.query_params)
-        if serializer.is_valid():
+        query_serializer = InventoryQuerySerializer(data=request.query_params)
+        if query_serializer.is_valid():
             try:
-                start_date = serializer.validated_data.get('start_date')
-                end_date = serializer.validated_data.get('end_date')
+                start_date = query_serializer.validated_data.get('start_date')
+                end_date = query_serializer.validated_data.get('end_date')
                 invoices = service.get_archives_invoices(start_date, end_date)
                 if not invoices.success:
                     return Response(
                         {'error': invoices.error},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                serializer = InvoiceArchiveSerializer(invoices.data, many=True)
+
+                paginator = CustomPagination()  #
+                page_size = query_serializer.validated_data.get('page_size', 10)
+                paginator.page_size = page_size
+
+                result_page = paginator.paginate_queryset(invoices.data, request)
+                serializer = InvoiceArchiveSerializer(result_page, many=True)
                 logger.info('Invoice retrieve successfully.')
-                return Response(serializer.data, status=status.HTTP_200_OK)
+                return paginator.get_paginated_response(serializer.data)
 
             except Exception as e:
                 logger.error(f"Error in archive_invoice: {str(e)}")
@@ -410,8 +422,8 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
                     {f'An internal error occurred:{str(e)}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Invalid data provided: {query_serializer.errors}")
+        return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=InvoiceQuerySerializer,

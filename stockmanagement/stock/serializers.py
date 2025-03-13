@@ -186,3 +186,7 @@ class ProductUpdateSerializer(serializers.Serializer):
             )
 
         return attrs
+
+
+class PaginationQuerySerializer(serializers.Serializer):
+    page_size = serializers.IntegerField(required=False, min_value=1, default=10)
