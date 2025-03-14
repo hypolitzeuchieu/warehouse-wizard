@@ -157,70 +157,6 @@ class ReportService:
             )
 
     @staticmethod
-    def create_sales_report(date=None, user=None) -> ServiceResponse:
-        """
-        Create or retrieve a daily sales report.
-        """
-        if not date:
-            date = timezone.now().date()
-
-        try:
-            reports = SalesReport.objects.filter(date=date)
-            if reports.exists():
-                report = reports.first()
-            else:
-                report = SalesReport.objects.create(
-                    date=date,
-                    total_sales=Decimal('0.00'),
-                    total_invoices=0,
-                    generated_by=user,
-                )
-            if not report.generated_by:
-                report.generated_by = user
-                report.save()
-
-            return ServiceResponse(success=True, data=report)
-        except Exception as e:
-            logger.error(f"Error creating sales report: {e}")
-            return ServiceResponse(success=False, error=str(e))
-
-    @staticmethod
-    def update_sales_report(invoice) -> ServiceResponse:
-        """
-        Update the sales report with the latest invoice data.
-        """
-        try:
-            report_response = ReportService.create_sales_report(
-                invoice.created_at.date(), invoice.cashier
-            )
-            if not report_response.success:
-                return report_response
-
-            report = report_response.data
-            advance_paid = (
-                invoice.advance_paid
-                if invoice.advance_paid is not None
-                else Decimal('0.00')
-            )
-
-            if (
-                invoice.status in ['COMPLETED', 'CREDIT']
-                and advance_paid >= invoice.total
-            ):
-                report.total_sales = Decimal(report.total_sales)
-                report.total_sales += invoice.total
-                report.total_invoices += 1
-                report.save()
-            return ServiceResponse(success=True)
-        except Exception as e:
-            logger.error(
-                f"Error updating sales report for invoice {invoice.id}: {e}"
-            )
-            return ServiceResponse(
-                success=False, error=f"Error updating sales report: {str(e)}"
-            )
-
-    @staticmethod
     def create_invoice(data, user):
         """Create new invoice."""
         try:
@@ -346,16 +282,11 @@ class ReportService:
 
     @staticmethod
     def finalize_invoice(invoice) -> ServiceResponse:
-        """Calculate totals and update reports."""
+        """Calculate totals."""
         try:
             totals_response = ReportService.calculate_invoice_totals(invoice)
             if not totals_response.success:
                 return totals_response
-
-            if invoice.status != 'CANCELLED':
-                report_response = ReportService.update_sales_report(invoice)
-                if not report_response.success:
-                    return report_response
 
             invoice.save()
             return ServiceResponse(success=True)
@@ -763,8 +694,7 @@ class GenerateReportService:
             sold_products = (
                 InvoiceLine.objects
                 .filter(invoice__status='COMPLETED',
-                        invoice__created_at__range=[start_date, end_date]
-                        )
+                        invoice__created_at__range=[start_date, end_date])
                 .values('product__name')
                 .annotate(
                     total_quantity=Sum('quantity'),
@@ -772,6 +702,20 @@ class GenerateReportService:
                 )
                 .order_by('-total_quantity')
             )
+            report_date = timezone.now().date()
+            sales_report, created = SalesReport.objects.get_or_create(
+                date=report_date,
+                defaults={
+                    'total_sales': total_revenue,
+                    'total_invoices': total_sales,
+                    'generated_by': user,
+                }
+            )
+            if not created:
+                sales_report.total_sales = total_revenue
+                sales_report.total_invoices = total_sales
+                sales_report.generated_by = user
+                sales_report.save()
 
             return ServiceResponse(success=True, data={
                 'total_sales': total_sales,
