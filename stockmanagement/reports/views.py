@@ -9,14 +9,11 @@ from reports.models import InvoiceArchive
 from reports.serializers import CreateInvoiceSerializer
 from reports.serializers import InventoryDataSerializer
 from reports.serializers import InventoryQuerySerializer
-from reports.serializers import InventoryReportSerializer
 from reports.serializers import InvoiceArchiveSerializer
 from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
 from reports.serializers import PayDebtSerializer
 from reports.serializers import ReportQuerySerializer
-from reports.serializers import SalesReportSerializer
-from reports.serializers import SalesSummaryQuerySerializer
 from reports.service import GenerateReportService
 from reports.service import ReportService
 from rest_framework import status
@@ -31,7 +28,7 @@ logger = logging.getLogger(__name__)
 service = ReportService()
 
 
-class ReportsViewSet(viewsets.ViewSet):
+class InvoiceViewSet(viewsets.ViewSet):
     """
     ViewSet for handling reports, invoices, and related operations.
     """
@@ -115,117 +112,6 @@ class ReportsViewSet(viewsets.ViewSet):
                 )
 
         logger.error(f'invalid data: {serializer.errors}')
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
-
-    # --- Inventory Report Endpoints ---
-    @swagger_auto_schema(
-        request_body=InventoryQuerySerializer,
-        operation_description='Generate an inventory report for a specific date range.',
-        responses={
-            201: InventoryReportSerializer,
-            500: 'Internal Server Error',
-        },
-    )
-    @action(
-        methods=['POST'], detail=False, url_path='generate-inventory-report'
-    )
-    def generate_inventory_report(self, request):
-        """
-        Generate an inventory report for a specific date range.
-        """
-        serializer = InventoryQuerySerializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                start_date = serializer.validated_data.get('start_date')
-                end_date = serializer.validated_data.get('end_date')
-                user = request.user
-                report = service.generate_inventory_report(
-                    start_date=start_date, end_date=end_date, user=user
-                )
-                if not report.success:
-                    return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
-
-                serializer = InventoryReportSerializer(report.data)
-                return Response(serializer.data, status.HTTP_201_CREATED)
-            except Exception as e:
-                logger.error(f"Error in generate_inventory_report: {str(e)}")
-                return Response(
-                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
-
-    @swagger_auto_schema(
-        query_serializer=InventoryQuerySerializer,
-        operation_description='Retrieve inventory data for a specific date range.',
-        responses={200: 'Inventory data', 500: 'Internal Server Error'},
-    )
-    @action(methods=['GET'], detail=False, url_path='inventory-data')
-    def get_inventory_data(self, request):
-        """
-        Retrieve inventory data for a specific date range.
-        """
-        serializer = InventoryQuerySerializer(data=request.query_params)
-        if serializer.is_valid():
-            try:
-                start_date = serializer.validated_data.get('start_date')
-                end_date = serializer.validated_data.get('end_date')
-                page_size = serializer.validated_data.get('page_size', 10)
-
-                paginator = CustomPagination()
-                paginator.page_size = page_size
-
-                inventory_data = service.get_inventory_data(
-                    start_date=start_date, end_date=end_date
-                )
-
-                if not inventory_data.success:
-                    return Response(
-                        {'error': inventory_data.error}, status.HTTP_400_BAD_REQUEST
-                    )
-
-                paginated_data = paginator.paginate_queryset(
-                    inventory_data.data, request, view=self
-                )
-                serializer = InventoryDataSerializer(paginated_data, many=True)
-                return paginator.get_paginated_response(serializer.data)
-
-            except Exception as e:
-                logger.error(f"Error in get_inventory_data: {str(e)}")
-                return Response(
-                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
-
-    # --- Sales Report Endpoints ---
-    @swagger_auto_schema(
-        request_body=SalesSummaryQuerySerializer,
-        operation_description='Create or retrieve a daily sales report.',
-        responses={201: SalesReportSerializer, 500: 'Internal Server Error'},
-    )
-    @action(methods=['POST'], detail=False, url_path='create-sales-report')
-    def create_sales_report(self, request):
-        """
-        Create or retrieve a daily sales report.
-        """
-        serializer = SalesSummaryQuerySerializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                date = serializer.validated_data.get('date')
-                user = request.user
-                report = service.create_sales_report(date=date, user=user)
-
-                if not report.success:
-                    return Response({'error': report.error}, status.HTTP_400_BAD_REQUEST)
-
-                serializer = SalesReportSerializer(report.data)
-                return Response(serializer.data, status.HTTP_201_CREATED)
-
-            except Exception as e:
-                logger.error(f"Error in create_sales_report: {str(e)}")
-                return Response(
-                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
         return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
@@ -450,8 +336,12 @@ class GeneralReportViewSet(viewsets.ViewSet):
         if query_serializer.is_valid():
             try:
                 report_type = query_serializer.validated_data.get('report_type')
+                start_date = query_serializer.validated_data.get('start_date')
+                end_date = query_serializer.validated_data.get('end_date')
                 user = request.user
-                general_report = GenerateReportService.generate_report(report_type, user)
+                general_report = GenerateReportService.generate_report(
+                    report_type, user, start_date, end_date
+                )
                 if not general_report.success:
                     return Response(
                         {'error': general_report.error},
@@ -468,3 +358,46 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 )
         logger.error(f"Invalid data provided: {query_serializer.errors}")
         return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        query_serializer=InventoryQuerySerializer,
+        operation_description='Retrieve inventory data for a specific date range.',
+        responses={200: 'Inventory data', 500: 'Internal Server Error'},
+    )
+    @action(methods=['GET'], detail=False, url_path='inventory-data')
+    def get_inventory_data(self, request):
+        """
+        Retrieve inventory data for a specific date range.
+        """
+        serializer = InventoryQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            try:
+                start_date = serializer.validated_data.get('start_date')
+                end_date = serializer.validated_data.get('end_date')
+                page_size = serializer.validated_data.get('page_size', 10)
+
+                paginator = CustomPagination()
+                paginator.page_size = page_size
+
+                inventory_data = GenerateReportService.get_inventory_data(
+                    start_date=start_date, end_date=end_date
+                )
+
+                if not inventory_data.success:
+                    return Response(
+                        {'error': inventory_data.error}, status.HTTP_400_BAD_REQUEST
+                    )
+
+                paginated_data = paginator.paginate_queryset(
+                    inventory_data.data, request, view=self
+                )
+                serializer = InventoryDataSerializer(paginated_data, many=True)
+                return paginator.get_paginated_response(serializer.data)
+
+            except Exception as e:
+                logger.error(f"Error in get_inventory_data: {str(e)}")
+                return Response(
+                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)

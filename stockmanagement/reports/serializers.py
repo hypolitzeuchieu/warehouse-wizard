@@ -194,6 +194,8 @@ class PayDebtSerializer(serializers.Serializer):
 
 class ReportQuerySerializer(serializers.Serializer):
     report_type = serializers.ChoiceField(choices=Report.REPORT_TYPE_CHOICES)
+    start_date = serializers.DateTimeField(required=False)
+    end_date = serializers.DateTimeField(required=False)
 
 
 class InvoiceArchiveLineSerializer(serializers.ModelSerializer):
