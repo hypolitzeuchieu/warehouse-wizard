@@ -16,9 +16,20 @@ class NotificationSerializer(serializers.ModelSerializer):
             'notification_type',
             'message',
             'created_at',
-            'is_read',
+            'status',
         ]
 
 
 class NotifSerializer(serializers.Serializer):
     notif_id = serializers.UUIDField(required=True)
+
+
+class UserNotificationSerializer(serializers.Serializer):
+    page_size = serializers.IntegerField(required=False, min_value=1, default=10)
+    status = serializers.ChoiceField(
+        choices=Notification.NOTIFICATION_STATUS, required=False
+    )
+
+
+class WeekSerializer(serializers.Serializer):
+    week_number = serializers.IntegerField(required=True)
