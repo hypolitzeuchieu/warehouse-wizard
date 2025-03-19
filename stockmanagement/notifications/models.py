@@ -13,6 +13,11 @@ class Notification(models.Model):
         ('EXPIRED', 'Expired Product'),
         ('NEAR_EXPIRY', 'Near Expiry'),
     ]
+    NOTIFICATION_STATUS = [
+        ('UNREAD', 'Unread'),
+        ('READ', 'Read'),
+        ('ARCHIVED', 'Archived'),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -30,9 +35,11 @@ class Notification(models.Model):
         choices=NOTIFICATION_TYPE_CHOICES,
         default='CRITICAL_STOCK',
     )
+    status = models.CharField(
+        max_length=20, choices=NOTIFICATION_STATUS, default='UNREAD',
+    )
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-    is_read = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-created_at']
@@ -41,3 +48,11 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.notification_type} for {self.product.name}"
+
+    def mark_as_read(self):
+        self.status = 'READ'
+        self.save()
+
+    def archive(self):
+        self.status = 'ARCHIVED'
+        self.save()
