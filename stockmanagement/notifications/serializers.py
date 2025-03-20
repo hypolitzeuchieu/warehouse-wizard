@@ -32,4 +32,4 @@ class UserNotificationSerializer(serializers.Serializer):
 
 
 class WeekSerializer(serializers.Serializer):
-    week_number = serializers.IntegerField(required=True)
+    months = serializers.IntegerField(required=True)

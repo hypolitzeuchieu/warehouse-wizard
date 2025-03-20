@@ -244,8 +244,8 @@ class NotificationsViewSet(viewsets.ViewSet):
         week_serializer = WeekSerializer(data=request.query_params)
         if week_serializer.is_valid():
             try:
-                weeks = week_serializer.validated_data.get('week_number')
-                result = self.service.bulk_archive_old_notifications(weeks=weeks)
+                months = week_serializer.validated_data.get('months')
+                result = self.service.bulk_archive_old_notifications(months=months)
                 if isinstance(result, dict) and 'error' in result:
                     return Response(
                         {'error': result['error']},

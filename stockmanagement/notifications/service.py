@@ -6,6 +6,7 @@ from datetime import timedelta
 from asgiref.sync import async_to_sync
 from authentication.models import User
 from channels.layers import get_channel_layer
+from dateutil.relativedelta import relativedelta
 from django.db.models import Q
 from django.utils.timezone import now
 from notifications.models import Notification
@@ -224,18 +225,19 @@ class NotificationService:
             return {'error': f"Unexpected error: {str(e)}"}
 
     @staticmethod
-    def bulk_archive_old_notifications(weeks: int = 12):
+    def bulk_archive_old_notifications(months: int = 12):
         """
         Archive notifications older than X weeks.
 
         Args:
-            weeks: Number of weeks to consider for archiving
+            months: Number of weeks to consider for archiving
 
         Returns:
             Count of archived notifications
         """
         try:
-            cutoff_date = now() - timedelta(weeks=weeks)
+            cutoff_date = now() - relativedelta(months=months)
+
             count = Notification.objects.filter(
                 created_at__lt=cutoff_date,
                 status__in=['UNREAD', 'READ']
