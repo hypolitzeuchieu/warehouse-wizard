@@ -1,43 +1,693 @@
-<script>
-    // Récupérer le token depuis votre système d'authentification
-    const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzQxOTQyMzgzLCJpYXQiOjE3NDE4NTU5ODMsImp0aSI6IjQ5MWU3YjZjODY5YzQwYzRiYWUxM2NiOTNhNTZjMjcwIiwidXNlcl9pZCI6IjgzNjM3MDQzLWRlY2UtNDFiMS1iOTY4LWI5NGMwOGNlMTAyZCJ9.U6zCC-OZKjKwpVhXnwx0iECVPe3RLQRgO3ElmOqRMy8";  // Ce token doit être généré par votre backend
-
-    // Connexion WebSocket avec token
-   const socket = new WebSocket(`ws://127.0.0.1:8000/ws/notifications/?token=${token}`);
-
-    socket.onopen = function () {
-        console.log("✅ WebSocket connecté !");
-    };
-
-    socket.onmessage = function (event) {
-        console.log("🔔 Message reçu :", event.data);
-
-        try {
-            const data = JSON.parse(event.data);
-
-            // Afficher la notification dans la page
-            const notificationDiv = document.createElement("div");
-            notificationDiv.className = "notification";
-            notificationDiv.innerHTML = `
-                <p><strong>Type:</strong> ${data.notification_type || 'N/A'}</p>
-                <p><strong>Message:</strong> ${data.message || 'N/A'}</p>
-                <p><strong>Produit:</strong> ${data.product || 'N/A'}</p>
-                <p><strong>Date:</strong> ${data.created_at || 'N/A'}</p>
-                <hr>
-            `;
-            document.getElementById("notifications-container").appendChild(notificationDiv);
-        } catch (error) {
-            console.error("Erreur lors du traitement du message:", error);
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Test des Notifications</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .notification { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+        .notification-unread { border-left: 4px solid #007bff; }
+        .notification-archived { border-left: 4px solid #6c757d; opacity: 0.7; }
+        button { background-color: #007bff; color: white; border: none; padding: 5px 10px; margin: 5px; cursor: pointer; border-radius: 3px; }
+        button:disabled { background-color: #cccccc; }
+        #status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .debug { background-color: #e2e3e5; border: 1px solid #d6d8db; color: #383d41; }
+        .auth-section { background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .filter-section { margin-bottom: 20px; }
+        .badge {
+            display: inline-block;
+            padding: 3px 7px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 5px;
         }
-    };
+        .badge-unread { background-color: #007bff; color: white; }
+        .badge-read { background-color: #28a745; color: white; }
+        .badge-archived { background-color: #6c757d; color: white; }
+        .badge-unknown { background-color: #dc3545; color: white; }
+        .action-buttons { margin-top: 10px; }
+        .api-section { background-color: #e9ecef; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .api-group { margin-bottom: 10px; }
+        .api-group h3 { margin-top: 0; }
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input { width: 100%; padding: 5px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+    <h1>Test du Système de Notifications</h1>
 
-    socket.onerror = function (error) {
-        console.error("❌ WebSocket erreur:", error);
-    };
+    <div class="auth-section">
+        <h2>Authentification</h2>
+        <p>Pour vous connecter via WebSocket, vous devez être authentifié ou utiliser un token.</p>
 
-    socket.onclose = function (event) {
-        console.log(`❌ WebSocket déconnecté ! Code: ${event.code}, Raison: ${event.reason}`);
-    };
-</script>
+        <div class="form-group">
+            <label for="auth-token">Token d'authentification (optionnel):</label>
+            <input type="text" id="auth-token" placeholder="Votre token d'authentification" style="width: 300px;">
+        </div>
+    </div>
 
-<div id="notifications-container"></div>
+    <div>
+        <h2>Configuration WebSocket</h2>
+        <div class="form-group">
+            <label for="ws-url">URL WebSocket:</label>
+            <input type="text" id="ws-url" value="ws://127.0.0.1:8000/ws/notifications/" style="width: 300px;">
+        </div>
+        <button id="ws-connect">Connecter</button>
+        <button id="ws-disconnect" disabled>Déconnecter</button>
+    </div>
+
+    <div id="status" class="debug">Prêt à se connecter</div>
+
+    <div class="api-section">
+        <h2>API REST</h2>
+
+        <div class="api-group">
+            <h3>Récupération des notifications</h3>
+            <button id="api-get-all">Toutes les notifications</button>
+            <button id="api-get-my">Mes notifications</button>
+            <div class="form-group">
+                <label for="status-filter">Filtrer par statut:</label>
+                <select id="status-filter">
+                    <option value="">Tous les statuts</option>
+                    <option value="UNREAD">Non lues</option>
+                    <option value="READ">Lues</option>
+                    <option value="ARCHIVED">Archivées</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="api-group">
+            <h3>Notification spécifique</h3>
+            <div class="form-group">
+                <label for="notification-id">ID de notification:</label>
+                <input type="text" id="notification-id" placeholder="Entrez l'ID de la notification">
+            </div>
+            <button id="api-get-by-id">Récupérer par ID</button>
+        </div>
+
+        <div class="api-group">
+            <h3>Actions groupées</h3>
+            <button id="api-mark-all-read">Marquer tout comme lu</button>
+        </div>
+
+        <div class="api-group">
+            <h3>Archivage</h3>
+            <div class="form-group">
+                <label for="archive-months">Archiver les notifications plus anciennes que (mois):</label>
+                <input type="number" id="archive-months" value="3" min="1" max="12">
+            </div>
+            <button id="api-archive-old">Archiver les anciennes</button>
+        </div>
+    </div>
+
+    <div>
+        <h2>WebSocket</h2>
+        <button id="ws-get-all">Toutes les notifications</button>
+        <button id="ws-get-unread">Notifications non lues</button>
+        <button id="ws-mark-all-read">Marquer tout comme lu</button>
+    </div>
+
+    <h2>Notifications</h2>
+    <div id="notifications-container"></div>
+
+    <h3>Journal</h3>
+    <pre id="log" style="height: 150px; overflow-y: auto; background-color: #f5f5f5; padding: 10px;"></pre>
+
+    <script>
+        // Variables globales
+        let socket = null;
+        const API_BASE_URL = '/api/v1/notification';
+
+        // Éléments DOM
+        const connectBtn = document.getElementById('ws-connect');
+        const disconnectBtn = document.getElementById('ws-disconnect');
+        const statusDiv = document.getElementById('status');
+        const notificationsContainer = document.getElementById('notifications-container');
+        const logOutput = document.getElementById('log');
+
+        // Journalisation
+        function log(message, data = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            let logMessage = `${timestamp} - ${message}`;
+            if (data) {
+                if (typeof data === 'object') {
+                    logMessage += `\n${JSON.stringify(data, null, 2)}`;
+                } else {
+                    logMessage += `\n${data}`;
+                }
+            }
+            logOutput.textContent = logMessage + '\n' + logOutput.textContent;
+            console.log(message, data);
+        }
+
+        // Afficher le statut
+        function updateStatus(message, type = 'debug') {
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+        }
+
+        // Connexion WebSocket
+        function connectWebSocket() {
+            let wsUrl = document.getElementById('ws-url').value;
+            const authToken = document.getElementById('auth-token').value;
+
+            // Ajouter le token à l'URL si présent
+            if (authToken) {
+                // Si le token ne commence pas par "Bearer", l'ajouter
+                const formattedToken = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+                wsUrl += `?token=${encodeURIComponent(formattedToken)}`;
+            }
+
+            log(`Tentative de connexion à ${wsUrl}`);
+            updateStatus(`Connexion en cours à ${wsUrl}...`, 'debug');
+
+            try {
+                // Fermer la connexion existante si nécessaire
+                if (socket) {
+                    socket.close();
+                }
+
+                // Nouvelle connexion
+                socket = new WebSocket(wsUrl);
+
+                socket.onopen = function() {
+                    log("WebSocket connecté");
+                    updateStatus("WebSocket connecté!", 'success');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                };
+
+                socket.onclose = function(event) {
+                    let reason = event.reason || 'Connexion fermée';
+                    let message = '';
+
+                    // Interpréter les codes de fermeture courants
+                    if (event.code === 1000) {
+                        message = 'Fermeture normale';
+                    } else if (event.code === 1001) {
+                        message = 'Endpoint déconnecté';
+                    } else if (event.code === 1006) {
+                        message = 'Connexion fermée anormalement';
+                    } else if (event.code === 4001) {
+                        message = 'Non authentifié - Veuillez vous connecter ou fournir un token valide';
+                    } else {
+                        message = `Code: ${event.code}`;
+                    }
+
+                    log(`WebSocket déconnecté: ${message}, raison: ${reason}`);
+                    updateStatus(`WebSocket déconnecté (${message})`, 'error');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                };
+
+                socket.onerror = function(error) {
+                    log("Erreur WebSocket", error);
+                    updateStatus("Erreur de connexion WebSocket", 'error');
+                };
+
+                socket.onmessage = function(event) {
+                    log("Message WebSocket reçu", event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleWebSocketMessage(data);
+                    } catch (error) {
+                        log("Erreur parsing JSON", error);
+                    }
+                };
+            } catch (error) {
+                log("Erreur lors de la création du WebSocket", error);
+                updateStatus("Impossible de créer la connexion WebSocket", 'error');
+            }
+        }
+
+        // Gestion des messages WebSocket
+        function handleWebSocketMessage(data) {
+            if (!data.type) {
+                log("Message sans type reçu");
+                return;
+            }
+
+            switch(data.type) {
+                case 'new_notification':
+                    displayNotification(data, true);
+                    break;
+
+                case 'initial_notifications':
+                case 'notifications_list':
+                    notificationsContainer.innerHTML = '';
+                    if (data.notifications && data.notifications.length > 0) {
+                        data.notifications.forEach(notification => {
+                            displayNotification(notification);
+                        });
+                        updateStatus(`${data.notifications.length} notifications chargées via WebSocket`, 'success');
+                    } else {
+                        updateStatus("Aucune notification", 'debug');
+                    }
+                    break;
+
+                case 'mark_read_response':
+                    if (data.success) {
+                        updateNotificationStatus(data.notification_id, 'READ');
+                        updateStatus(`Notification ${data.notification_id} marquée comme lue`, 'success');
+                    } else {
+                        updateStatus("Erreur lors du marquage de la notification", 'error');
+                    }
+                    break;
+
+                case 'mark_all_read_response':
+                    if (data.success) {
+                        document.querySelectorAll('.notification-unread').forEach(el => {
+                            el.classList.remove('notification-unread');
+                            el.classList.add('notification-read');
+                        });
+                        document.querySelectorAll('.mark-read-btn').forEach(btn => {
+                            btn.disabled = true;
+                        });
+                        updateStatus(`${data.count} notifications marquées comme lues`, 'success');
+                    } else {
+                        updateStatus("Erreur lors du marquage de toutes les notifications", 'error');
+                    }
+                    break;
+
+                case 'error':
+                    updateStatus(`Erreur serveur: ${data.message}`, 'error');
+                    break;
+
+                default:
+                    log(`Type de message inconnu: ${data.type}`);
+            }
+        }
+
+        // Obtenir le badge correspondant au statut
+        function getStatusBadge(status) {
+            if (!status) return '<span class="badge badge-unknown">INCONNU</span>';
+
+            switch(status.toUpperCase()) {
+                case 'UNREAD':
+                    return '<span class="badge badge-unread">NON LU</span>';
+                case 'READ':
+                    return '<span class="badge badge-read">LU</span>';
+                case 'ARCHIVED':
+                    return '<span class="badge badge-archived">ARCHIVÉ</span>';
+                default:
+                    return `<span class="badge badge-unknown">${status}</span>`;
+            }
+        }
+
+        // Afficher une notification
+        function displayNotification(notification, isNew = false) {
+            const notifDiv = document.createElement('div');
+            notifDiv.id = `notification-${notification.id}`;
+
+            // Ajouter les classes en fonction du statut
+            let statusClass = '';
+            if (notification.status === 'UNREAD') {
+                statusClass = 'notification-unread';
+            } else if (notification.status === 'ARCHIVED') {
+                statusClass = 'notification-archived';
+            }
+
+            notifDiv.className = `notification ${statusClass}`;
+
+            notifDiv.innerHTML = `
+                <p><strong>ID:</strong> ${notification.id} ${getStatusBadge(notification.status)}</p>
+                <p><strong>Type:</strong> ${notification.notification_type || 'N/A'}</p>
+                <p><strong>Message:</strong> ${notification.message || 'N/A'}</p>
+                <p><strong>Produit:</strong> ${notification.product || 'N/A'}</p>
+                <p><strong>Date:</strong> ${notification.created_at || 'N/A'}</p>
+                <div class="action-buttons">
+                    <button class="mark-read-btn" data-id="${notification.id}"
+                        ${notification.status !== 'UNREAD' ? 'disabled' : ''}>
+                        Marquer comme lu
+                    </button>
+                    <button class="archive-btn" data-id="${notification.id}"
+                        ${notification.status === 'ARCHIVED' ? 'disabled' : ''}>
+                        Archiver
+                    </button>
+                </div>
+            `;
+
+            if (isNew) {
+                notificationsContainer.insertBefore(notifDiv, notificationsContainer.firstChild);
+            } else {
+                notificationsContainer.appendChild(notifDiv);
+            }
+
+            // Ajouter les gestionnaires d'événements pour les boutons
+            const markReadBtn = notifDiv.querySelector('.mark-read-btn');
+            if (markReadBtn) {
+                markReadBtn.addEventListener('click', function() {
+                    const notifId = this.getAttribute('data-id');
+                    markNotificationAsRead(notifId);
+                });
+            }
+
+            const archiveBtn = notifDiv.querySelector('.archive-btn');
+            if (archiveBtn) {
+                archiveBtn.addEventListener('click', function() {
+                    const notifId = this.getAttribute('data-id');
+                    archiveNotification(notifId);
+                });
+            }
+        }
+
+        // Mettre à jour l'état visuel d'une notification
+        function updateNotificationStatus(notificationId, newStatus) {
+            const notifDiv = document.getElementById(`notification-${notificationId}`);
+            if (notifDiv) {
+                // Supprimer les classes de statut existantes
+                notifDiv.classList.remove('notification-unread', 'notification-archived');
+
+                // Ajouter la nouvelle classe en fonction du statut
+                if (newStatus === 'READ') {
+                    // Pour "READ", nous n'ajoutons pas de classe spéciale
+                    const markReadBtn = notifDiv.querySelector('.mark-read-btn');
+                    if (markReadBtn) {
+                        markReadBtn.disabled = true;
+                    }
+
+                    // Mettre à jour le badge
+                    const statusBadges = notifDiv.querySelectorAll('.badge');
+                    statusBadges.forEach(badge => {
+                        badge.className = 'badge badge-read';
+                        badge.textContent = 'LU';
+                    });
+                } else if (newStatus === 'ARCHIVED') {
+                    notifDiv.classList.add('notification-archived');
+
+                    // Désactiver les deux boutons
+                    const markReadBtn = notifDiv.querySelector('.mark-read-btn');
+                    const archiveBtn = notifDiv.querySelector('.archive-btn');
+                    if (markReadBtn) markReadBtn.disabled = true;
+                    if (archiveBtn) archiveBtn.disabled = true;
+
+                    // Mettre à jour le badge
+                    const statusBadges = notifDiv.querySelectorAll('.badge');
+                    statusBadges.forEach(badge => {
+                        badge.className = 'badge badge-archived';
+                        badge.textContent = 'ARCHIVÉ';
+                    });
+                }
+            }
+        }
+
+        // Marquer une notification comme lue
+        function markNotificationAsRead(notificationId) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    command: 'mark_read',
+                    notification_id: notificationId
+                }));
+                log(`Demande de marquage pour notification ${notificationId}`);
+            } else {
+                // Fallback vers l'API REST
+                markReadAPI(notificationId);
+            }
+        }
+
+        // Archiver une notification
+        function archiveNotification(notificationId) {
+            archiveAPI(notificationId);
+        }
+
+        // Fonctions pour les API REST
+        async function fetchNotificationsAPI(endpoint = '/notifications/', params = {}) {
+            try {
+                const queryParams = new URLSearchParams(params).toString();
+                const url = `${API_BASE_URL}${endpoint}${queryParams ? '?' + queryParams : ''}`;
+
+                updateStatus(`Chargement des notifications via API (${url})...`, 'debug');
+                const response = await fetch(url);
+                log(`API GET ${url}`, response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const data = await response.json();
+                log("Notifications reçues via API", data);
+
+                notificationsContainer.innerHTML = '';
+
+                // Adapter selon la structure de votre API
+                const notifications = data.results || data;
+
+                if (Array.isArray(notifications) && notifications.length > 0) {
+                    notifications.forEach(notification => {
+                        displayNotification(notification);
+                    });
+                    updateStatus(`${notifications.length} notifications chargées via API`, 'success');
+                } else {
+                    updateStatus("Aucune notification trouvée", 'debug');
+                }
+            } catch (error) {
+                log("Erreur lors du chargement des notifications", error);
+                updateStatus(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        async function fetchNotificationById(notificationId) {
+            try {
+                const url = `${API_BASE_URL}/notification/?notif_id=${notificationId}`;
+                updateStatus(`Chargement de la notification ${notificationId}...`, 'debug');
+
+                const response = await fetch(url);
+                log(`API GET ${url}`, response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const data = await response.json();
+                log("Notification reçue via API", data);
+
+                notificationsContainer.innerHTML = '';
+                displayNotification(data);
+                updateStatus(`Notification ${notificationId} chargée`, 'success');
+            } catch (error) {
+                log("Erreur lors du chargement de la notification", error);
+                updateStatus(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        async function fetchMyNotifications(status = null) {
+            const params = { page_size: 10 };
+            if (status) {
+                params.status = status;
+            }
+            await fetchNotificationsAPI('/my-notifications/', params);
+        }
+
+        async function markAllReadAPI() {
+            try {
+                updateStatus("Marquage de toutes les notifications via API...", 'debug');
+                const response = await fetch(`${API_BASE_URL}/mark-all-read/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                log(`API POST ${API_BASE_URL}/mark-all-read/`, response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const result = await response.json();
+                log("Résultat du marquage via API", result);
+
+                document.querySelectorAll('.notification-unread').forEach(el => {
+                    el.classList.remove('notification-unread');
+                });
+                document.querySelectorAll('.mark-read-btn').forEach(btn => {
+                    btn.disabled = true;
+                });
+
+                // Mettre à jour les badges
+                document.querySelectorAll('.badge-unread').forEach(badge => {
+                    badge.className = 'badge badge-read';
+                    badge.textContent = 'LU';
+                });
+
+                updateStatus("Toutes les notifications marquées comme lues", 'success');
+            } catch (error) {
+                log("Erreur lors du marquage des notifications", error);
+                updateStatus(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        async function markReadAPI(notificationId) {
+            try {
+                updateStatus(`Marquage de la notification ${notificationId} via API...`, 'debug');
+                const response = await fetch(`${API_BASE_URL}/mark-read/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ notif_id: notificationId })
+                });
+
+                log(`API POST ${API_BASE_URL}/mark-read/`, response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const result = await response.json();
+                log("Résultat du marquage via API", result);
+
+                updateNotificationStatus(notificationId, 'READ');
+                updateStatus(`Notification ${notificationId} marquée comme lue`, 'success');
+            } catch (error) {
+                log("Erreur lors du marquage de la notification", error);
+                updateStatus(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        async function archiveAPI(notificationId) {
+            try {
+                updateStatus(`Archivage de la notification ${notificationId} via API...`, 'debug');
+                const response = await fetch(`${API_BASE_URL}/archive/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ notif_id: notificationId })
+                });
+
+                log(`API POST ${API_BASE_URL}/archive/`, response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const result = await response.json();
+                log("Résultat de l'archivage via API", result);
+
+                updateNotificationStatus(notificationId, 'ARCHIVED');
+                updateStatus(`Notification ${notificationId} archivée`, 'success');
+            } catch (error) {
+                log("Erreur lors de l'archivage de la notification", error);
+                updateStatus(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        async function archiveOldAPI(months) {
+            try {
+                updateStatus(`Archivage des notifications plus anciennes que ${months} mois...`, 'debug');
+                const response = await fetch(`${API_BASE_URL}/archive-old/?months=${months}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    }
+                });
+
+                log(`API POST ${API_BASE_URL}/archive-old/?months=${months}`, response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const result = await response.json();
+                log("Résultat de l'archivage massif via API", result);
+
+                updateStatus(`${result.archived || 0} notifications archivées`, 'success');
+
+                // Recharger les notifications pour voir les changements
+                fetchNotificationsAPI();
+            } catch (error) {
+                log("Erreur lors de l'archivage des anciennes notifications", error);
+                updateStatus(`Erreur: ${error.message}`, 'error');
+            }
+        }
+
+        // Récupérer le token CSRF
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return '';
+        }
+
+        // Initialisation des gestionnaires d'événements
+        document.addEventListener('DOMContentLoaded', function() {
+            // WebSocket
+            document.getElementById('ws-connect').addEventListener('click', connectWebSocket);
+
+            document.getElementById('ws-disconnect').addEventListener('click', function() {
+                if (socket) {
+                    socket.close();
+                    log("WebSocket déconnecté manuellement");
+                }
+            });
+
+            document.getElementById('ws-get-all').addEventListener('click', function() {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ command: 'get_notifications' }));
+                    log("Demande de toutes les notifications via WebSocket");
+                } else {
+                    updateStatus("WebSocket non connecté", 'error');
+                }
+            });
+
+            document.getElementById('ws-get-unread').addEventListener('click', function() {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ command: 'get_notifications', status: 'UNREAD' }));
+                    log("Demande des notifications non lues via WebSocket");
+                } else {
+                    updateStatus("WebSocket non connecté", 'error');
+                }
+            });
+
+            document.getElementById('ws-mark-all-read').addEventListener('click', function() {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ command: 'mark_all_read' }));
+                    log("Demande de marquage de toutes les notifications via WebSocket");
+                } else {
+                    updateStatus("WebSocket non connecté", 'error');
+                }
+            });
+
+            // API REST - Récupération
+            document.getElementById('api-get-all').addEventListener('click', function() {
+                fetchNotificationsAPI('/notifications/', { page_size: 10 });
+            });
+
+            document.getElementById('api-get-my').addEventListener('click', function() {
+                const statusFilter = document.getElementById('status-filter').value;
+                fetchMyNotifications(statusFilter);
+            });
+
+            document.getElementById('api-get-by-id').addEventListener('click', function() {
+                const notificationId = document.getElementById('notification-id').value.trim();
+                if (notificationId) {
+                    fetchNotificationById(notificationId);
+                } else {
+                    updateStatus("Veuillez entrer un ID de notification valide", 'error');
+                }
+            });
+
+            // API REST - Actions
+            document.getElementById('api-mark-all-read').addEventListener('click', markAllReadAPI);
+
+            document.getElementById('api-archive-old').addEventListener('click', function() {
+                const months = document.getElementById('archive-months').value;
+                archiveOldAPI(months);
+            });
+
+            // Log de démarrage
+            log("Page chargée et prête");
+        });
+    </script>
+</body>
+</html>

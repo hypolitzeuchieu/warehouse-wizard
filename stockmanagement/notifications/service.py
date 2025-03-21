@@ -80,6 +80,7 @@ class NotificationService:
                         'message': notification.message,
                         'product': notification.product.name,
                         'created_at': notification.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                        'status': notification.status,
                     },
                 },
             )
