@@ -264,6 +264,28 @@ class UserUpdateView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class UserInfoView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        responses={
+            200: UserSerializer,
+            400: 'Bad request'
+        }
+    )
+    def get(self, request):
+        try:
+            user = request.user
+            user_serializer = UserSerializer(user)
+            return Response(user_serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f'Error in get user info:{str(e)}')
+            return Response(
+                {'error': f"Unexpected error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class PasswordResetRequestView(APIView):
     permission_classes = [permissions.AllowAny]
 

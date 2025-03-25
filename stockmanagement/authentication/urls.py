@@ -5,6 +5,7 @@ from authentication.views import LogoutView
 from authentication.views import PasswordResetConfirmView
 from authentication.views import PasswordResetRequestView
 from authentication.views import UserCreateView
+from authentication.views import UserInfoView
 from authentication.views import UserManagementViewSet
 from authentication.views import UserUpdateView
 from django.urls import include
@@ -17,6 +18,7 @@ router.register(r'users', UserManagementViewSet, basename='user')
 urlpatterns = [
     path('register/', UserCreateView.as_view(), name='user-register'),
     path('login/', LoginView.as_view(), name='user-login'),
+    path('user-info/', UserInfoView.as_view(), name='user-info'),
     path('logout/', LogoutView.as_view(), name='user-logout'),
     path('update-user/', UserUpdateView.as_view(), name='update-user'),
     path('password-reset/',
