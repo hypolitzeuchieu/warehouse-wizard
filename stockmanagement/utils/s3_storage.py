@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 
 import boto3
 from botocore.exceptions import ClientError
 from botocore.exceptions import NoCredentialsError
+from decouple import config
 from rest_framework.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -48,28 +48,26 @@ def upload_file_to_s3(file):
 
     # Vérifier le format de l'image
     file_extension = validate_image_format(file)
-
     s3_client = boto3.client(
         's3',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.getenv('AWS_REGION_NAME'),
+        aws_access_key_id=config('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=config('AWS_SECRET_ACCESS_KEY'),
+        region_name=config('AWS_REGION_NAME'),
     )
 
     try:
         # Générer un nom unique
-        file_name = f"products/{uuid.uuid4()}{file_extension}"
-
+        file_name = f"products-{uuid.uuid4()}{file_extension}"
         # Upload du fichier avec permissions publiques
         s3_client.upload_fileobj(
             file.file,
-            os.getenv('AWS_BUCKET_NAME'),
+            config('AWS_BUCKET_NAME'),
             file_name,
-            ExtraArgs={'ContentType': file.content_type, 'ACL': 'public-read'}
+            ExtraArgs={'ContentType': file.content_type}
         )
-        image_url = (f"https://{os.getenv('AWS_BUCKET_NAME')}.s3."
-                     f"{os.getenv('AWS_REGION_NAME')}.amazonaws.com/{file_name}")
-        logger.info(f"Image successfully uploaded to S3: {image_url}")
+        image_url = (f"https://{config('AWS_BUCKET_NAME')}.s3."
+                     f"{config('AWS_REGION_NAME')}.amazonaws.com/{file_name}")
+        print(f"Image successfully uploaded to S3: {image_url}")
         return image_url
 
     except NoCredentialsError:
