@@ -31,9 +31,9 @@ urlpatterns = [
     path('v1/', include('reports.urls')),
     path('v1/', include('notifications.urls')),
     path(
-        'docs/',
+        'v1/docs/',
         schema_view.with_ui('swagger', cache_timeout=0),
         name='schema-swagger-ui',
     ),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    path('v1/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

@@ -10,6 +10,7 @@ from authentication.serializers import LoginSerializer
 from authentication.serializers import PasswordResetConfirmSerializer
 from authentication.serializers import PasswordResetRequestSerializer
 from authentication.serializers import UserSerializer
+from authentication.serializers import UserUpdateSerializer
 from authentication.service import UserService
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
@@ -245,7 +246,7 @@ class UserUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        request_body=UserSerializer,
+        request_body=UserUpdateSerializer,
         responses={
             200: 'User updated successfully.',
             400: 'Bad request.',
@@ -253,7 +254,7 @@ class UserUpdateView(APIView):
     )
     def patch(self, request):
         user = request.user
-        serializer = UserSerializer(user, data=request.data, partial=True)
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
 
         if serializer.is_valid():
             serializer.save()

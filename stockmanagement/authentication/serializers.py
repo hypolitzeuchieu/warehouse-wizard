@@ -130,3 +130,51 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user.set_password(self.validated_data['new_password'])
         user.save()
         PasswordResetToken.objects.filter(user=user).delete()
+
+
+class UserUpdateSerializer(serializers.ModelSerializer):
+    role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            'id',
+            'username',
+            'email',
+            'phone_number',
+            'role',
+            'is_active',
+            'current_password',
+            'new_password'
+        ]
+        extra_kwargs = {
+            'current_password': {'write_only': True},
+            'new_password': {'write_only': True},
+        }
+
+    def validate_new_password(self, value):
+        try:
+            validate_password(value)
+        except ValidationError as e:
+            raise serializers.ValidationError(e.messages)
+        return value
+
+    def update(self, instance, validated_data):
+        current_password = validated_data.pop('current_password', None)
+        new_password = validated_data.pop('new_password', None)
+
+        if new_password:
+            if not current_password:
+                raise serializers.ValidationError(
+                    {'current_password': 'Current password is required .'})
+
+            if not instance.check_password(current_password):
+                raise serializers.ValidationError(
+                    {'current_password': 'Current password is incorrect.'}
+                )
+
+            instance.set_password(new_password)
+
+        return super().update(instance, validated_data)
