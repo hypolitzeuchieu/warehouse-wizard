@@ -493,6 +493,7 @@ class ProductService:
                         'is_expired': False,
                     },
                 )
+                print(f"Product successfully created: {product.name}") if created else None
 
                 StockService.update_stock(
                     product, quantity

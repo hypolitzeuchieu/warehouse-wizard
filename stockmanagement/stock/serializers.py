@@ -45,6 +45,7 @@ class ProductSerializer(serializers.ModelSerializer):
     purchase_price = serializers.DecimalField(
         max_digits=10, decimal_places=2, write_only=True
     )
+    image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Product
