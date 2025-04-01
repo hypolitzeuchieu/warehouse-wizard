@@ -551,8 +551,15 @@ class ProductViewSet(viewsets.ViewSet):
     )
     @action(methods=['POST'], detail=False, url_path='create')
     def create_product(self, request):
-        image_file = request.FILES.get('image')
-        serializer = ProductSerializer(data=request.data)
+        data = request.data.copy()
+
+        if 'image' in data:
+            del data['image']
+
+        if 'image' in request.FILES:
+            data['image_file'] = request.FILES['image']
+
+        serializer = ProductSerializer(data=data)
         if serializer.is_valid():
             data = serializer.validated_data
             try:
@@ -564,7 +571,7 @@ class ProductViewSet(viewsets.ViewSet):
                     subcategory_id=data.get('subcategory_id', ''),
                     expired_date=data.get('expiry_date'),
                     quantity=data.get('quantity'),
-                    image=image_file,
+                    image=data.get('image_file'),
                     on_promotion=data.get('on_promotion', False),
                     promo_price=data.get('promo_price'),
                     promotion_start_date=data.get('promotion_start_date'),
