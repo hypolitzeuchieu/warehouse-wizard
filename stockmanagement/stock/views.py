@@ -571,6 +571,7 @@ class ProductViewSet(viewsets.ViewSet):
                     subcategory_id=data.get('subcategory_id', ''),
                     expired_date=data.get('expiry_date'),
                     quantity=data.get('quantity'),
+                    purchase_price=data.get('purchase_price'),
                     image=data.get('image_file'),
                     on_promotion=data.get('on_promotion', False),
                     promo_price=data.get('promo_price'),

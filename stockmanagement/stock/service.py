@@ -448,6 +448,7 @@ class ProductService:
             expired_date,
             quantity,
             image,
+            purchase_price,
             on_promotion=False,
             promo_price=None,
             promotion_start_date=None,
@@ -485,6 +486,7 @@ class ProductService:
                         'expiry_date': expired_date,
                         'quantity': 0,
                         'image': image_url,
+                        'purchase_price': purchase_price,
                         'min_quantity': min_quantity,
                         'on_promotion': on_promotion,
                         'promo_price': promo_price,
@@ -496,7 +498,7 @@ class ProductService:
                 if not created and image_url:
                     product.image = image_url
                     product.save(update_fields=['image'])
-                print(f"Product found: {product.image}")
+                print(f"Product image found: {product.image}")
                 print(f"Product successfully created: {product.name}") if created else None
 
                 StockService.update_stock(
