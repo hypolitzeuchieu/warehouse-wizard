@@ -219,3 +219,60 @@ class InvoiceArchiveSerializer(serializers.ModelSerializer):
             'cashier_name', 'status', 'total', 'tax', 'advance_paid', 'remaining_amount',
             'refund_amount', 'due_date', 'is_credit_settled', 'lines',
         ]
+
+
+class InventoryReportResponseSerializer(serializers.Serializer):
+    total_products = serializers.IntegerField()
+    expired_products = serializers.IntegerField()
+    near_expiry_count = serializers.IntegerField()
+    low_stock_products = serializers.IntegerField()
+
+
+class SalesReportResponseSerializer(serializers.Serializer):
+    total_sales = serializers.IntegerField()
+    total_revenue = serializers.DecimalField(max_digits=10, decimal_places=2)
+    products_sold = serializers.ListField(child=serializers.DictField())
+
+
+class ExpiredProductsReportResponseSerializer(serializers.Serializer):
+    total_expired_products = serializers.IntegerField()
+    expired_product_list = serializers.ListField(child=serializers.DictField())
+
+
+class GeneralReportResponseSerializer(serializers.Serializer):
+    report_id = serializers.IntegerField()
+    report_data = serializers.DictField()
+
+
+class ReportDataSerializer(serializers.Serializer):
+    report_id = serializers.IntegerField()
+    report_data = serializers.DictField()
+
+
+# class ReportResponseSerializer(serializers.Serializer):
+#     success = serializers.BooleanField()
+#     data = ReportDataSerializer(required=False)
+#     error = serializers.CharField(required=False)
+
+
+class ReportResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    # Champ conditionnel selon le type de rapport
+    data = serializers.SerializerMethodField()
+    error = serializers.CharField(required=False)
+
+    def get_data(self, obj):
+        if not obj.get('success'):
+            return None
+
+        report_type = self.context.get('report_type')
+        data = obj.get('data', {})
+
+        if report_type == 'inventory':
+            return InventoryReportResponseSerializer(data).data
+        elif report_type == 'sales':
+            return SalesReportResponseSerializer(data).data
+        elif report_type == 'expired':
+            return ExpiredProductsReportResponseSerializer(data).data
+
+        return data

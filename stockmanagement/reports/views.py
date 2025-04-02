@@ -14,6 +14,7 @@ from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
 from reports.serializers import PayDebtSerializer
 from reports.serializers import ReportQuerySerializer
+from reports.serializers import ReportResponseSerializer
 from reports.service import GenerateReportService
 from reports.service import ReportService
 from rest_framework import status
@@ -322,15 +323,15 @@ class GeneralReportViewSet(viewsets.ViewSet):
         query_serializer=ReportQuerySerializer,
         operation_description='Retrieve General report',
         responses={
-            200: ReportQuerySerializer,
-            400: 'Invalid data ',
+            200: ReportResponseSerializer,
+            400: 'Invalid data',
             500: 'Internal Server Error'
         }
     )
     @action(methods=['GET'], detail=False, url_path='generate')
     def get_general_report(self, request):
         """
-        Retrieve General report
+        Retrieve General report based on type and date range.
         """
         query_serializer = ReportQuerySerializer(data=request.query_params)
         if query_serializer.is_valid():
@@ -339,25 +340,40 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 start_date = query_serializer.validated_data.get('start_date')
                 end_date = query_serializer.validated_data.get('end_date')
                 user = request.user
-                general_report = GenerateReportService.generate_report(
+
+                report_result = GenerateReportService.generate_report(
                     report_type, user, start_date, end_date
                 )
-                if not general_report.success:
-                    return Response(
-                        {'error': general_report.error},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+
+                # Créer la structure de réponse attendue par le serializer
+                response_data = {
+                    'success': report_result.success
+                }
+
+                if report_result.success:
+                    response_data['data'] = report_result.data
+                else:
+                    response_data['error'] = report_result.error
+
+                # Sérialiser directement la réponse sans contexte supplémentaire
                 return Response(
-                    {'report_data': general_report.data}, status=status.HTTP_200_OK
+                    response_data,
+                    status=status.HTTP_200_OK
+                    if report_result.success else status.HTTP_400_BAD_REQUEST
                 )
+
             except Exception as e:
                 logger.error(f"Error in get_general_report: {str(e)}")
                 return Response(
-                    {'error': str(e)},
+                    {'success': False, 'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+
         logger.error(f"Invalid data provided: {query_serializer.errors}")
-        return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'success': False, 'error': query_serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     @swagger_auto_schema(
         query_serializer=InventoryQuerySerializer,
