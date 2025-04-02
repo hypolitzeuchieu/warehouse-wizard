@@ -239,16 +239,6 @@ class ExpiredProductsReportResponseSerializer(serializers.Serializer):
     expired_product_list = serializers.ListField(child=serializers.DictField())
 
 
-class GeneralReportResponseSerializer(serializers.Serializer):
-    report_id = serializers.IntegerField()
-    report_data = serializers.DictField()
-
-
-class ReportDataSerializer(serializers.Serializer):
-    report_id = serializers.IntegerField()
-    report_data = serializers.DictField()
-
-
 # class ReportResponseSerializer(serializers.Serializer):
 #     success = serializers.BooleanField()
 #     data = ReportDataSerializer(required=False)
