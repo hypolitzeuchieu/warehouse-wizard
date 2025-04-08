@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'stock',
     'reports',
     'notifications',
+    'dashboard',
 
     'rest_framework',
     'corsheaders',

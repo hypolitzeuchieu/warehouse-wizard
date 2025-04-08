@@ -30,6 +30,7 @@ urlpatterns = [
     path('v1/', include('stock.urls')),
     path('v1/', include('reports.urls')),
     path('v1/', include('notifications.urls')),
+    path('v1/', include('dashboard.urls')),
     path(
         'v1/docs/',
         schema_view.with_ui('swagger', cache_timeout=0),
