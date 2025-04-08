@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 
+from authentication.permissions import IsCashier
 from authentication.permissions import IsManagerPermission
 from django.http import HttpResponse
-from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from reports.models import InvoiceArchive
 from reports.serializers import CreateInvoiceSerializer
@@ -33,6 +33,8 @@ class InvoiceViewSet(viewsets.ViewSet):
     """
     ViewSet for handling reports, invoices, and related operations.
     """
+
+    permission_classes = [IsAuthenticated, IsCashier]
 
     # --- Invoice Endpoints ---
     @swagger_auto_schema(
@@ -317,131 +319,17 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
 
 
 class GeneralReportViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated, IsManagerPermission]
+    permission_classes = [IsAuthenticated, IsCashier]
 
     @swagger_auto_schema(
         query_serializer=ReportQuerySerializer,
         operation_description='Retrieve General report',
         responses={
-            200: openapi.Response(
-                description='Successful response',
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        'data': openapi.Schema(
-                            type=openapi.TYPE_OBJECT,
-                            properties={
-                                'report_id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'report_data': openapi.Schema(
-                                    type=openapi.TYPE_OBJECT,
-                                    description='La structure varie selon le type de rapport'
-                                )
-                            }
-                        ),
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    },
-                    required=['success']
-                ),
-                examples={
-                    'application/json': {
-                        'inventory_example': {
-                            'success': True,
-                            'data': {
-                                'report_id': 123,
-                                'report_data': {
-                                    'total_products': 120,
-                                    'expired_products': 5,
-                                    'low_stock_products': 12,
-                                    'near_expiry_count': 8,
-                                    'report_type': 'inventory',
-                                    'generated_by': 'username'
-                                }
-                            }
-                        },
-                        'sales_example': {
-                            'success': True,
-                            'data': {
-                                'report_id': 124,
-                                'report_data': {
-                                    'total_sales': 45,
-                                    'total_revenue': 12500.50,
-                                    'products_sold': [
-                                        {'product__name': 'Product A',
-                                         'total_quantity': 15,
-                                         'total_revenue': 750.00},
-                                        {'product__name': 'Product B',
-                                         'total_quantity': 30,
-                                         'total_revenue': 1500.00}
-                                    ],
-                                    'report_type': 'sales',
-                                    'generated_by': 'username'
-                                }
-                            }
-                        },
-                        'expired_example': {
-                            'success': True,
-                            'data': {
-                                'report_id': 125,
-                                'report_data': {
-                                    'total_expired_products': 15,
-                                    'expired_product_list': [
-                                        {'name': 'Product X', 'expiry_date': '2023-03-15'},
-                                        {'name': 'Product Y', 'expiry_date': '2023-03-10'}
-                                    ],
-                                    'report_type': 'expired',
-                                    'generated_by': 'username'
-                                }
-                            }
-                        },
-                        'error_example': {
-                            'success': False,
-                            'error': 'Invalid report type or date range'
-                        }
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description='Invalid request',
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    },
-                    required=['success', 'error']
-                ),
-                examples={
-                    'application/json': {
-                        'invalid_type': {
-                            'success': False,
-                            'error': 'Invalid report type.'
-                        },
-                        'invalid_date': {
-                            'success': False,
-                            'error': 'End date cannot be earlier than start date.'
-                        }
-                    }
-                }
-            ),
-            500: openapi.Response(
-                description='Internal Server Error',
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'success': openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False),
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    },
-                    required=['success', 'error']
-                ),
-                examples={
-                    'application/json': {
-                        'success': False,
-                        'error': 'An Unexpected error occurred.'
-                    }
-                }
-            )
-        }
+            200: 'Sucessfully retrieved report',
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error',
+        },
+
     )
     @action(methods=['GET'], detail=False, url_path='generate')
     def get_general_report(self, request):

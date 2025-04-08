@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 
 from drf_yasg.utils import swagger_auto_schema
+from rest_framework import permissions
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from stock.models import Category
 from stock.models import StockMovement
@@ -157,6 +159,8 @@ class CategoryViewSet(viewsets.ViewSet):
         A ViewSet for managing categories operations.
     """
     # --- Catégories ---
+
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',
@@ -538,6 +542,7 @@ class ProductViewSet(viewsets.ViewSet):
     """
 
     product_service = ProductService
+    permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
         operation_description='Create a new product while managing stock.',
