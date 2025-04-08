@@ -4,8 +4,7 @@ from django.urls import include
 from django.urls import path
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import AllowAny
 
 
 schema_view = get_schema_view(
@@ -18,8 +17,8 @@ schema_view = get_schema_view(
         license=openapi.License(name='All right reserved'),
     ),
     public=True,
-    permission_classes=[IsAuthenticated],
-    authentication_classes=[JWTAuthentication],
+    permission_classes=[AllowAny],
+    authentication_classes=[],
 )
 
 urlpatterns = [
