@@ -173,7 +173,7 @@ class InvoiceArchive(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    number = models.PositiveIntegerField(unique=True, editable=False)
+    number = models.PositiveIntegerField()
     invoice_id = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     client_name = models.CharField(max_length=100, blank=True, null=True)
