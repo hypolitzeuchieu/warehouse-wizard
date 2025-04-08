@@ -8,7 +8,6 @@ from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from stock.models import Category
 from stock.models import StockMovement
@@ -40,7 +39,7 @@ class StockViewSet(viewsets.ViewSet):
     """
     A ViewSet for managing inventory operations with logging and robust error handling.
     """
-
+    parser_classes = [permissions.IsAuthenticated]
     service = StockService()
 
     # --- Stocks ---
@@ -160,7 +159,7 @@ class CategoryViewSet(viewsets.ViewSet):
     """
     # --- Catégories ---
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',

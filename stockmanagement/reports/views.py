@@ -319,6 +319,7 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
 
 
 class GeneralReportViewSet(viewsets.ViewSet):
+
     permission_classes = [IsAuthenticated, IsCashier]
 
     @swagger_auto_schema(
