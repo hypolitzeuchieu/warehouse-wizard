@@ -4,6 +4,9 @@ from django.urls import include
 from django.urls import path
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
+from rest_framework.parsers import FormParser
+from rest_framework.parsers import JSONParser
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
 
 
@@ -19,6 +22,7 @@ schema_view = get_schema_view(
     public=True,
     permission_classes=[AllowAny],
     authentication_classes=[],
+    parser_classes=[JSONParser, FormParser, MultiPartParser],
 )
 
 urlpatterns = [
