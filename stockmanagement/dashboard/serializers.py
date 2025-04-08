@@ -17,36 +17,36 @@ class PeriodQuerySerializer(serializers.Serializer):
 
 # Serializers pour les sous-éléments des réponses
 class KPIItemSerializer(serializers.Serializer):
-    value = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
-    change = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
-    change_percent = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
+    value = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
+    change = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
+    change_percent = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
 
 
 class SalesDataPointSerializer(serializers.Serializer):
     period = serializers.CharField(required=False)
     date = serializers.CharField(required=False)
-    sales = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
-    target = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
-    profit = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
-    expenses = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
+    sales = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
+    target = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
+    profit = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
+    expenses = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
 
 
 class RecentSaleSerializer(serializers.Serializer):
     id = serializers.CharField(required=False)
     customerName = serializers.CharField(required=False)
-    amount = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
+    amount = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
     date = serializers.CharField(required=False)
 
 
 class CategorySaleSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
-    value = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
+    value = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
 
 
 class ProductPerformanceSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     sold = serializers.IntegerField(required=False)
-    revenue = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
+    revenue = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
 
 
 class StockStatusSerializer(serializers.Serializer):
@@ -79,7 +79,7 @@ class DashboardStatsSerializer(serializers.Serializer):
 
 class MonthlyRevenueSerializer(serializers.Serializer):
     month = serializers.CharField(required=False)
-    revenue = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
+    revenue = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
 
 
 class SalesDataSerializer(serializers.Serializer):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 from decimal import Decimal
+from decimal import ROUND_DOWN
 
 from django.db.models import DecimalField
 from django.db.models import F
@@ -117,11 +118,13 @@ class DashboardService:
             # Average order value
             current_avg_order = Decimal('0.00')
             if current_orders_count > 0:
-                current_avg_order = current_revenue / current_orders_count
+                current_avg_order = (current_revenue / current_orders_count).quantize(
+                    Decimal('0.001'), rounding=ROUND_DOWN)
 
             previous_avg_order = Decimal('0.00')
             if previous_orders_count > 0:
-                previous_avg_order = previous_revenue / previous_orders_count
+                previous_avg_order = (previous_revenue / previous_orders_count).quantize(
+                    Decimal('0.001'), rounding=ROUND_DOWN)
 
             # Calculate average order change
             avg_order_change = 0
