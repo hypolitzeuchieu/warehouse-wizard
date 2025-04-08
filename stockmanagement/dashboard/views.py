@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from authentication.permissions import IsManagerPermission
 from dashboard.serializers import DashboardStatsSerializer
 from dashboard.serializers import InventoryDataDashboardSerializer
 from dashboard.serializers import PeriodQuerySerializer
@@ -10,6 +11,7 @@ from dashboard.serializers import ProductsDataSerializer
 from dashboard.serializers import SalesDataSerializer
 from dashboard.service import DashboardService
 from drf_yasg.utils import swagger_auto_schema
+from rest_framework import permissions
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -22,6 +24,8 @@ class DashboardViewSet(viewsets.ViewSet):
     """
     ViewSet for dashboard data.
     """
+
+    permission_classes = [permissions.IsAuthenticated, IsManagerPermission]
 
     @swagger_auto_schema(
         query_serializer=PeriodQuerySerializer,
