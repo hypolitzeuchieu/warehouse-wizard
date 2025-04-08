@@ -58,7 +58,7 @@ class StockDataSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     inStock = serializers.IntegerField(required=False)
     lowStock = serializers.IntegerField(required=False)
-    outOfStock = serializers.IntegerField(required=False)
+    outOfStock = serializers.CharField(required=False)
 
 
 class StockAlertSerializer(serializers.Serializer):

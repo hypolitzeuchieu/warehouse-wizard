@@ -6,9 +6,9 @@ from decimal import Decimal
 from decimal import ROUND_DOWN
 
 from django.db.models import DecimalField
+from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Sum
-from django.db.models import Value
 from django.db.models.functions import TruncDay
 from django.db.models.functions import TruncMonth
 from django.db.models.functions import TruncWeek
@@ -172,42 +172,57 @@ class DashboardService:
     @staticmethod
     def get_sales_data(period='monthly'):
         """
-        Get sales data for charts and visualizations.
+        Fetch dashboard sales data:
+        - Sales over time
+        - Recent sales
+        - Sales by category
+        - Monthly revenue
         """
         try:
             start_date, end_date = DashboardService.get_period_boundaries(period)
-            trunc_function = DashboardService.get_trunc_function(period)
+            trunc_mapping = {
+                'daily': TruncDay,
+                'weekly': TruncWeek,
+                'monthly': TruncMonth,
+                'yearly': TruncYear,
+            }
+            if period not in trunc_mapping:
+                return ServiceResponse(success=False, error='Invalid period')
 
-            # Sales over time
-            sales_over_time = Invoice.objects.filter(
+            trunc_function = trunc_mapping[period]
+
+            invoice_qs = Invoice.objects.filter(
                 created_at__date__range=[start_date, end_date],
                 status__in=['COMPLETED', 'CREDIT']
-            ).annotate(
-                period=trunc_function
+            )
+
+            invoice_ids = invoice_qs.values_list('id', flat=True)
+
+            # SALES OVER TIME (From InvoiceLine)
+            sales_lines = InvoiceLine.objects.filter(
+                invoice_id__in=invoice_ids
+            ).select_related('product', 'invoice').annotate(
+                period=trunc_function('invoice__created_at')
             ).values('period').annotate(
-                sales=Sum('total'),
+                sales=Sum('line_total'),
                 profit=Sum(
-                    F('total') * Value(Decimal('0.3')),
-                    output_field=DecimalField(max_digits=15, decimal_places=2)
-                ),
-                expenses=Sum(
-                    F('total') * Value(Decimal('0.7')),
-                    output_field=DecimalField(max_digits=15, decimal_places=2)
+                    ExpressionWrapper(
+                        F('quantity') * (F('unit_price') - F('product__purchase_price')),
+                        output_field=DecimalField(max_digits=15, decimal_places=2)
+                    )
                 )
             ).order_by('period')
 
-            # Format for frontend
             formatted_sales = []
-            for entry in sales_over_time:
+            for entry in sales_lines:
                 period_label = DashboardService.format_period_label(entry['period'], period)
                 formatted_sales.append({
                     'period': period_label,
                     'sales': float(entry['sales']),
                     'profit': float(entry['profit']),
-                    'expenses': float(entry['expenses']),
                 })
 
-            # Recent sales
+            # RECENT SALES
             recent_sales = Invoice.objects.filter(
                 status__in=['COMPLETED', 'CREDIT']
             ).order_by('-created_at')[:3]
@@ -221,16 +236,10 @@ class DashboardService:
                     'date': invoice.created_at.isoformat(),
                 })
 
-            # Utiliser InvoiceLine pour obtenir les produits vendus
-            invoice_ids = Invoice.objects.filter(
-                created_at__date__range=[start_date, end_date],
-                status__in=['COMPLETED', 'CREDIT']
-            ).values_list('id', flat=True)
-
-            # Agrégation par catégorie en utilisant les lignes de facture
+            # SALES BY CATEGORY
             sales_by_category = InvoiceLine.objects.filter(
                 invoice_id__in=invoice_ids
-            ).values(
+            ).select_related('product__category').values(
                 'product__category__id',
                 'product__category__name'
             ).annotate(
@@ -241,15 +250,14 @@ class DashboardService:
             ).order_by('-value')
 
             formatted_categories = []
-
-            for i, category in enumerate(sales_by_category):
+            for category in sales_by_category:
                 if category['product__category__name']:
                     formatted_categories.append({
                         'name': category['product__category__name'],
                         'value': float(category['value']),
                     })
 
-            # Monthly revenue
+            # MONTHLY REVENUE (Total)
             monthly_revenue = Invoice.objects.filter(
                 status__in=['COMPLETED', 'CREDIT']
             ).annotate(
@@ -361,7 +369,7 @@ class DashboardService:
                     product.quantity > product.min_quantity else 0,
                     'lowStock': product.quantity
                     if 0 < product.quantity <= product.min_quantity else 0,
-                    'outOfStock': 1 if product.quantity == 0 else 0
+                    'outOfStock': 'Empty stock' if product.quantity == 0 else 'In stock'
                 })
 
             # Stock alerts
