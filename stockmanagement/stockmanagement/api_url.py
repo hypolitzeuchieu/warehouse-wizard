@@ -3,11 +3,25 @@ from __future__ import annotations
 from django.urls import include
 from django.urls import path
 from drf_yasg import openapi
+from drf_yasg.generators import OpenAPISchemaGenerator
 from drf_yasg.views import get_schema_view
-from rest_framework.parsers import FormParser
-from rest_framework.parsers import JSONParser
-from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
+
+
+class CustomSchemaGenerator(OpenAPISchemaGenerator):
+    def get_operation(self, view, path, prefix, method, components, request):
+        """
+        Override to handle errors in parser classes
+        """
+        try:
+            return super().get_operation(view, path, prefix, method, components, request)
+        except AttributeError as e:
+            if "has no attribute 'media_type'" in str(e):
+                # If there's an error with media_type, try to fix it
+                # This is a workaround and should be used cautiously
+                view.parser_classes = []
+                return super().get_operation(view, path, prefix, method, components, request)
+            raise
 
 
 schema_view = get_schema_view(
@@ -15,14 +29,14 @@ schema_view = get_schema_view(
         title='Stock Management',
         default_version='v1',
         description='Documentation of API',
-        terms_of_service='https://www.google.com/policies/terms/',
-        contact=openapi.Contact(email=''),
+        # terms_of_service='https://www.google.com/policies/terms/',
+        contact=openapi.Contact(email='hypolitdu13@gmail.com'),
         license=openapi.License(name='All right reserved'),
     ),
     public=True,
     permission_classes=[AllowAny],
     authentication_classes=[],
-    parser_classes=[JSONParser, FormParser, MultiPartParser],
+    generator_class=CustomSchemaGenerator,
 )
 
 urlpatterns = [
