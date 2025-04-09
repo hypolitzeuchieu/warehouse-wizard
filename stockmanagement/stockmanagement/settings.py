@@ -50,6 +50,7 @@ INSTALLED_APPS = [
 
     'authentication',
     'stock',
+    'whitenoise.runserver_nostatic',
     'reports',
     'notifications',
     'dashboard',
@@ -110,8 +111,8 @@ SIMPLE_JWT = {
 
 
 MIDDLEWARE = [
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
