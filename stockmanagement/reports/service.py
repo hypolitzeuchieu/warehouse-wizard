@@ -296,12 +296,45 @@ class ReportService:
                 success=False, error=f"Error finalizing invoice: {str(e)}"
             )
 
+    def validate_invoice_data(self, data) -> ServiceResponse:
+        """
+        Validate invoice data before processing.
+        """
+        if not data.get('lines') or len(data['lines']) == 0:
+            return ServiceResponse(
+                success=False,
+                error='Une facture doit avoir au moins une ligne.'
+            )
+
+            # Vérification du stock pour tous les produits
+        for line_data in data['lines']:
+            product_id = line_data['product_id']
+            quantity = line_data['quantity']
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return ServiceResponse(
+                    success=False,
+                    error=f"Product with ID {product_id} does not exist."
+                )
+
+            stock_validation = self.validate_stock(product, quantity)
+            if not stock_validation.success:
+                return stock_validation
+
+        return ServiceResponse(success=True)
+
     def process_invoice(self, data, user) -> ServiceResponse:
         """
         Handle the complete workflow for processing a sale and creating an invoice.
         """
         with transaction.atomic():
             try:
+                validation_response = self.validate_invoice_data(data)
+                if not validation_response.success:
+                    return validation_response
+
                 invoice_response = ReportService.create_invoice(data, user)
                 if not invoice_response.success:
                     return invoice_response
