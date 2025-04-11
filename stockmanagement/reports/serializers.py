@@ -44,6 +44,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'cashier',
             'cashier_name',
             'status',
+            'reason',
             'total',
             'tax',
             'advance_paid',
