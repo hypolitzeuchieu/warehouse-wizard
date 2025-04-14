@@ -234,7 +234,7 @@ class DashboardService:
             # RECENT SALES
             recent_sales = Invoice.objects.filter(
                 status__in=['COMPLETED', 'CREDIT']
-            ).order_by('-created_at')[:3]
+            ).order_by('-created_at')[:10]
 
             formatted_recent_sales = []
             for invoice in recent_sales:
