@@ -216,11 +216,20 @@ class DashboardService:
             formatted_sales = []
             for entry in sales_lines:
                 period_label = DashboardService.format_period_label(entry['period'], period)
-                formatted_sales.append({
+                sale_entry = {
                     'period': period_label,
                     'sales': float(entry['sales']),
-                    'profit': float(entry['profit']),
-                })
+                }
+
+                profit_value = float(entry['profit'])
+                if profit_value < 0:
+                    sale_entry['pending_payment'] = profit_value
+                    sale_entry['profit'] = 0
+                else:
+                    sale_entry['pending_payment'] = 0.00
+                    sale_entry['profit'] = profit_value
+
+                formatted_sales.append(sale_entry)
 
             # RECENT SALES
             recent_sales = Invoice.objects.filter(

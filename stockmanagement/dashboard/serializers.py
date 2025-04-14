@@ -28,6 +28,9 @@ class SalesDataPointSerializer(serializers.Serializer):
     sales = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
     target = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
     profit = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
+    pending_payment = serializers.DecimalField(
+        max_digits=20, decimal_places=3, required=False
+    )
     expenses = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
 
 
