@@ -160,12 +160,24 @@ class ReportService:
     def create_invoice(data, user):
         """Create new invoice."""
         try:
+            reason = data.get('reason')
+            if not reason or reason.strip() == '':
+                status = data.get('status')
+                if status == 'COMPLETED':
+                    reason = 'Completed Sale Transaction'
+                elif status == 'CREDIT':
+                    reason = 'Credit Sale Transaction'
+                elif status == 'CANCELLED':
+                    reason = 'Cancelled Sale Transaction'
+                else:
+                    reason = 'Sale Transaction'
+
             invoice = Invoice.objects.create(
                 client_name=data.get('client_name'),
                 cashier=user,
                 tax=data.get('tax', Decimal('0.00')),
                 status=data.get('status'),
-                reason=data.get('reason', ''),
+                reason=reason,
                 advance_paid=data.get('advance_paid', Decimal('0.00')),
                 due_date=data.get('due_date', None),
             )
@@ -296,12 +308,45 @@ class ReportService:
                 success=False, error=f"Error finalizing invoice: {str(e)}"
             )
 
+    def validate_invoice_data(self, data) -> ServiceResponse:
+        """
+        Validate invoice data before processing.
+        """
+        if not data.get('lines') or len(data['lines']) == 0:
+            return ServiceResponse(
+                success=False,
+                error='Une facture doit avoir au moins une ligne.'
+            )
+
+            # Vérification du stock pour tous les produits
+        for line_data in data['lines']:
+            product_id = line_data['product_id']
+            quantity = line_data['quantity']
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return ServiceResponse(
+                    success=False,
+                    error=f"Product with ID {product_id} does not exist."
+                )
+
+            stock_validation = self.validate_stock(product, quantity)
+            if not stock_validation.success:
+                return stock_validation
+
+        return ServiceResponse(success=True)
+
     def process_invoice(self, data, user) -> ServiceResponse:
         """
         Handle the complete workflow for processing a sale and creating an invoice.
         """
         with transaction.atomic():
             try:
+                validation_response = self.validate_invoice_data(data)
+                if not validation_response.success:
+                    return validation_response
+
                 invoice_response = ReportService.create_invoice(data, user)
                 if not invoice_response.success:
                     return invoice_response
@@ -678,23 +723,43 @@ class GenerateReportService:
                 status='COMPLETED',
                 created_at__range=[start_date, end_date]
             )
+            credit_invoices = Invoice.objects.filter(
+                status='CREDIT',
+                created_at__range=[start_date, end_date]
+            )
 
-            if not completed_invoices.exists():
+            if not completed_invoices.exists() and not credit_invoices.exists():
                 return ServiceResponse(success=True, data={
-                    'total_sales': 0,
-                    'total_revenue': 0.00,
+                    'total_completed_sales': 0,
+                    'total_completed_revenue': 0.00,
+                    'total_credit_sales': 0,
+                    'total_credit_amount': 0.00,
+                    'total_advance_paid': 0.00,
+                    'total_remaining_amount': 0.00,
                     'products_sold': []
                 })
 
-            invoice_lines = InvoiceLine.objects.filter(invoice__in=completed_invoices)
+            total_completed_sales = completed_invoices.count()
+            completed_invoice_lines = InvoiceLine.objects.filter(
+                invoice__in=completed_invoices
+            )
+            total_completed_revenue = completed_invoice_lines.aggregate(
+                total=Sum('line_total'))['total'] or 0
 
-            total_sales = completed_invoices.count()
-            total_revenue = invoice_lines.aggregate(total=Sum('line_total'))['total'] or 0
+            # Statistiques pour les factures de crédit
+            total_credit_sales = credit_invoices.count()
+            total_credit_amount = credit_invoices.aggregate(
+                total=Sum('total'))['total'] or 0
+            total_advance_paid = credit_invoices.aggregate(
+                total=Sum('advance_paid'))['total'] or 0
+            total_remaining_amount = credit_invoices.aggregate(
+                total=Sum('_remaining_amount'))['total'] or 0
 
+            # Statistiques des produits vendus (factures complétées + crédit)
+            all_invoices = list(completed_invoices) + list(credit_invoices)
             sold_products = (
                 InvoiceLine.objects
-                .filter(invoice__status='COMPLETED',
-                        invoice__created_at__range=[start_date, end_date])
+                .filter(invoice__in=all_invoices)
                 .values('product__name')
                 .annotate(
                     total_quantity=Sum('quantity'),
@@ -702,24 +767,31 @@ class GenerateReportService:
                 )
                 .order_by('-total_quantity')
             )
+
             report_date = timezone.now().date()
             sales_report, created = SalesReport.objects.get_or_create(
                 date=report_date,
                 defaults={
-                    'total_sales': total_revenue,
-                    'total_invoices': total_sales,
+                    'total_sales': total_completed_revenue + total_advance_paid,
+                    'total_invoices': total_completed_sales + total_credit_sales,
                     'generated_by': user,
                 }
             )
             if not created:
-                sales_report.total_sales = total_revenue
-                sales_report.total_invoices = total_sales
+                sales_report.total_sales = total_completed_revenue + total_advance_paid
+                sales_report.total_invoices = total_completed_sales + total_credit_sales
                 sales_report.generated_by = user
                 sales_report.save()
 
             return ServiceResponse(success=True, data={
-                'total_sales': total_sales,
-                'total_revenue': total_revenue,
+                'total_completed_sales': total_completed_sales,
+                'total_completed_revenue': total_completed_revenue,
+                'total_credit_sales': total_credit_sales,
+                'total_credit_amount': total_credit_amount,
+                'total_advance_paid': total_advance_paid,
+                'total_remaining_amount': total_remaining_amount,
+                'cash_in_hand': total_completed_revenue + total_advance_paid,
+                'money_outstanding': total_remaining_amount,
                 'products_sold': list(sold_products),
             })
 

@@ -39,8 +39,19 @@ class UserCreateView(APIView):
         try:
             serializer = UserSerializer(data=request.data)
             if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
+                user = serializer.save()
+                refresh = RefreshToken.for_user(user)
+                access_token = str(refresh.access_token)
+                refresh_token = str(refresh)
+
+                user_data = UserSerializer(user).data
+
+                return Response({
+                    'message': 'User created successfully',
+                    'user': user_data,
+                    'access': access_token,
+                    'refresh': refresh_token,
+                }, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response(
