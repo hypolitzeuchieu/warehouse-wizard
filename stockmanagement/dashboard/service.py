@@ -223,7 +223,7 @@ class DashboardService:
 
                 profit_value = float(entry['profit'])
                 if profit_value < 0:
-                    sale_entry['pending_payment'] = profit_value
+                    sale_entry['pending_payment'] = abs(profit_value)
                     sale_entry['profit'] = 0
                 else:
                     sale_entry['pending_payment'] = 0.00
