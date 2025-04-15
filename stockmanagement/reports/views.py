@@ -8,7 +8,6 @@ from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
 from reports.models import InvoiceArchive
 from reports.serializers import CreateInvoiceSerializer
-from reports.serializers import InventoryDataSerializer
 from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InvoiceArchiveSerializer
 from reports.serializers import InvoiceQuerySerializer
@@ -343,10 +342,11 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 report_type = query_serializer.validated_data.get('report_type')
                 start_date = query_serializer.validated_data.get('start_date')
                 end_date = query_serializer.validated_data.get('end_date')
+                period = query_serializer.validated_data.get('period')
                 user = request.user
 
                 report_result = GenerateReportService.generate_report(
-                    report_type, user, start_date, end_date
+                    report_type, user, start_date, end_date, period
                 )
 
                 response_data = {
@@ -377,50 +377,3 @@ class GeneralReportViewSet(viewsets.ViewSet):
             {'success': False, 'error': query_serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    @swagger_auto_schema(
-        query_serializer=InventoryQuerySerializer,
-        operation_description='Retrieve inventory data for a specific date range.',
-        responses={
-            200: InventoryDataSerializer,
-            400: 'Invalid data',
-            500: 'Internal Server Error'
-        },
-    )
-    @action(methods=['GET'], detail=False, url_path='inventory-data')
-    def get_inventory_data(self, request):
-        """
-        Retrieve inventory data for a specific date range.
-        """
-        serializer = InventoryQuerySerializer(data=request.query_params)
-        if serializer.is_valid():
-            try:
-                start_date = serializer.validated_data.get('start_date')
-                end_date = serializer.validated_data.get('end_date')
-                page_size = serializer.validated_data.get('page_size', 10)
-
-                paginator = CustomPagination()
-                paginator.page_size = page_size
-
-                inventory_data = GenerateReportService.get_inventory_data(
-                    start_date=start_date, end_date=end_date
-                )
-
-                if not inventory_data.success:
-                    return Response(
-                        {'error': inventory_data.error}, status.HTTP_400_BAD_REQUEST
-                    )
-
-                paginated_data = paginator.paginate_queryset(
-                    inventory_data.data, request, view=self
-                )
-                serializer = InventoryDataSerializer(paginated_data, many=True)
-                return paginator.get_paginated_response(serializer.data)
-
-            except Exception as e:
-                logger.error(f"Error in get_inventory_data: {str(e)}")
-                return Response(
-                    {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)

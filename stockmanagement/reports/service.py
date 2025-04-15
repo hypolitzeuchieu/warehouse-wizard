@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from datetime import time
 from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -9,6 +11,10 @@ from authentication.models import User
 from django.db import transaction
 from django.db.models import F
 from django.db.models import Sum
+from django.db.models.functions import TruncDay
+from django.db.models.functions import TruncMonth
+from django.db.models.functions import TruncWeek
+from django.db.models.functions import TruncYear
 from django.template.loader import get_template
 from django.utils import timezone
 from django.utils.timezone import now
@@ -618,19 +624,77 @@ class GenerateReportService:
     Service for generating various types of reports within a specific time interval.
     """
 
+    trunc_mapping = {
+        'daily': TruncDay,
+        'weekly': TruncWeek,
+        'monthly': TruncMonth,
+        'yearly': TruncYear,
+    }
+
+    @staticmethod
+    def normalize_date_range(start_date, end_date):
+        # Si les dates sont des chaînes, on les convertit en date
+        if isinstance(start_date, str):
+            start_date = datetime.fromisoformat(start_date).date()
+        if isinstance(end_date, str):
+            end_date = datetime.fromisoformat(end_date).date()
+        start = datetime.combine(start_date, time.min)
+        end = datetime.combine(end_date, time.max)
+        return timezone.make_aware(start), timezone.make_aware(end)
+
+    @staticmethod
+    def get_period_boundaries(period):
+        """
+        Calculate start and end dates (as dates) based on the specified period.
+        """
+        today = timezone.now().date()
+        if period == 'daily':
+            start_date = today
+            end_date = today
+        elif period == 'weekly':
+            start_date = today - timedelta(days=today.weekday())
+            end_date = start_date + timedelta(days=6)
+        elif period == 'monthly':
+            start_date = today.replace(day=1)
+            next_month = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end_date = next_month - timedelta(days=1)
+        elif period == 'yearly':
+            start_date = today.replace(month=1, day=1)
+            end_date = today.replace(month=12, day=31)
+        else:
+            start_date = today - timedelta(days=29)
+            end_date = today
+        return start_date, end_date
+
+    @staticmethod
+    def determine_date_range(start_date=None, end_date=None, period: str = None):
+
+        if period:
+            sd, ed = GenerateReportService.get_period_boundaries(period)
+        else:
+            if not start_date or not end_date:
+                default_end = timezone.now()
+                default_start = default_end - timedelta(days=30)
+                sd, ed = default_start.date(), default_end.date()
+            else:
+                sd = datetime.fromisoformat(start_date).date()
+                ed = datetime.fromisoformat(end_date).date()
+
+        return GenerateReportService.normalize_date_range(sd, ed)
+
     @staticmethod
     def generate_report(
-            report_type: str, user, start_date: str = None, end_date: str = None
+            report_type: str,
+            user,
+            start_date: str = None,
+            end_date: str = None,
+            period: str = None
     ) -> ServiceResponse:
-        """
-        Generate a report dynamically based on type and
-        save it to the database, within the given date range.
-        """
+        """Generate a report based on the specified type and date range."""
         try:
-            if not start_date:
-                start_date = now() - timedelta(days=30)
-            if not end_date:
-                end_date = now()
+            start_date, end_date = GenerateReportService.determine_date_range(
+                start_date, end_date, period
+            )
 
             if end_date < start_date:
                 return ServiceResponse(
@@ -702,15 +766,34 @@ class GenerateReportService:
         """
         now = timezone.now()
         soon = now + timedelta(days=14)
-        products = Product.objects.filter(created_at__range=[start_date, end_date])
+
+        products = Product.objects.all().select_related('category', 'subcategory')
+
         near_expiry = Product.objects.filter(
             expiry_date__range=(now, soon), is_expired=False
         ).select_related('category', 'subcategory')
+
+        product_list = []
+        for product in products:
+            product_list.append({
+                'name': product.name,
+                'category': product.category.name if product.category else None,
+                'subcategory': product.subcategory.name if product.subcategory else None,
+                'quantity': product.quantity,
+                'min_quantity': product.min_quantity,
+                'is_expired': product.is_expired,
+                'expiry_date': product.expiry_date,
+                'is_near_expiry': product in near_expiry,
+                'is_critical': product.quantity < product.min_quantity,
+                'created_at': product.created_at,
+            })
+
         return {
             'total_products': products.count(),
             'expired_products': products.filter(is_expired=True).count(),
             'near_expiry_count': near_expiry.count(),
             'low_stock_products': products.filter(quantity__lt=F('min_quantity')).count(),
+            'product_list': product_list,
         }
 
     @staticmethod
@@ -721,14 +804,17 @@ class GenerateReportService:
         try:
             completed_invoices = Invoice.objects.filter(
                 status='COMPLETED',
-                created_at__range=[start_date, end_date]
+                created_at__date__range=[start_date, end_date]
             )
             credit_invoices = Invoice.objects.filter(
                 status='CREDIT',
-                created_at__range=[start_date, end_date]
+                created_at__date__range=[start_date, end_date]
             )
 
-            if not completed_invoices.exists() and not credit_invoices.exists():
+            invoice_ids = list(completed_invoices.values_list('id', flat=True)) + list(
+                credit_invoices.values_list('id', flat=True))
+
+            if not invoice_ids:
                 return ServiceResponse(success=True, data={
                     'total_completed_sales': 0,
                     'total_completed_revenue': 0.00,
@@ -739,28 +825,40 @@ class GenerateReportService:
                     'products_sold': []
                 })
 
-            total_completed_sales = completed_invoices.count()
-            completed_invoice_lines = InvoiceLine.objects.filter(
+            completed_revenue = InvoiceLine.objects.filter(
                 invoice__in=completed_invoices
-            )
-            total_completed_revenue = completed_invoice_lines.aggregate(
-                total=Sum('line_total'))['total'] or 0
+            ).aggregate(total=Sum('line_total'))['total'] or 0
 
-            # Statistiques pour les factures de crédit
+            total_credit_revenue = InvoiceLine.objects.filter(
+                invoice__in=credit_invoices
+            ).aggregate(total=Sum('line_total'))['total'] or 0
+
+            total_completed_sales = completed_invoices.count()
             total_credit_sales = credit_invoices.count()
-            total_credit_amount = credit_invoices.aggregate(
-                total=Sum('total'))['total'] or 0
+
+            # Ces valeurs restent basées sur les factures
             total_advance_paid = credit_invoices.aggregate(
                 total=Sum('advance_paid'))['total'] or 0
             total_remaining_amount = credit_invoices.aggregate(
                 total=Sum('_remaining_amount'))['total'] or 0
 
-            # Statistiques des produits vendus (factures complétées + crédit)
-            all_invoices = list(completed_invoices) + list(credit_invoices)
+            # Calcul des profits comme dans le tableau de bord
+            credit_profit = InvoiceLine.objects.filter(
+                invoice__in=credit_invoices
+            ).aggregate(
+                total=Sum((F('unit_price') - F('product__purchase_price')) * F('quantity'))
+            )['total'] or 0
+
+            profit = InvoiceLine.objects.filter(
+                invoice__in=completed_invoices
+            ).aggregate(
+                total=Sum((F('unit_price') - F('product__purchase_price')) * F('quantity'))
+            )['total'] or 0
+
             sold_products = (
                 InvoiceLine.objects
-                .filter(invoice__in=all_invoices)
-                .values('product__name')
+                .filter(invoice_id__in=invoice_ids)
+                .values('product__name', 'unit_price')
                 .annotate(
                     total_quantity=Sum('quantity'),
                     total_revenue=Sum('line_total')
@@ -772,25 +870,28 @@ class GenerateReportService:
             sales_report, created = SalesReport.objects.get_or_create(
                 date=report_date,
                 defaults={
-                    'total_sales': total_completed_revenue + total_advance_paid,
+                    'total_sales': completed_revenue + total_advance_paid,
                     'total_invoices': total_completed_sales + total_credit_sales,
                     'generated_by': user,
                 }
             )
+
             if not created:
-                sales_report.total_sales = total_completed_revenue + total_advance_paid
+                sales_report.total_sales = completed_revenue + total_advance_paid
                 sales_report.total_invoices = total_completed_sales + total_credit_sales
                 sales_report.generated_by = user
                 sales_report.save()
 
             return ServiceResponse(success=True, data={
                 'total_completed_sales': total_completed_sales,
-                'total_completed_revenue': total_completed_revenue,
+                'total_completed_revenue': completed_revenue,
                 'total_credit_sales': total_credit_sales,
-                'total_credit_amount': total_credit_amount,
+                'total_credit_amount': total_credit_revenue,
                 'total_advance_paid': total_advance_paid,
-                'total_remaining_amount': total_remaining_amount,
-                'cash_in_hand': total_completed_revenue + total_advance_paid,
+                'total_general': completed_revenue + total_credit_revenue,
+                'credit_profit': credit_profit,
+                'marge': profit,
+                'total_profit': credit_profit + profit,
                 'money_outstanding': total_remaining_amount,
                 'products_sold': list(sold_products),
             })
@@ -809,7 +910,8 @@ class GenerateReportService:
         )
         return {
             'total_expired_products': expired_products.count(),
-            'expired_product_list': list(expired_products.values('name', 'expiry_date')),
+            'expired_product_list': list(expired_products.values(
+                'name', 'expiry_date', 'quantity')),
         }
 
     @staticmethod
@@ -820,56 +922,3 @@ class GenerateReportService:
         # Simulation d'un fichier, cela pourrait être un fichier PDF ou autre format
         file_path = 'some/path/to/generated_report.pdf'
         return file_path
-
-    @staticmethod
-    def get_inventory_data(start_date=None, end_date=None) -> ServiceResponse:
-        """
-        Generate data for inventory levels within a specific date range.
-        """
-        try:
-            if not start_date:
-                start_date = now() - timedelta(days=30)
-            if not end_date:
-                end_date = now()
-
-            if end_date < start_date:
-                return ServiceResponse(
-                    success=False, error='End date cannot be earlier than start date.'
-                )
-
-            reports = InventoryReport.objects.filter(
-                created_at__range=[start_date, end_date]
-            ).order_by('-created_at').all()
-
-            if not reports:
-                return ServiceResponse(success=False, error='No inventory report found.')
-
-            inventory_data = []
-
-            for report in reports:
-                for stock in report.stocks.all():
-                    product = stock.product
-                    inventory_data.append(
-                        {
-                            'generated_by_name': report.generated_by.username
-                            if report.generated_by else None,
-                            'product_name': product.name,
-                            'category': product.category.name,
-                            'subcategory': product.subcategory.name
-                            if product.subcategory else None,
-                            'unit_price': product.unit_price,
-                            'created_at': report.created_at,
-                            'expiry_date': product.expiry_date,
-                            'is_expired': product.is_expired,
-                            'quantity': stock.product.quantity,
-                            'min_quantity': product.min_quantity,
-                            'is_critical': stock.product.quantity < product.min_quantity,
-                        }
-                    )
-
-            logger.info(f"Inventory report retrieved for range: {start_date} to {end_date}.")
-            return ServiceResponse(success=True, data=inventory_data)
-
-        except Exception as e:
-            logger.error(f"Error retrieving inventory report: {str(e)}")
-            return ServiceResponse(success=False, error=str(e))
