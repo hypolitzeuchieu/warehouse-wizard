@@ -4,18 +4,22 @@ import logging
 
 from authentication.permissions import IsCashier
 from authentication.permissions import IsManagerPermission
+from django.http import FileResponse
 from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
 from reports.models import InvoiceArchive
+from reports.models import Report
 from reports.serializers import CreateInvoiceSerializer
+from reports.serializers import DownloadReportSerializer
 from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InvoiceArchiveSerializer
 from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
 from reports.serializers import PayDebtSerializer
+from reports.serializers import ReportListSerializer
 from reports.serializers import ReportQuerySerializer
-from reports.service import GenerateReportService
-from reports.service import ReportService
+from reports.service.generateReport import GenerateReportService
+from reports.service.invoice_service import ReportService
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -319,7 +323,7 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
 
 class GeneralReportViewSet(viewsets.ViewSet):
 
-    permission_classes = [IsAuthenticated, IsCashier]
+    # permission_classes = [IsAuthenticated, IsCashier]
 
     @swagger_auto_schema(
         query_serializer=ReportQuerySerializer,
@@ -377,3 +381,76 @@ class GeneralReportViewSet(viewsets.ViewSet):
             {'success': False, 'error': query_serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+    @swagger_auto_schema(
+        operation_description='Retrieve all reports',
+        responses={
+            200: ReportListSerializer(),
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error',
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='all-report')
+    def get_all_reports(self, request):
+        try:
+            reports = Report.objects.select_related(
+                'inventory_report', 'sales_report'
+            ).order_by('-generated_at')
+
+            serializer = ReportListSerializer(
+                reports, many=True, context={'request': request}
+            )
+            logger.info('Reports retrieved successfully.')
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error retrieving reports: {str(e)}")
+            return Response(
+                {'success': False, 'error': 'Failed to retrieve reports.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description='Download a report as a PDF file',
+        request_body=DownloadReportSerializer,
+        responses={
+            200: 'Report downloaded successfully (PDF file)',
+            400: 'Invalid data or business rule violation.',
+            500: 'Internal Server Error',
+        }
+    )
+    @action(methods=['POST'], detail=False, url_path='download-report')
+    def download_report(self, request):
+        try:
+            serializer = DownloadReportSerializer(data=request.data)
+            if serializer.is_valid():
+                report_id = serializer.validated_data.get('report_id')
+                report = GenerateReportService.download_report(report_id)
+
+                if report.success:
+                    buffer = report.data['pdf_file']
+                    filename = report.data['filename']
+                    return FileResponse(
+                        buffer,
+                        as_attachment=True,
+                        filename=filename,
+                        content_type='application/pdf'
+                    )
+                else:
+                    return Response(
+                        {'success': False, 'error': report.error},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            logger.error(f"Invalid data provided: {serializer.errors}")
+            return Response(
+                {'success': False, 'error': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception as e:
+            logger.error(f"Error in download_report: {str(e)}")
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
