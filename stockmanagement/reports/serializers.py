@@ -127,6 +127,16 @@ class InventoryQuerySerializer(serializers.Serializer):
     end_date = serializers.DateTimeField(required=False)
     page_size = serializers.IntegerField(required=False, min_value=1, default=10)
 
+    def validate(self, data):
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {'end_date': 'End date must be greater than start date.'}
+            )
+        return data
+
 
 class InvoiceQuerySerializer(serializers.Serializer):
     invoice_id = serializers.CharField(required=True)
