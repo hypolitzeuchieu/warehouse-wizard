@@ -20,7 +20,7 @@ from django.db.models.functions import TruncYear
 from django.utils import timezone
 from reports.models import Invoice
 from reports.models import InvoiceLine
-from reports.service import ServiceResponse
+from reports.service.invoice_service import ServiceResponse
 from stock.models import Product
 
 logger = logging.getLogger(__name__)
