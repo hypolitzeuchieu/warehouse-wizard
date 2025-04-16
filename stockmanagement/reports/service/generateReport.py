@@ -113,10 +113,6 @@ class GenerateReportService:
             start_date, end_date = GenerateReportService.determine_date_range(
                 start_date, end_date, period
             )
-            if start_date > end_date:
-                return ServiceResponse(
-                    success=False, error='Start date cannot be greater than end date.'
-                )
 
             if report_type not in dict(Report.REPORT_TYPE_CHOICES):
                 return ServiceResponse(success=False, error='Invalid report type.')
@@ -128,6 +124,7 @@ class GenerateReportService:
             report_data['report_type'] = report_type
             report_data['generated_by'] = user.username
             report_data['created_at'] = timezone.now().isoformat()
+            print('report data', report_data)
 
             with transaction.atomic():
                 report = Report.objects.create(
@@ -152,6 +149,14 @@ class GenerateReportService:
                     )
 
                 elif report_type == 'sales':
+
+                    total_completed_revenue = report_data.get('total_completed_revenue', 0)
+                    total_advance_paid = report_data.get('total_advance_paid', 0)
+                    total_completed_sales = report_data.get('total_completed_sales', 0)
+                    total_credit_sales = report_data.get('total_credit_sales', 0)
+                    total_sales = total_completed_revenue + total_advance_paid
+                    total_invoices = total_completed_sales + total_credit_sales
+
                     sales_report, created = SalesReport.objects.get_or_create(
                         date=timezone.now().date(),
                         defaults={
@@ -159,22 +164,12 @@ class GenerateReportService:
                             'generated_by': user,
                             'start_date': start_date,
                             'end_date': end_date,
-                            'total_sales':
-                                report_data['total_completed_revenue'] + report_data[
-                                    'total_advance_paid'],
-                            'total_invoices':
-                                report_data['total_completed_sales'] + report_data[
-                                    'total_credit_sales'],
+                            'total_sales': total_sales,
+                            'total_invoices': total_invoices,
                             'data': report_data
                         }
                     )
                     if not created:
-                        total_sales = report_data['total_completed_revenue'] + report_data[
-                            'total_advance_paid'
-                        ]
-                        total_invoices = report_data['total_completed_sales'] + report_data[
-                            'total_credit_sales'
-                        ]
                         sales_report.report = report
                         sales_report.generated_by = user
                         sales_report.start_date = start_date
@@ -196,7 +191,7 @@ class GenerateReportService:
             report_type: str, start_date: str = None, end_date: str = None, period: str = None
     ):
         if report_type == 'inventory':
-            return GenerateReportService._generate_inventory_data(start_date, end_date)
+            return GenerateReportService._generate_inventory_data()
         elif report_type == 'sales':
             sales_data_response = GenerateReportService._generate_sales_data(
                 start_date, end_date, period

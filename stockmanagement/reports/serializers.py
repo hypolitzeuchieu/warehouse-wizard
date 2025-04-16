@@ -148,6 +148,25 @@ class ReportQuerySerializer(serializers.Serializer):
         required=False
     )
 
+    def validate(self, data):
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        period = data.get('period')
+
+        if (start_date or end_date) and period:
+            raise serializers.ValidationError(
+                'You cannot provide both period and start/end dates.'
+            )
+        if not (start_date and end_date) and not period:
+            raise serializers.ValidationError(
+                'You must provide either period or both start and end dates.'
+            )
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {'end_date': 'End date must be greater than start date.'}
+            )
+        return data
+
 
 class InvoiceArchiveLineSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
