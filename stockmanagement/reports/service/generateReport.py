@@ -297,7 +297,7 @@ class GenerateReportService:
                 'total_completed_sales': completed_invoices.count(),
                 'total_completed_revenue': completed_revenue,
                 'total_credit_sales': credit_invoices.count(),
-                'total_credit_amount': total_credit_revenue,
+                'total_credit_revenue': total_credit_revenue,
                 'total_advance_paid': total_advance_paid,
                 'total_general': completed_revenue + total_credit_revenue,
                 'credit_profit': credit_profit,
