@@ -141,24 +141,12 @@ class ReportService:
     def create_invoice(data, user):
         """Create new invoice."""
         try:
-            reason = data.get('reason')
-            if not reason or reason.strip() == '':
-                status = data.get('status')
-                if status == 'COMPLETED':
-                    reason = 'Completed Sale Transaction'
-                elif status == 'CREDIT':
-                    reason = 'Credit Sale Transaction'
-                elif status == 'CANCELLED':
-                    reason = 'Cancelled Sale Transaction'
-                else:
-                    reason = 'Sale Transaction'
-
             invoice = Invoice.objects.create(
                 client_name=data.get('client_name'),
                 cashier=user,
                 tax=data.get('tax', Decimal('0.00')),
                 status=data.get('status'),
-                reason=reason,
+                reason=data.get('reason', ''),
                 advance_paid=data.get('advance_paid', Decimal('0.00')),
                 due_date=data.get('due_date', None),
             )
@@ -228,13 +216,16 @@ class ReportService:
             remaining_amount = invoice.total - invoice.advance_paid
 
             if remaining_amount > Decimal('0.00'):
-                invoice.status = 'CREDIT'
+                invoice.status = 'c'
                 invoice.remaining_amount = remaining_amount
                 invoice.is_credit_settled = False
 
                 if not invoice.due_date:
                     invoice.due_date = timezone.now().date() + timedelta(days=30)
+
+                invoice.reason = 'CREDIT Invoice Transaction'
                 invoice.refund_amount = Decimal('0.00')
+
             else:
                 invoice.status = 'COMPLETED'
                 invoice.remaining_amount = Decimal('0.00')
@@ -243,6 +234,8 @@ class ReportService:
                 invoice.refund_amount = max(
                     invoice.advance_paid - invoice.total, Decimal('0.00')
                 )
+                if not invoice.reason:
+                    invoice.reason = 'COMPLETED Invoice Transaction'
 
             invoice.save()
             return ServiceResponse(success=True)
@@ -455,6 +448,7 @@ class ReportService:
                     refund_amount = invoice.advance_paid - invoice.total
                     invoice.advance_paid = invoice.total
                     invoice.remaining_amount = 0
+                    invoice.reason = 'COMPLETED Invoice Transaction'
                     invoice.refund_amount = refund_amount
                     invoice.is_credit_settled = True
                     invoice.status = 'COMPLETED'
