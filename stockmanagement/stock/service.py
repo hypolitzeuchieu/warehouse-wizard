@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 from notifications.service import NotificationService
-from reports.service import ReportService
+from reports.service.invoice_service import ReportService
 from rest_framework.exceptions import ValidationError
 from stock.models import Category
 from stock.models import Product
