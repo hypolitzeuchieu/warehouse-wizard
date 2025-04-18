@@ -72,60 +72,6 @@ class InvoiceSerializer(serializers.ModelSerializer):
         return invoice
 
 
-class InventoryReportSerializer(serializers.ModelSerializer):
-    generated_by_name = serializers.CharField(
-        source='generated_by.username', read_only=True
-    )
-
-    class Meta:
-        model = InventoryReport
-        fields = [
-            'id',
-            'created_at',
-            'generated_by',
-            'generated_by_name',
-            'total_products',
-            'expired_products',
-            'low_stock_products',
-            'date_range',
-        ]
-
-
-class InventoryDataSerializer(serializers.Serializer):
-    generated_by_name = serializers.CharField(allow_null=True)
-    product_name = serializers.CharField()
-    category = serializers.CharField()
-    subcategory = serializers.CharField(allow_null=True)
-    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
-    created_at = serializers.DateTimeField()
-    expiry_date = serializers.DateTimeField(allow_null=True)
-    is_expired = serializers.BooleanField()
-    quantity = serializers.IntegerField()
-    min_quantity = serializers.IntegerField()
-    is_critical = serializers.BooleanField()
-
-
-class SalesReportSerializer(serializers.ModelSerializer):
-    generated_by_name = serializers.CharField(
-        source='generated_by.username', read_only=True
-    )
-
-    class Meta:
-        model = SalesReport
-        fields = [
-            'id',
-            'date',
-            'total_sales',
-            'total_invoices',
-            'generated_by',
-            'generated_by_name',
-        ]
-
-
-class SalesSummaryQuerySerializer(serializers.Serializer):
-    date = serializers.DateField(required=False)
-
-
 class InvoiceLineInputSerializer(serializers.Serializer):
     product_id = serializers.CharField()
     quantity = serializers.IntegerField(min_value=1)
@@ -181,6 +127,16 @@ class InventoryQuerySerializer(serializers.Serializer):
     end_date = serializers.DateTimeField(required=False)
     page_size = serializers.IntegerField(required=False, min_value=1, default=10)
 
+    def validate(self, data):
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {'end_date': 'End date must be greater than start date.'}
+            )
+        return data
+
 
 class InvoiceQuerySerializer(serializers.Serializer):
     invoice_id = serializers.CharField(required=True)
@@ -197,6 +153,29 @@ class ReportQuerySerializer(serializers.Serializer):
     report_type = serializers.ChoiceField(choices=Report.REPORT_TYPE_CHOICES)
     start_date = serializers.DateTimeField(required=False)
     end_date = serializers.DateTimeField(required=False)
+    period = serializers.ChoiceField(
+        choices=['daily', 'weekly', 'monthly', 'yearly'],
+        required=False
+    )
+
+    def validate(self, data):
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        period = data.get('period')
+
+        if (start_date or end_date) and period:
+            raise serializers.ValidationError(
+                'You cannot provide both period and start/end dates.'
+            )
+        if not (start_date and end_date) and not period:
+            raise serializers.ValidationError(
+                'You must provide either period or both start and end dates.'
+            )
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {'end_date': 'End date must be greater than start date.'}
+            )
+        return data
 
 
 class InvoiceArchiveLineSerializer(serializers.ModelSerializer):
@@ -222,48 +201,61 @@ class InvoiceArchiveSerializer(serializers.ModelSerializer):
         ]
 
 
-class InventoryReportResponseSerializer(serializers.Serializer):
-    total_products = serializers.IntegerField()
-    expired_products = serializers.IntegerField()
-    near_expiry_count = serializers.IntegerField()
-    low_stock_products = serializers.IntegerField()
+class InventoryReportSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = InventoryReport
+        fields = [
+            'id',
+            'start_date',
+            'end_date',
+            'total_products',
+            'expired_products',
+            'low_stock_products',
+            'data',
+            'notes',
+            'created_at'
+        ]
 
 
-class SalesReportResponseSerializer(serializers.Serializer):
-    total_sales = serializers.IntegerField()
-    total_revenue = serializers.DecimalField(max_digits=10, decimal_places=2)
-    products_sold = serializers.ListField(child=serializers.DictField())
+class SalesReportSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = SalesReport
+        fields = [
+            'id',
+            'date',
+            'start_date',
+            'end_date',
+            'total_sales',
+            'total_invoices',
+            'data',
+            'notes'
+        ]
 
 
-class ExpiredProductsReportResponseSerializer(serializers.Serializer):
-    total_expired_products = serializers.IntegerField()
-    expired_product_list = serializers.ListField(child=serializers.DictField())
+class ReportListSerializer(serializers.ModelSerializer):
+    inventory_report = InventoryReportSerializers(read_only=True)
+    sales_report = SalesReportSerializers(read_only=True)
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Report
+        fields = [
+            'id',
+            'type',
+            'generated_at',
+            'generated_by',
+            'description',
+            'file_url',
+            'inventory_report',
+            'sales_report',
+        ]
+
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if obj.file_path and request:
+            return request.build_absolute_uri(obj.file_path.url)
+        return None
 
 
-# class ReportResponseSerializer(serializers.Serializer):
-#     success = serializers.BooleanField()
-#     data = ReportDataSerializer(required=False)
-#     error = serializers.CharField(required=False)
-
-
-class ReportResponseSerializer(serializers.Serializer):
-    success = serializers.BooleanField()
-    # Champ conditionnel selon le type de rapport
-    data = serializers.SerializerMethodField()
-    error = serializers.CharField(required=False)
-
-    def get_data(self, obj):
-        if not obj.get('success'):
-            return None
-
-        report_type = self.context.get('report_type')
-        data = obj.get('data', {})
-
-        if report_type == 'inventory':
-            return InventoryReportResponseSerializer(data).data
-        elif report_type == 'sales':
-            return SalesReportResponseSerializer(data).data
-        elif report_type == 'expired':
-            return ExpiredProductsReportResponseSerializer(data).data
-
-        return data
+class DownloadReportSerializer(serializers.Serializer):
+    report_id = serializers.UUIDField(required=True)

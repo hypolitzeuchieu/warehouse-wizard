@@ -23,8 +23,8 @@ from stock.serializers import QuantitySerializer
 from stock.serializers import StockMovementSerializer
 from stock.serializers import StockSerializer
 from stock.serializers import SubCategorySerializer
-from stock.service import ProductService
-from stock.service import StockService
+from stock.service.product_service import ProductService
+from stock.service.stock_service import StockService
 
 logger = logging.getLogger(__name__)
 

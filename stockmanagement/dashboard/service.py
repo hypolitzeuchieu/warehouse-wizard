@@ -5,10 +5,14 @@ from datetime import timedelta
 from decimal import Decimal
 from decimal import ROUND_DOWN
 
+from django.db.models import Case
 from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Sum
+from django.db.models import Value
+from django.db.models import When
+from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDay
 from django.db.models.functions import TruncMonth
 from django.db.models.functions import TruncWeek
@@ -16,7 +20,7 @@ from django.db.models.functions import TruncYear
 from django.utils import timezone
 from reports.models import Invoice
 from reports.models import InvoiceLine
-from reports.service import ServiceResponse
+from reports.service.invoice_service import ServiceResponse
 from stock.models import Product
 
 logger = logging.getLogger(__name__)
@@ -51,22 +55,6 @@ class DashboardService:
             end_date = today
 
         return start_date, end_date
-
-    @staticmethod
-    def get_trunc_function(period):
-        """
-        Return the appropriate truncation function for the period.
-        """
-        if period == 'daily':
-            return TruncDay('created_at')
-        elif period == 'weekly':
-            return TruncWeek('created_at')
-        elif period == 'monthly':
-            return TruncMonth('created_at')
-        elif period == 'yearly':
-            return TruncYear('created_at')
-        else:
-            return TruncDay('created_at')
 
     @staticmethod
     def get_dashboard_stats(period='monthly'):
@@ -198,16 +186,39 @@ class DashboardService:
 
             invoice_ids = invoice_qs.values_list('id', flat=True)
 
+            invoice_line_qs = InvoiceLine.objects.filter(invoice_id__in=invoice_ids)
+
             # SALES OVER TIME (From InvoiceLine)
-            sales_lines = InvoiceLine.objects.filter(
-                invoice_id__in=invoice_ids
-            ).select_related('product', 'invoice').annotate(
-                period=trunc_function('invoice__created_at')
+            sales_lines = invoice_line_qs.select_related('product', 'invoice').annotate(
+                period=trunc_function('invoice__created_at'),
+                status=F('invoice__status')
             ).values('period').annotate(
                 sales=Sum('line_total'),
-                profit=Sum(
-                    ExpressionWrapper(
-                        F('quantity') * (F('unit_price') - F('product__purchase_price')),
+                completed_profit=Sum(
+                    Case(
+                        When(
+                            invoice__status='COMPLETED',
+                            then=ExpressionWrapper(
+                                F('quantity') * (
+                                        F('unit_price') - F('product__purchase_price')),
+                                output_field=DecimalField(max_digits=15, decimal_places=3)
+                            )
+                        ),
+                        default=Value(0),
+                        output_field=DecimalField(max_digits=15, decimal_places=2)
+                    )
+                ),
+                credit_amount=Sum(
+                    Case(
+                        When(
+                            invoice__status='CREDIT',
+                            then=ExpressionWrapper(
+                                F('quantity') * (
+                                        F('unit_price') - F('product__purchase_price')),
+                                output_field=DecimalField(max_digits=15, decimal_places=3)
+                            )
+                        ),
+                        default=Value(0),
                         output_field=DecimalField(max_digits=15, decimal_places=2)
                     )
                 )
@@ -216,25 +227,21 @@ class DashboardService:
             formatted_sales = []
             for entry in sales_lines:
                 period_label = DashboardService.format_period_label(entry['period'], period)
+
+                completed_profit = float(entry['completed_profit'] or 0)
+                credit_amount = float(entry['credit_amount'] or 0)
+
                 sale_entry = {
                     'period': period_label,
                     'sales': float(entry['sales']),
+                    'profit': completed_profit,
+                    'credit_profit': abs(credit_amount)
                 }
-
-                profit_value = float(entry['profit'])
-                if profit_value < 0:
-                    sale_entry['pending_payment'] = abs(profit_value)
-                    sale_entry['profit'] = 0
-                else:
-                    sale_entry['pending_payment'] = 0.00
-                    sale_entry['profit'] = profit_value
 
                 formatted_sales.append(sale_entry)
 
             # RECENT SALES
-            recent_sales = Invoice.objects.filter(
-                status__in=['COMPLETED', 'CREDIT']
-            ).order_by('-created_at')[:10]
+            recent_sales = invoice_qs.order_by('-created_at')[:10]
 
             formatted_recent_sales = []
             for invoice in recent_sales:
@@ -246,9 +253,7 @@ class DashboardService:
                 })
 
             # SALES BY CATEGORY
-            sales_by_category = InvoiceLine.objects.filter(
-                invoice_id__in=invoice_ids
-            ).select_related('product__category').values(
+            sales_by_category = invoice_line_qs.select_related('product__category').values(
                 'product__category__id',
                 'product__category__name'
             ).annotate(
@@ -267,12 +272,10 @@ class DashboardService:
                     })
 
             # MONTHLY REVENUE (Total)
-            monthly_revenue = Invoice.objects.filter(
-                status__in=['COMPLETED', 'CREDIT']
-            ).annotate(
-                month=TruncMonth('created_at')
+            monthly_revenue = invoice_line_qs.annotate(
+                month=TruncMonth('invoice__created_at')
             ).values('month').annotate(
-                revenue=Sum('total')
+                revenue=Sum('line_total')
             ).order_by('month')
 
             formatted_monthly_revenue = []
@@ -282,11 +285,24 @@ class DashboardService:
                     'revenue': float(entry['revenue'])
                 })
 
+            credit_invoices = Invoice.objects.filter(
+                created_at__date__range=[start_date, end_date],
+                status='CREDIT'
+            )
+            pending_payment_data = credit_invoices.aggregate(
+                pending_payment=Coalesce(
+                    Sum('_remaining_amount',
+                        output_field=DecimalField(max_digits=15, decimal_places=2)),
+                    Value(Decimal('0.00'))
+                )
+            )
+            pending_payment = float(pending_payment_data['pending_payment'] or 0.00)
             return ServiceResponse(success=True, data={
                 'salesOverTime': formatted_sales,
                 'recentSales': formatted_recent_sales,
                 'salesByCategory': formatted_categories,
-                'monthlyRevenue': formatted_monthly_revenue
+                'monthlyRevenue': formatted_monthly_revenue,
+                'globalPendingPayment': pending_payment,
             })
 
         except Exception as e:
@@ -302,10 +318,12 @@ class DashboardService:
             start_date, end_date = DashboardService.get_period_boundaries(period)
 
             # Top selling products
-            top_products = InvoiceLine.objects.filter(
+            invoice_lines_qs = InvoiceLine.objects.filter(
                 invoice__created_at__date__range=[start_date, end_date],
                 invoice__status__in=['COMPLETED', 'CREDIT']
-            ).values(
+            )
+
+            top_products = invoice_lines_qs.values(
                 'product__name'
             ).annotate(
                 sold=Sum('quantity'),
@@ -322,10 +340,7 @@ class DashboardService:
                 })
 
             # Product performance for bar chart
-            product_performance = InvoiceLine.objects.filter(
-                invoice__created_at__date__range=[start_date, end_date],
-                invoice__status__in=['COMPLETED', 'CREDIT']
-            ).values(
+            product_performance = invoice_lines_qs.values(
                 'product__name'
             ).annotate(
                 value=Sum('quantity')

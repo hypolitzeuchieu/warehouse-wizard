@@ -7,7 +7,6 @@ from authentication.models import User
 from django.db import models
 from django.utils import timezone
 from stock.models import Product
-from stock.models import Stock
 
 
 class Invoice(models.Model):
@@ -120,6 +119,12 @@ class Report(models.Model):
 
 class InventoryReport(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.OneToOneField(
+        Report,
+        on_delete=models.CASCADE,
+        related_name='inventory_report',
+        null=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     generated_by = models.ForeignKey(
         User,
@@ -127,11 +132,14 @@ class InventoryReport(models.Model):
         null=True,
         related_name='inventory_reports',
     )
+    start_date = models.DateTimeField(blank=True, null=True)
+    end_date = models.DateTimeField(null=True, blank=True)
     total_products = models.PositiveIntegerField(default=0)
     expired_products = models.PositiveIntegerField(default=0)
     low_stock_products = models.PositiveIntegerField(default=0)
-    date_range = models.CharField(max_length=255, default=None)
-    stocks = models.ManyToManyField(Stock)
+    stocks = models.ManyToManyField('stock.Stock')
+    notes = models.TextField(blank=True, null=True)
+    data = models.JSONField(blank=True, null=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -139,12 +147,18 @@ class InventoryReport(models.Model):
         verbose_name_plural = 'Inventory Reports'
 
     def __str__(self):
-        return f"Inventory Report - {self.created_at}"
+        return f"Inventory Report - {self.start_date.date()} to {self.end_date.date()}"
 
 
 class SalesReport(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    date = models.DateField(default=timezone.now, unique=True)
+    report = models.OneToOneField(
+        Report,
+        on_delete=models.CASCADE,
+        related_name='sales_report',
+        null=True
+    )
+    date = models.DateField(default=timezone.now)
     total_sales = models.DecimalField(
         max_digits=10, decimal_places=2, default=0.00
     )
@@ -155,6 +169,10 @@ class SalesReport(models.Model):
         null=True,
         related_name='sales_reports',
     )
+    start_date = models.DateTimeField(null=True, blank=True)
+    end_date = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, null=True)
+    data = models.JSONField(blank=True, null=True)
 
     class Meta:
         ordering = ['-date']

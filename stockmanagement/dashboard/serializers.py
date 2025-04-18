@@ -28,7 +28,7 @@ class SalesDataPointSerializer(serializers.Serializer):
     sales = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
     target = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
     profit = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    pending_payment = serializers.DecimalField(
+    credit_profit = serializers.DecimalField(
         max_digits=20, decimal_places=3, required=False
     )
     expenses = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
@@ -90,6 +90,9 @@ class SalesDataSerializer(serializers.Serializer):
     Serializer for sales data response.
     """
     salesOverTime = SalesDataPointSerializer(many=True, required=False)
+    globalPendingPayment = serializers.DecimalField(
+        max_digits=20, decimal_places=3, required=False
+    )
     recentSales = RecentSaleSerializer(many=True, required=False)
     salesByCategory = CategorySaleSerializer(many=True, required=False)
     monthlyRevenue = MonthlyRevenueSerializer(many=True, required=False)

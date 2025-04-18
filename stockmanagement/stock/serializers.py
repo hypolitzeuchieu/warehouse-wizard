@@ -71,25 +71,28 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        if attrs.get('on_promotion'):
-            if not attrs.get('promo_price'):
+        unit_price = attrs.get('unit_price')
+        purchase_price = attrs.get('purchase_price')
+        on_promotion = attrs.get('on_promotion', False)
+        promo_price = attrs.get('promo_price')
+
+        if unit_price is not None and purchase_price is not None:
+            if unit_price < purchase_price and not on_promotion:
+                raise serializers.ValidationError(
+                    'Unit price cannot be less than the purchase price.'
+                )
+
+        if on_promotion:
+            if not promo_price:
                 raise serializers.ValidationError(
                     'Promotion price is required when the product is on promotion.'
                 )
-            if attrs.get('promotion_start_date') and attrs.get(
-                'promotion_end_date'
-            ):
-                if (
-                    attrs['promotion_start_date']
-                    >= attrs['promotion_end_date']
-                ):
+            if attrs.get('promotion_start_date') and attrs.get('promotion_end_date'):
+                if attrs['promotion_start_date'] >= attrs['promotion_end_date']:
                     raise serializers.ValidationError(
                         'Promotion start date must be before promotion end date.'
                     )
-            elif not (
-                attrs.get('promotion_start_date')
-                or attrs.get('promotion_end_date')
-            ):
+            elif not (attrs.get('promotion_start_date') or attrs.get('promotion_end_date')):
                 raise serializers.ValidationError(
                     'At least one of promotion_start_date or promotion_end_date'
                     ' is required when the product is on promotion.'
