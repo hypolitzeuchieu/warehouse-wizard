@@ -19,13 +19,13 @@
 
     <h2>Summary</h2>
     <ul>
-        <li><strong>Total Completed Sales:</strong> {{ data.total_completed_sales }}</li>
-        <li><strong>Total Completed Revenue:</strong> {{ data.total_completed_revenue }}</li>
-        <li><strong>Total Credit Sales:</strong> {{ data.total_credit_sales }}</li>
-        <li><strong>Total Credit Amount:</strong> {{ data.total_credit_amount }}</li>
-        <li><strong>Total Advance Paid:</strong> {{ data.total_advance_paid }}</li>
-        <li><strong>Total Profit:</strong> {{ data.total_profit }}</li>
-        <li><strong>Outstanding:</strong> {{ data.money_outstanding }}</li>
+        <li><strong>Total Completed Sales:</strong> {{ data.total_completed_sales }} XFA</li>
+        <li><strong>Total Completed Revenue:</strong> {{ data.total_completed_revenue }} XFA</li>
+        <li><strong>Total Credit Sales:</strong> {{ data.total_credit_sales }} XFA</li>
+        <li><strong>Total Credit Amount:</strong> {{ data.total_credit_amount }} XFA</li>
+        <li><strong>Total Advance Paid:</strong> {{ data.total_advance_paid }} XFA</li>
+        <li><strong>Total Profit:</strong> {{ data.total_profit }} XFA</li>
+        <li><strong>Outstanding:</strong> {{ data.money_outstanding }} XFA</li>
     </ul>
 
     <h2>Products Sold (Grouped by Period)</h2>
@@ -43,10 +43,10 @@
         {% for product in data.products_sold %}
             <tr>
                 <td>{{ product.period }}</td>
-                <td>{{ product.product__name }}</td>
-                <td>{{ product.unit_price }}</td>
-                <td>{{ product.total_quantity }}</td>
-                <td>{{ product.total_revenue }}</td>
+                <td>{{ product.product__name }} XFA</td>
+                <td>{{ product.unit_price }} XFA</td>
+                <td>{{ product.total_quantity }} XFA</td>
+                <td>{{ product.total_revenue }} XFA</td>
             </tr>
         {% endfor %}
         </tbody>
