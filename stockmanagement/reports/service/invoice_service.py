@@ -216,14 +216,14 @@ class ReportService:
             remaining_amount = invoice.total - invoice.advance_paid
 
             if remaining_amount > Decimal('0.00'):
-                invoice.status = 'c'
+                invoice.status = 'CREDIT'
                 invoice.remaining_amount = remaining_amount
                 invoice.is_credit_settled = False
 
                 if not invoice.due_date:
                     invoice.due_date = timezone.now().date() + timedelta(days=30)
 
-                invoice.reason = 'CREDIT Invoice Transaction'
+                invoice.reason = ' Invoice Transaction'
                 invoice.refund_amount = Decimal('0.00')
 
             else:
