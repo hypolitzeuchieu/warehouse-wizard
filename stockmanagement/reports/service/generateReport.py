@@ -304,6 +304,9 @@ class GenerateReportService:
             ).aggregate(
                 total=Sum((F('unit_price') - F('product__purchase_price')) * F('quantity'))
             )['total'] or 0
+            discount = InvoiceLine.objects.filter(
+                invoice__in=invoice_ids
+            ).aggregate(discount=Sum('discount'))['discount'] or 0
 
             # Utiliser le trunc_func uniquement si period est fourni
             if period and period in GenerateReportService.trunc_mapping:
@@ -335,9 +338,12 @@ class GenerateReportService:
                 'total_advance_paid': total_advance_paid,
                 'total_general': completed_revenue + total_credit_revenue,
                 'credit_profit': credit_profit,
-                'marge': profit,
-                'total_profit': credit_profit + profit,
+                'marge_brute': profit,
+                'marge_nette': profit - discount,
+                'total_profit_brute': credit_profit + profit,
+                'total_profit_nette': credit_profit + profit - discount,
                 'money_outstanding': total_remaining_amount,
+                'total_discount': discount,
                 'products_sold': sold_products
             })
 
