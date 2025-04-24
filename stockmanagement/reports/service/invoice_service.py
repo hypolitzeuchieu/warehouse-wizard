@@ -223,7 +223,7 @@ class ReportService:
                 if not invoice.due_date:
                     invoice.due_date = timezone.now().date() + timedelta(days=30)
 
-                invoice.reason = ' Invoice Transaction'
+                invoice.reason = 'CREDIT Invoice Transaction'
                 invoice.refund_amount = Decimal('0.00')
 
             else:
