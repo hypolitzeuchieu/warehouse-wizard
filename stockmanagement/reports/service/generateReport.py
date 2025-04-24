@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import calendar
 import io
 import logging
+from datetime import date
 from datetime import datetime
 from datetime import time
 from datetime import timedelta
 
+from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.db.models import F
 from django.db.models import Sum
@@ -50,22 +53,27 @@ class GenerateReportService:
     @staticmethod
     def get_period_boundaries(period):
         today = timezone.now().date()
+
         if period == 'daily':
-            start_date = today
-            end_date = today
+            start_date = end_date = today
+
         elif period == 'weekly':
             start_date = today - timedelta(days=today.weekday())
             end_date = start_date + timedelta(days=6)
+
         elif period == 'monthly':
             start_date = today.replace(day=1)
-            next_month = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
-            end_date = next_month - timedelta(days=1)
+            last_day = calendar.monthrange(today.year, today.month)[1]
+            end_date = today.replace(day=last_day)
+
         elif period == 'yearly':
-            start_date = today.replace(month=1, day=1)
-            end_date = today.replace(month=12, day=31)
+            start_date = date(today.year, 1, 1)
+            end_date = date(today.year, 12, 31)
+
         else:
-            start_date = today - timedelta(days=29)
-            end_date = today
+            start_date = today.replace(day=1)
+            end_date = start_date + relativedelta(months=1) - timedelta(days=1)
+
         return start_date, end_date
 
     @staticmethod
