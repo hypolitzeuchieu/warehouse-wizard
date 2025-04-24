@@ -6,9 +6,12 @@ import logging
 from authentication.permissions import IsManagerPermission
 from dashboard.serializers import DashboardStatsSerializer
 from dashboard.serializers import InventoryDataDashboardSerializer
+from dashboard.serializers import LimitQuerySerializer
 from dashboard.serializers import PeriodQuerySerializer
 from dashboard.serializers import ProductsDataSerializer
+from dashboard.serializers import RecentSaleSerializer
 from dashboard.serializers import SalesDataSerializer
+from dashboard.serializers import TopSellingProductSerializer
 from dashboard.service import DashboardService
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import permissions
@@ -91,7 +94,8 @@ class DashboardViewSet(viewsets.ViewSet):
                     response_serializer = SalesDataSerializer(data=result.data)
                     if response_serializer.is_valid():
                         logger.info(
-                            'Sales data fetched successfully:', response_serializer.data
+                            'Sales data fetched successfully:',
+                            response_serializer.data
                         )
                         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
@@ -133,7 +137,8 @@ class DashboardViewSet(viewsets.ViewSet):
                     response_serializer = ProductsDataSerializer(data=result.data)
                     if response_serializer.is_valid():
                         logger.info(
-                            'Products data fetched successfully:', response_serializer.data
+                            'Products data fetched successfully:',
+                            response_serializer.data
                         )
                         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
@@ -157,7 +162,10 @@ class DashboardViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         operation_description='Get inventory status data',
-        responses={200: InventoryDataDashboardSerializer, 500: 'Internal Server Error'},
+        responses={
+            200: InventoryDataDashboardSerializer,
+            500: 'Internal Server Error'
+        },
     )
     @action(detail=False, methods=['GET'], url_path='inventory')
     def get_inventory_data(self, request):
@@ -191,3 +199,95 @@ class DashboardViewSet(viewsets.ViewSet):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @swagger_auto_schema(
+        operation_description='Get top sales',
+        query_serializer=PeriodQuerySerializer,
+        responses={
+            200: TopSellingProductSerializer,
+            400: 'Bad Request',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='top-sales')
+    def get_top_sale(self, request):
+        serializer = PeriodQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            period = serializer.validated_data.get('period', 'monthly')
+            try:
+                result = DashboardService.get_top_selling_products(period)
+
+                if result.success:
+                    response_serializer = TopSellingProductSerializer(
+                        data=result.data, many=True
+                    )
+                    if response_serializer.is_valid():
+                        logger.info(
+                            'Top sales data fetched successfully:',
+                            response_serializer.data
+                        )
+                        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+                    logger.error('Invalid Data:', response_serializer.errors)
+                    return Response(
+                        response_serializer.errors,
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+
+                logger.error(f"Error in get_top_sale: {str(result.error)}")
+                return Response({'error': result.error}, status=status.HTTP_400_BAD_REQUEST)
+
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+    @swagger_auto_schema(
+        operation_description='Get recent sales',
+        query_serializer=LimitQuerySerializer,
+        responses={
+            200: RecentSaleSerializer,
+            400: 'Bad Request',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='recent-sales')
+    def get_recent_sales(self, request):
+        serializer = LimitQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
+            limit = serializer.validated_data.get('limit')
+            try:
+                result = DashboardService.get_recent_sales(limit)
+
+                if result.success:
+                    response_serializer = RecentSaleSerializer(
+                        data=result.data, many=True
+                    )
+                    if response_serializer.is_valid():
+                        logger.info(
+                            'Recent sales data fetched successfully:',
+                            response_serializer.data
+                        )
+                        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+                    logger.error('Invalid Data:', response_serializer.errors)
+                    return Response(
+                        response_serializer.errors,
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+
+                logger.error(f"Error in get_recent_sales: {str(result.error)}")
+                return Response(
+                    {'error': result.error}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            except Exception as e:
+                logger.error(f"Unexpected error occurred: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid period data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
