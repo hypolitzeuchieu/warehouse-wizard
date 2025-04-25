@@ -91,6 +91,7 @@ class RecentSaleSerializer(serializers.Serializer):
     """Serializer for recent sales data."""
     invoice_id = serializers.UUIDField()
     invoice_number = serializers.IntegerField()
+    status = serializers.CharField()
     date = serializers.DateTimeField()
     formatted_date = serializers.CharField()
     customer = serializers.CharField()

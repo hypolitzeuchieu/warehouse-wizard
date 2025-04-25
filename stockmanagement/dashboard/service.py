@@ -344,7 +344,10 @@ class DashboardService:
             data = {
                 'revenue': {
                     'total': float(current_net_revenue),
-                    'completed': float(current_completed_revenue),
+                    'completed': {
+                        'total': float(current_completed_revenue),
+                        'count': current_completed.count()
+                    },
                     'credit': {
                         'total': float(current_credit_revenue),
                         'advance_paid': float(current_advance_paid),
@@ -516,7 +519,7 @@ class DashboardService:
             # Top products query
             top_products = (
                 InvoiceLine.objects.filter(
-                    invoice__status='COMPLETED',
+                    invoice__status__in=['COMPLETED', 'CREDIT'],
                     invoice__created_at__date__range=[
                         periods['current']['start'],
                         periods['current']['end']
@@ -695,8 +698,11 @@ class DashboardService:
 
             # Get recent completed invoices with related data
             recent_invoices = (
-                Invoice.objects.filter(status='COMPLETED')
-                .prefetch_related('lines', 'lines__product')
+                Invoice.objects.filter(Q(status='COMPLETED') | Q(status='CREDIT'))
+                .annotate(
+                    total_items=Sum('lines__quantity'),
+                    invoice_total=Sum('lines__line_total')
+                )
                 .order_by('-created_at')[:limit]
             )
 
@@ -720,6 +726,7 @@ class DashboardService:
                 result.append({
                     'invoice_id': invoice.id,
                     'invoice_number': invoice.number,
+                    'status': invoice.status,
                     'date': invoice.created_at.isoformat(),
                     'formatted_date': invoice.created_at.strftime('%d %b %Y %H:%M'),
                     'customer': invoice.client_name if invoice.client_name else 'Anonymous',
@@ -757,7 +764,7 @@ class DashboardService:
             # Get top selling products by quantity
             top_products = (
                 InvoiceLine.objects.filter(
-                    invoice__status='COMPLETED',
+                    invoice__status__in=['COMPLETED', 'CREDIT'],
                     invoice__created_at__date__range=[
                         periods['current']['start'],
                         periods['current']['end']
