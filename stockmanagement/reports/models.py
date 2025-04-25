@@ -73,11 +73,11 @@ class InvoiceLine(models.Model):
         Product, on_delete=models.CASCADE, related_name='invoice_lines'
     )
     quantity = models.PositiveIntegerField()
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=3)
     discount = models.DecimalField(
-        max_digits=5, decimal_places=2, default=0.00
+        max_digits=10, decimal_places=2, default=0.00
     )
-    line_total = models.DecimalField(max_digits=10, decimal_places=2)
+    line_total = models.DecimalField(max_digits=10, decimal_places=3)
 
     class Meta:
         verbose_name = 'Invoice Line'
