@@ -91,10 +91,10 @@ class CreateInvoiceSerializer(serializers.Serializer):
         required=False, allow_null=True, default=None
     )
     advance_paid = serializers.DecimalField(
-        max_digits=10, decimal_places=3, default=0.00
+        max_digits=15, decimal_places=3, default=0.00
     )
     remaining_amount = serializers.DecimalField(
-        max_digits=10, decimal_places=3, read_only=True
+        max_digits=15, decimal_places=3, read_only=True
     )
     lines = serializers.ListSerializer(child=InvoiceLineInputSerializer())
 
@@ -145,7 +145,7 @@ class InvoiceQuerySerializer(serializers.Serializer):
 class PayDebtSerializer(serializers.Serializer):
     invoice_id = serializers.CharField(required=True)
     amount = serializers.DecimalField(
-        max_digits=10, decimal_places=3, required=True
+        max_digits=15, decimal_places=3, required=True
     )
 
 
