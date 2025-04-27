@@ -8,11 +8,8 @@ class PeriodQuerySerializer(serializers.Serializer):
     """
     Serializer for period query parameters.
     """
-    period = serializers.ChoiceField(
-        choices=['daily', 'weekly', 'monthly', 'yearly'],
-        default='monthly',
-        required=False
-    )
+    start_date = serializers.DateTimeField(required=False)
+    end_date = serializers.DateTimeField(required=False)
 
 
 class CategorySaleSerializer(serializers.Serializer):
@@ -29,8 +26,8 @@ class ProductPerformanceSerializer(serializers.Serializer):
 
 
 class ProductsDataSerializer(serializers.Serializer):
-    top_products = ProductPerformanceSerializer(many=True)
-    top_categories = ProductPerformanceSerializer(many=True)
+    top_products = serializers.ListField(child=serializers.DictField())
+    top_categories = serializers.ListField(child=serializers.DictField())
 
 
 class StockStatusSerializer(serializers.Serializer):
@@ -43,11 +40,9 @@ class SalesDataSerializer(serializers.ListSerializer):
     child = serializers.DictField()
 
     class SalesItemSerializer(serializers.Serializer):
-        period = serializers.CharField()
         date = serializers.CharField()
         completed = serializers.DictField()
         credit = serializers.DictField()
-        total = serializers.DictField()
 
     child = SalesItemSerializer()
 
@@ -65,19 +60,8 @@ class CreditDataSerializer(serializers.Serializer):
     count = serializers.IntegerField()
 
 
-class RevenueDataSerializer(serializers.Serializer):
-    total = serializers.FloatField()
-    completed = serializers.FloatField()
-    credit = CreditDataSerializer()
-    advance_paid = serializers.FloatField()
-    outstanding = serializers.FloatField()
-
-
-class DashboardStatsSerializer(serializers.Serializer):
-    revenue = serializers.DictField()
-    profit = serializers.DictField()
-    orders = serializers.DictField()
-    averageOrderValue = serializers.DictField(required=False)
+class DashboardStatsSerializer(serializers.ListSerializer):
+    child = serializers.DictField()
 
 
 class RecentSaleItemSerializer(serializers.Serializer):
@@ -100,20 +84,6 @@ class RecentSaleSerializer(serializers.Serializer):
     margin = serializers.FloatField()
     items = serializers.IntegerField()
     top_items = RecentSaleItemSerializer(many=True)
-
-
-class TopSellingProductSerializer(serializers.Serializer):
-    """Serializer for top selling products data."""
-    id = serializers.UUIDField()
-    name = serializers.CharField()
-    category = serializers.CharField()
-    quantity_sold = serializers.IntegerField()
-    revenue = serializers.FloatField()
-    profit = serializers.FloatField()
-    margin = serializers.FloatField()
-    avg_price = serializers.FloatField()
-    sale_count = serializers.IntegerField()
-    trend = serializers.DictField()
 
 
 class LimitQuerySerializer(serializers.Serializer):
