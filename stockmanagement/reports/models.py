@@ -18,12 +18,12 @@ class Invoice(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     number = models.PositiveIntegerField(unique=True, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     client_name = models.CharField(max_length=100, blank=True, null=True)
     cashier = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, related_name='invoices'
     )
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True)
     total = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
     tax = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     reason = models.TextField(blank=True, null=True)
