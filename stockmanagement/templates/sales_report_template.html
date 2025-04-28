@@ -170,7 +170,6 @@
         <table>
             <thead>
                 <tr>
-                    <th>Period</th>
                     <th>Product Name</th>
                     <th>Unit Price</th>
                     <th>Qty</th>
@@ -180,7 +179,6 @@
             <tbody>
             {% for product in data.products_sold %}
                 <tr>
-                    <td>{{ product.period|date:"F Y" }}</td>
                     <td>{{ product.product__name }}</td>
                     <td>{{ product.unit_price|floatformat:2 }}</td>
                     <td>{{ product.total_quantity }}</td>
