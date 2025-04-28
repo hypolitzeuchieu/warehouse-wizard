@@ -163,7 +163,7 @@ class GenerateReportService:
                         data=report_data,
                     )
                     inventory_report.stocks.set(Stock.objects.filter(
-                        created_at__range=[start_date, end_date])
+                        created_at__date__range=[start_date, end_date])
                     )
 
                 elif report_type == 'sales':
@@ -224,7 +224,7 @@ class GenerateReportService:
 
         if start_date and end_date:
             products = Product.objects.filter(
-                created_at__range=[start_date, end_date]
+                created_at__date__range=[start_date, end_date]
             ).select_related('category', 'subcategory')
         else:
             products = Product.objects.all().select_related('category', 'subcategory')
@@ -278,11 +278,11 @@ class GenerateReportService:
 
             completed_invoices = Invoice.objects.filter(
                 status='COMPLETED',
-                created_at__range=[start_date, end_date]
+                created_at__date__range=[start_date, end_date]
             )
             credit_invoices = Invoice.objects.filter(
                 status='CREDIT',
-                created_at__range=[start_date, end_date]
+                created_at__date__range=[start_date, end_date]
             )
 
             invoice_ids = list(completed_invoices.values_list('id', flat=True)) + list(
