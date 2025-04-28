@@ -65,105 +65,113 @@ class DashboardService:
             delta_days = (end_date - start_date).days + 1
             previous_start = start_date - timedelta(days=delta_days)
 
-            # 2. Récupérer toutes les factures pertinentes en une seule requête
             invoices = Invoice.objects.filter(
                 created_at__date__range=[previous_start, end_date],
                 status__in=['COMPLETED', 'CREDIT']
             ).select_related().prefetch_related('lines', 'lines__product')
 
-            # 3. Structure pour stocker les données par jour
-            daily_data = defaultdict(lambda: {
-                'revenue': Decimal('0.00'),
-                'profit': Decimal('0.00'),
-                'orders': 0
-            })
+            daily_data = defaultdict(DashboardService._initialize_daily_data)
+            previous_daily_data = defaultdict(DashboardService._initialize_daily_data)
 
-            previous_daily_data = defaultdict(lambda: {
-                'revenue': Decimal('0.00'),
-                'profit': Decimal('0.00'),
-                'orders': 0
-            })
-
-            # 4. Traiter chaque facture et l'assigner à la bonne période
             for invoice in invoices:
-                # Convertir created_at en date
-                invoice_date = invoice.created_at.date()
+                DashboardService._process_invoice(
+                    invoice,
+                    start_date,
+                    end_date,
+                    previous_start,
+                    daily_data,
+                    previous_daily_data
+                )
 
-                # Déterminer si l'invoice est dans la période courante ou précédente
-                if start_date <= invoice_date <= end_date:
-                    data_dict = daily_data
-                    date_key = invoice_date
-                else:
-                    data_dict = previous_daily_data
-                    # Calculer la date équivalente dans la période courante
-                    days_from_previous_start = (invoice_date - previous_start).days
-                    date_key = start_date + timedelta(days=days_from_previous_start)
-                    # Vérifier que la date est dans notre plage d'intérêt
-                    if not (start_date <= date_key <= end_date):
-                        continue
-
-                # Calculer le profit pour cette facture
-                profit = Decimal('0.00')
-                for line in invoice.lines.all():
-                    if hasattr(line, 'product') and line.product and hasattr(
-                            line.product, 'purchase_price'):
-                        unit_price = line.unit_price if hasattr(
-                            line, 'unit_price') else Decimal('0.00')
-                        purchase_price = line.product.purchase_price if hasattr(
-                            line.product, 'purchase_price') else Decimal('0.00')
-                        quantity = line.quantity if hasattr(line, 'quantity') else 0
-                        line_profit = (unit_price - purchase_price) * quantity
-                        profit += line_profit
-
-                # Ajouter les données à notre dictionnaire
-                data_dict[date_key]['revenue'] += invoice.total
-                data_dict[date_key]['profit'] += profit
-                data_dict[date_key]['orders'] += 1
-
-            # 5. Générer les résultats pour chaque jour dans la plage
-            results = []
-            current_day = start_date
-            while current_day <= end_date:
-                # Obtenir les données pour le jour courant
-                current_data = daily_data.get(current_day, {
-                    'revenue': Decimal('0.00'),
-                    'profit': Decimal('0.00'),
-                    'orders': 0
-                })
-
-                # Obtenir les données pour le jour équivalent dans la période précédente
-                previous_data = previous_daily_data.get(current_day, {
-                    'revenue': Decimal('0.00'),
-                    'profit': Decimal('0.00'),
-                    'orders': 0
-                })
-
-                # Calculer les tendances
-                results.append({
-                    'date': current_day.strftime('%Y-%m-%dT00:00:00+00:00'),
-                    'revenue': float(current_data['revenue']),
-                    'profit': float(current_data['profit']),
-                    'orders': current_data['orders'],
-                    'trends': {
-                        'revenue': DashboardService.calculate_trend(
-                            float(current_data['revenue']), float(previous_data['revenue'])
-                        ),
-                        'profit': DashboardService.calculate_trend(
-                            float(current_data['profit']), float(previous_data['profit'])
-                        ),
-                        'orders': DashboardService.calculate_trend(
-                            float(current_data['orders']), float(previous_data['orders'])
-                        )
-                    }
-                })
-
-                current_day += timedelta(days=1)
+            results = DashboardService._generate_daily_results(
+                start_date, end_date, daily_data, previous_daily_data
+            )
 
             return ServiceResponse(success=True, data=results)
 
         except Exception as e:
             logger.error(f"Dashboard error: {str(e)}", exc_info=True)
             return ServiceResponse(success=False, error=str(e))
+
+    @staticmethod
+    def _initialize_daily_data():
+        return {'revenue': Decimal('0.00'), 'profit': Decimal('0.00'), 'orders': 0}
+
+    @staticmethod
+    def _process_invoice(
+            invoice,
+            start_date,
+            end_date,
+            previous_start,
+            daily_data,
+            previous_daily_data
+    ):
+        invoice_date = invoice.created_at.date()
+
+        if start_date <= invoice_date <= end_date:
+            data_dict = daily_data
+            date_key = invoice_date
+        else:
+            data_dict = previous_daily_data
+            days_from_previous_start = (invoice_date - previous_start).days
+            date_key = start_date + timedelta(days=days_from_previous_start)
+            if not (start_date <= date_key <= end_date):
+                return
+
+        profit = DashboardService._calculate_invoice_profit(invoice)
+        data_dict[date_key]['revenue'] += invoice.total
+        data_dict[date_key]['profit'] += profit
+        data_dict[date_key]['orders'] += 1
+
+    @staticmethod
+    def _calculate_invoice_profit(invoice):
+        profit = Decimal('0.00')
+        for line in invoice.lines.all():
+            if hasattr(line, 'product') and line.product and hasattr(
+                    line.product, 'purchase_price'
+            ):
+                unit_price = line.unit_price or Decimal('0.00')
+                purchase_price = line.product.purchase_price or Decimal('0.00')
+                quantity = line.quantity or 0
+                profit += (unit_price - purchase_price) * quantity
+        return profit
+
+    @staticmethod
+    def _generate_daily_results(
+            start_date,
+            end_date,
+            daily_data,
+            previous_daily_data
+    ):
+        results = []
+        current_day = start_date
+        while current_day <= end_date:
+            current_data = daily_data.get(
+                current_day, DashboardService._initialize_daily_data()
+            )
+            previous_data = previous_daily_data.get(
+                current_day, DashboardService._initialize_daily_data()
+            )
+
+            results.append({
+                'date': current_day.strftime('%Y-%m-%dT00:00:00+00:00'),
+                'revenue': float(current_data['revenue']),
+                'profit': float(current_data['profit']),
+                'orders': current_data['orders'],
+                'trends': {
+                    'revenue': DashboardService.calculate_trend(
+                        float(current_data['revenue']), float(previous_data['revenue'])
+                    ),
+                    'profit': DashboardService.calculate_trend(
+                        float(current_data['profit']), float(previous_data['profit'])
+                    ),
+                    'orders': DashboardService.calculate_trend(
+                        float(current_data['orders']), float(previous_data['orders'])
+                    )
+                }
+            })
+            current_day += timedelta(days=1)
+        return results
 
     @staticmethod
     def get_sales_data(start_date: date, end_date: date) -> ServiceResponse:
