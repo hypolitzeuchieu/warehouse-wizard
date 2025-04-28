@@ -57,10 +57,13 @@ class DashboardService:
     @staticmethod
     def get_dashboard_stats(start_date, end_date) -> ServiceResponse:
         try:
-            if isinstance(start_date, datetime):
-                start_date = start_date.date()
-            if isinstance(end_date, datetime):
-                end_date = end_date.date()
+            if not start_date or not end_date:
+                today = date.today()
+                start_date = today - timedelta(days=6)
+                end_date = today
+
+            start_date = start_date.date() if isinstance(start_date, datetime) else start_date
+            end_date = end_date.date() if isinstance(end_date, datetime) else end_date
 
             delta_days = (end_date - start_date).days + 1
             previous_start = start_date - timedelta(days=delta_days)
@@ -178,14 +181,17 @@ class DashboardService:
         try:
             tz = timezone.get_current_timezone()
 
+            if not start_date or not end_date:
+                today = date.today()
+                start_date = today - timedelta(days=6)
+                end_date = today
+
             # Conversion correcte avec make_aware
             start_datetime = timezone.make_aware(
-                datetime.combine(start_date, datetime.min.time()),
-                tz
+                datetime.combine(start_date, datetime.min.time()), tz
             )
             end_datetime = timezone.make_aware(
-                datetime.combine(end_date, datetime.max.time()),
-                tz
+                datetime.combine(end_date, datetime.max.time()), tz
             ) + timedelta(days=1)
 
             sales = (
@@ -266,6 +272,11 @@ class DashboardService:
     def get_top_selling_products(start_date, end_date) -> ServiceResponse:
 
         try:
+            if not start_date or not end_date:
+                today = timezone.now().date()
+                start_date = today - timedelta(days=today.weekday())
+                end_date = start_date + timedelta(days=6)
+
             lines = InvoiceLine.objects.filter(
                 invoice__status__in=['COMPLETED', 'CREDIT'],
                 invoice__created_at__date__range=[start_date, end_date]
