@@ -28,11 +28,11 @@
     <p><strong>Cashier:</strong> {{ invoice.cashier }}</p>
     <p><strong>Created at:</strong> {{ invoice.created_at }}</p>
     <p><strong>Due Date:</strong> {{ invoice.due_date }}</p>
-    <p><strong>Total:</strong> ${{ invoice.total }}</p>
-    <p><strong>Tax:</strong> ${{ invoice.tax }}</p>
-    <p><strong>Advance Paid:</strong> ${{ invoice.advance_paid }}</p>
-    <p><strong>Refund Paid:</strong> ${{ invoice.refund_amount }}</p>
-    <p><strong>Remaining Amount:</strong> ${{ invoice.remaining_amount }}</p>
+    <p><strong>Total:</strong> {{ invoice.total }} FCFA</p>
+    <p><strong>Tax:</strong> 2%</p>
+    <p><strong>Advance Paid:</strong> {{ invoice.advance_paid }} FCFA</p>
+    <p><strong>Refund Paid:</strong> {{ invoice.refund_amount }} FCFA</p>
+    <p><strong>Remaining Amount:</strong> {{ invoice.remaining_amount }} FCFA</p>
 
     <h3>Invoice Lines</h3>
     <table>

@@ -216,7 +216,7 @@ class ReportService:
             remaining_amount = invoice.total - invoice.advance_paid
 
             if remaining_amount > Decimal('0.00'):
-                invoice.status = 'c'
+                invoice.status = 'CREDIT'
                 invoice.remaining_amount = remaining_amount
                 invoice.is_credit_settled = False
 
@@ -557,7 +557,7 @@ class ReportService:
                 end_date = now()
 
             invoices = InvoiceArchive.objects.filter(
-                created_at__range=(start_date, end_date)
+                created_at__date__range=(start_date, end_date)
             ).order_by('-created_at')
 
             return ServiceResponse(success=True, data=invoices)
@@ -578,7 +578,7 @@ class ReportService:
                 end_date = now()
 
             invoices = Invoice.objects.filter(
-                created_at__range=(start_date, end_date)
+                created_at__date__range=[start_date, end_date]
             ).order_by('-created_at')
 
             return ServiceResponse(success=True, data=invoices)

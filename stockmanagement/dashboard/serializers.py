@@ -8,37 +8,8 @@ class PeriodQuerySerializer(serializers.Serializer):
     """
     Serializer for period query parameters.
     """
-    period = serializers.ChoiceField(
-        choices=['daily', 'weekly', 'monthly', 'yearly'],
-        default='monthly',
-        required=False
-    )
-
-
-# Serializers pour les sous-éléments des réponses
-class KPIItemSerializer(serializers.Serializer):
-    value = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    change = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    change_percent = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-
-
-class SalesDataPointSerializer(serializers.Serializer):
-    period = serializers.CharField(required=False)
-    date = serializers.CharField(required=False)
-    sales = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    target = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    profit = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    credit_profit = serializers.DecimalField(
-        max_digits=20, decimal_places=3, required=False
-    )
-    expenses = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-
-
-class RecentSaleSerializer(serializers.Serializer):
-    id = serializers.CharField(required=False)
-    customerName = serializers.CharField(required=False)
-    amount = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-    date = serializers.CharField(required=False)
+    start_date = serializers.DateTimeField(required=False)
+    end_date = serializers.DateTimeField(required=False)
 
 
 class CategorySaleSerializer(serializers.Serializer):
@@ -47,69 +18,76 @@ class CategorySaleSerializer(serializers.Serializer):
 
 
 class ProductPerformanceSerializer(serializers.Serializer):
-    name = serializers.CharField(required=False)
-    sold = serializers.IntegerField(required=False)
-    revenue = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-
-
-class StockStatusSerializer(serializers.Serializer):
-    name = serializers.CharField(required=False)
-    value = serializers.IntegerField(required=False)
-
-
-class StockDataSerializer(serializers.Serializer):
-    name = serializers.CharField(required=False)
-    inStock = serializers.IntegerField(required=False)
-    lowStock = serializers.IntegerField(required=False)
-    outOfStock = serializers.CharField(required=False)
-
-
-class StockAlertSerializer(serializers.Serializer):
-    low_stock = serializers.IntegerField(required=False)
-    out_of_stock = serializers.IntegerField(required=False)
-    overstocked = serializers.IntegerField(required=False)
-
-
-class DashboardStatsSerializer(serializers.Serializer):
-    """
-    Serializer for dashboard statistics response.
-    """
-    revenue = KPIItemSerializer(required=False)
-    orders = KPIItemSerializer(required=False)
-    averageOrderValue = KPIItemSerializer()
-    customers = KPIItemSerializer(required=False)
-
-
-class MonthlyRevenueSerializer(serializers.Serializer):
-    month = serializers.CharField(required=False)
-    revenue = serializers.DecimalField(max_digits=20, decimal_places=3, required=False)
-
-
-class SalesDataSerializer(serializers.Serializer):
-    """
-    Serializer for sales data response.
-    """
-    salesOverTime = SalesDataPointSerializer(many=True, required=False)
-    globalPendingPayment = serializers.DecimalField(
-        max_digits=20, decimal_places=3, required=False
-    )
-    recentSales = RecentSaleSerializer(many=True, required=False)
-    salesByCategory = CategorySaleSerializer(many=True, required=False)
-    monthlyRevenue = MonthlyRevenueSerializer(many=True, required=False)
+    name = serializers.CharField()
+    sold = serializers.IntegerField()
+    revenue = serializers.FloatField()
+    profit = serializers.FloatField()
+    margin = serializers.FloatField(required=False)
 
 
 class ProductsDataSerializer(serializers.Serializer):
-    """
-    Serializer for products data response.
-    """
-    topProducts = ProductPerformanceSerializer(many=True, required=False)
-    productPerformance = CategorySaleSerializer(many=True, required=False)
+    top_products = serializers.ListField(child=serializers.DictField())
+    top_categories = serializers.ListField(child=serializers.DictField())
+
+
+class StockStatusSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    value = serializers.IntegerField()
+    color = serializers.CharField(required=False)
+
+
+class SalesDataSerializer(serializers.ListSerializer):
+    child = serializers.DictField()
+
+    class SalesItemSerializer(serializers.Serializer):
+        date = serializers.CharField()
+        completed = serializers.DictField()
+        credit = serializers.DictField()
+
+    child = SalesItemSerializer()
 
 
 class InventoryDataDashboardSerializer(serializers.Serializer):
+    stockStatus = StockStatusSerializer(many=True)
+    stockData = serializers.ListSerializer(child=serializers.DictField())
+    alerts = serializers.DictField()
+
+
+class CreditDataSerializer(serializers.Serializer):
+    total = serializers.FloatField()
+    advance_paid = serializers.FloatField()
+    to_collect = serializers.FloatField()
+    count = serializers.IntegerField()
+
+
+class DashboardStatsSerializer(serializers.ListSerializer):
+    child = serializers.DictField()
+
+
+class RecentSaleItemSerializer(serializers.Serializer):
+    """Serializer for items in a recent sale."""
+    name = serializers.CharField()
+    quantity = serializers.IntegerField()
+    total = serializers.FloatField()
+
+
+class RecentSaleSerializer(serializers.Serializer):
+    """Serializer for recent sales data."""
+    invoice_id = serializers.UUIDField()
+    invoice_number = serializers.IntegerField()
+    status = serializers.CharField()
+    date = serializers.DateTimeField()
+    formatted_date = serializers.CharField()
+    customer = serializers.CharField()
+    total = serializers.FloatField()
+    profit = serializers.FloatField()
+    margin = serializers.FloatField()
+    items = serializers.IntegerField()
+    top_items = RecentSaleItemSerializer(many=True)
+
+
+class LimitQuerySerializer(serializers.Serializer):
     """
-    Serializer for inventory data response.
+    Serializer for limit query parameters.
     """
-    stockStatus = StockStatusSerializer(many=True, required=False)
-    stockData = StockDataSerializer(many=True, required=False)
-    alerts = StockAlertSerializer(required=False)
+    limit = serializers.IntegerField(default=10, required=False)

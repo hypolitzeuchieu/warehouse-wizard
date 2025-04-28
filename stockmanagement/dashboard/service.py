@@ -1,22 +1,21 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
+from datetime import date
+from datetime import datetime
 from datetime import timedelta
 from decimal import Decimal
-from decimal import ROUND_DOWN
+from typing import Dict
+from typing import Union
 
-from django.db.models import Case
+from django.db.models import Count
 from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
+from django.db.models import Q
 from django.db.models import Sum
-from django.db.models import Value
-from django.db.models import When
-from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDay
-from django.db.models.functions import TruncMonth
-from django.db.models.functions import TruncWeek
-from django.db.models.functions import TruncYear
 from django.utils import timezone
 from reports.models import Invoice
 from reports.models import InvoiceLine
@@ -29,343 +28,328 @@ logger = logging.getLogger(__name__)
 class DashboardService:
     """
     Service for providing dashboard data with period-based aggregations.
+    This service handles data calculations for revenue, profit, sales trends,
+    and inventory status to be displayed on the dashboard.
     """
 
     @staticmethod
-    def get_period_boundaries(period):
-        """
-        Calculate start and end dates based on the specified period.
-        """
-        today = timezone.now().date()
+    def calculate_trend(current: float, previous: float) -> Dict[str, Union[str, float]]:
+        if previous == 0:
+            if current == 0:
+                return {'status': 'stable', 'percentage': 0, 'direction': 'equal'}
+            return {'status': 'up', 'percentage': 100, 'direction': 'up'}
 
-        if period == 'daily':
-            start_date = today
-            end_date = today
-        elif period == 'weekly':
-            start_date = today - timedelta(days=6)
-            end_date = today
-        elif period == 'monthly':
-            start_date = today - timedelta(days=29)
-            end_date = today
-        elif period == 'yearly':
-            start_date = today - timedelta(days=364)
-            end_date = today
-        else:
-            start_date = today - timedelta(days=29)
-            end_date = today
-
-        return start_date, end_date
-
-    @staticmethod
-    def get_dashboard_stats(period='monthly'):
-        """
-        Get main KPI statistics for the dashboard.
-        """
-        try:
-            start_date, end_date = DashboardService.get_period_boundaries(period)
-
-            # Calculate previous period for comparison
-            period_length = (end_date - start_date).days + 1
-            previous_end = start_date - timedelta(days=1)
-            previous_start = previous_end - timedelta(days=period_length - 1)
-
-            # Current period revenue
-            current_invoices = Invoice.objects.filter(
-                created_at__date__range=[start_date, end_date],
-                status__in=['COMPLETED', 'CREDIT']
-            )
-            current_revenue = current_invoices.aggregate(
-                total=Sum('total'))['total'] or Decimal('0.00')
-
-            # Previous period revenue
-            previous_invoices = Invoice.objects.filter(
-                created_at__date__range=[previous_start, previous_end],
-                status__in=['COMPLETED', 'CREDIT']
-            )
-            previous_revenue = previous_invoices.aggregate(
-                total=Sum('total'))['total'] or Decimal('0.00')
-
-            # Calculate revenue change
-            revenue_change = 0
-            if previous_revenue > 0:
-                revenue_change = ((current_revenue - previous_revenue
-                                   ) / previous_revenue) * 100
-
-            # Current period orders
-            current_orders_count = current_invoices.count()
-
-            # Previous period orders
-            previous_orders_count = previous_invoices.count()
-
-            # Calculate orders change
-            orders_change = 0
-            if previous_orders_count > 0:
-                orders_change = ((current_orders_count - previous_orders_count
-                                  ) / previous_orders_count) * 100
-
-            # Average order value
-            current_avg_order = Decimal('0.00')
-            if current_orders_count > 0:
-                current_avg_order = (current_revenue / current_orders_count).quantize(
-                    Decimal('0.001'), rounding=ROUND_DOWN)
-
-            previous_avg_order = Decimal('0.00')
-            if previous_orders_count > 0:
-                previous_avg_order = (previous_revenue / previous_orders_count).quantize(
-                    Decimal('0.001'), rounding=ROUND_DOWN)
-
-            # Calculate average order change
-            avg_order_change = 0
-            if previous_avg_order > 0:
-                avg_order_change = ((current_avg_order - previous_avg_order
-                                     ) / previous_avg_order) * 100
-
-            # Unique client names (as a proxy for customers)
-            current_customers = current_invoices.values('client_name').distinct().count()
-            previous_customers = previous_invoices.values('client_name').distinct().count()
-
-            # Calculate customers change
-            customers_change = 0
-            if previous_customers > 0:
-                customers_change = ((current_customers - previous_customers
-                                     ) / previous_customers) * 100
-
-            return ServiceResponse(success=True, data={
-                'revenue': {
-                    'value': float(current_revenue),
-                    'change': round(revenue_change, 1),
-                    'period': period
-                },
-                'orders': {
-                    'value': current_orders_count,
-                    'change': round(orders_change, 1),
-                    'period': period
-                },
-                'averageOrderValue': {
-                    'value': float(current_avg_order),
-                    'change': round(avg_order_change, 1),
-                    'period': period
-                },
-                'customers': {
-                    'value': current_customers,
-                    'change': round(customers_change, 1),
-                    'period': period
-                }
-            })
-
-        except Exception as e:
-            logger.error(f"Error in get_dashboard_stats: {str(e)}")
-            return ServiceResponse(success=False, error=str(e))
-
-    @staticmethod
-    def get_sales_data(period='monthly'):
-        """
-        Fetch dashboard sales data:
-        - Sales over time
-        - Recent sales
-        - Sales by category
-        - Monthly revenue
-        """
-        try:
-            start_date, end_date = DashboardService.get_period_boundaries(period)
-            trunc_mapping = {
-                'daily': TruncDay,
-                'weekly': TruncWeek,
-                'monthly': TruncMonth,
-                'yearly': TruncYear,
+        percentage = ((current - previous) / abs(previous)) * 100
+        if abs(percentage) < 0.1:
+            return {
+                'status': 'stable',
+                'percentage': round(abs(percentage), 1),
+                'direction': 'equal'
             }
-            if period not in trunc_mapping:
-                return ServiceResponse(success=False, error='Invalid period')
 
-            trunc_function = trunc_mapping[period]
+        direction = 'up' if percentage > 0 else 'down'
+        return {
+            'status': direction,
+            'percentage': round(abs(percentage), 1),
+            'direction': direction
+        }
 
-            invoice_qs = Invoice.objects.filter(
-                created_at__date__range=[start_date, end_date],
+    @staticmethod
+    def get_dashboard_stats(start_date, end_date) -> ServiceResponse:
+        try:
+            if not start_date or not end_date:
+                today = date.today()
+                start_date = today - timedelta(days=6)
+                end_date = today
+
+            start_date = start_date.date() if isinstance(start_date, datetime) else start_date
+            end_date = end_date.date() if isinstance(end_date, datetime) else end_date
+
+            delta_days = (end_date - start_date).days + 1
+            previous_start = start_date - timedelta(days=delta_days)
+
+            invoices = Invoice.objects.filter(
+                created_at__date__range=[previous_start, end_date],
                 status__in=['COMPLETED', 'CREDIT']
+            ).select_related().prefetch_related('lines', 'lines__product')
+
+            daily_data = defaultdict(DashboardService._initialize_daily_data)
+            previous_daily_data = defaultdict(DashboardService._initialize_daily_data)
+
+            for invoice in invoices:
+                DashboardService._process_invoice(
+                    invoice,
+                    start_date,
+                    end_date,
+                    previous_start,
+                    daily_data,
+                    previous_daily_data
+                )
+
+            results = DashboardService._generate_daily_results(
+                start_date, end_date, daily_data, previous_daily_data
             )
 
-            invoice_ids = invoice_qs.values_list('id', flat=True)
+            return ServiceResponse(success=True, data=results)
 
-            invoice_line_qs = InvoiceLine.objects.filter(invoice_id__in=invoice_ids)
+        except Exception as e:
+            logger.error(f"Dashboard error: {str(e)}", exc_info=True)
+            return ServiceResponse(success=False, error=str(e))
 
-            # SALES OVER TIME (From InvoiceLine)
-            sales_lines = invoice_line_qs.select_related('product', 'invoice').annotate(
-                period=trunc_function('invoice__created_at'),
-                status=F('invoice__status')
-            ).values('period').annotate(
-                sales=Sum('line_total'),
-                completed_profit=Sum(
-                    Case(
-                        When(
-                            invoice__status='COMPLETED',
-                            then=ExpressionWrapper(
-                                F('quantity') * (
-                                        F('unit_price') - F('product__purchase_price')),
-                                output_field=DecimalField(max_digits=15, decimal_places=3)
-                            )
-                        ),
-                        default=Value(0),
-                        output_field=DecimalField(max_digits=15, decimal_places=2)
+    @staticmethod
+    def _initialize_daily_data():
+        return {'revenue': Decimal('0.00'), 'profit': Decimal('0.00'), 'orders': 0}
+
+    @staticmethod
+    def _process_invoice(
+            invoice,
+            start_date,
+            end_date,
+            previous_start,
+            daily_data,
+            previous_daily_data
+    ):
+        invoice_date = invoice.created_at.date()
+
+        if start_date <= invoice_date <= end_date:
+            data_dict = daily_data
+            date_key = invoice_date
+        else:
+            data_dict = previous_daily_data
+            days_from_previous_start = (invoice_date - previous_start).days
+            date_key = start_date + timedelta(days=days_from_previous_start)
+            if not (start_date <= date_key <= end_date):
+                return
+
+        profit = DashboardService._calculate_invoice_profit(invoice)
+        data_dict[date_key]['revenue'] += invoice.total
+        data_dict[date_key]['profit'] += profit
+        data_dict[date_key]['orders'] += 1
+
+    @staticmethod
+    def _calculate_invoice_profit(invoice):
+        profit = Decimal('0.00')
+        for line in invoice.lines.all():
+            if hasattr(line, 'product') and line.product and hasattr(
+                    line.product, 'purchase_price'
+            ):
+                unit_price = line.unit_price or Decimal('0.00')
+                purchase_price = line.product.purchase_price or Decimal('0.00')
+                quantity = line.quantity or 0
+                profit += (unit_price - purchase_price) * quantity
+        return profit
+
+    @staticmethod
+    def _generate_daily_results(
+            start_date,
+            end_date,
+            daily_data,
+            previous_daily_data
+    ):
+        results = []
+        current_day = start_date
+        while current_day <= end_date:
+            current_data = daily_data.get(
+                current_day, DashboardService._initialize_daily_data()
+            )
+            previous_data = previous_daily_data.get(
+                current_day, DashboardService._initialize_daily_data()
+            )
+
+            results.append({
+                'date': current_day.strftime('%Y-%m-%dT00:00:00+00:00'),
+                'revenue': float(current_data['revenue']),
+                'profit': float(current_data['profit']),
+                'orders': current_data['orders'],
+                'trends': {
+                    'revenue': DashboardService.calculate_trend(
+                        float(current_data['revenue']), float(previous_data['revenue'])
+                    ),
+                    'profit': DashboardService.calculate_trend(
+                        float(current_data['profit']), float(previous_data['profit'])
+                    ),
+                    'orders': DashboardService.calculate_trend(
+                        float(current_data['orders']), float(previous_data['orders'])
                     )
-                ),
-                credit_amount=Sum(
-                    Case(
-                        When(
-                            invoice__status='CREDIT',
-                            then=ExpressionWrapper(
-                                F('quantity') * (
-                                        F('unit_price') - F('product__purchase_price')),
-                                output_field=DecimalField(max_digits=15, decimal_places=3)
-                            )
-                        ),
-                        default=Value(0),
-                        output_field=DecimalField(max_digits=15, decimal_places=2)
-                    )
+                }
+            })
+            current_day += timedelta(days=1)
+        return results
+
+    @staticmethod
+    def get_sales_data(start_date: date, end_date: date) -> ServiceResponse:
+        try:
+            tz = timezone.get_current_timezone()
+
+            if not start_date or not end_date:
+                today = date.today()
+                start_date = today - timedelta(days=6)
+                end_date = today
+
+            # Conversion correcte avec make_aware
+            start_datetime = timezone.make_aware(
+                datetime.combine(start_date, datetime.min.time()), tz
+            )
+            end_datetime = timezone.make_aware(
+                datetime.combine(end_date, datetime.max.time()), tz
+            ) + timedelta(days=1)
+
+            sales = (
+                InvoiceLine.objects.filter(
+                    invoice__created_at__range=(start_datetime, end_datetime)
                 )
-            ).order_by('period')
+                .annotate(
+                    day=TruncDay('invoice__created_at', tzinfo=tz),
+                    status=F('invoice__status')
+                )
+                .values('day', 'status')
+                .annotate(
+                    revenue=Sum('line_total'),
+                    profit=Sum(ExpressionWrapper(
+                        (F('unit_price') - F('product__purchase_price')) * F('quantity'),
+                        output_field=DecimalField()
+                    )),
+                    count=Count('id')
+                )
+                .order_by('day')
+            )
 
-            formatted_sales = []
-            for entry in sales_lines:
-                period_label = DashboardService.format_period_label(entry['period'], period)
-
-                completed_profit = float(entry['completed_profit'] or 0)
-                credit_amount = float(entry['credit_amount'] or 0)
-
-                sale_entry = {
-                    'period': period_label,
-                    'sales': float(entry['sales']),
-                    'profit': completed_profit,
-                    'credit_profit': abs(credit_amount)
+            sales_map = defaultdict(lambda: {'completed': {}, 'credit': {}})
+            for s in sales:
+                day = s['day'].date()
+                status_key = 'completed' if s['status'] == 'COMPLETED' else 'credit'
+                sales_map[day][status_key] = {
+                    'revenue': s['revenue'] or Decimal(0),
+                    'profit': s['profit'] or Decimal(0),
+                    'count': s['count']
                 }
 
-                formatted_sales.append(sale_entry)
+            series = []
+            current_datetime = timezone.now().replace(
+                year=start_date.year,
+                month=start_date.month,
+                day=start_date.day,
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            end_datetime_series = timezone.now().replace(
+                year=end_date.year,
+                month=end_date.month,
+                day=end_date.day,
+                hour=0, minute=0, second=0, microsecond=0
+            )
 
-            # RECENT SALES
-            recent_sales = invoice_qs.order_by('-created_at')[:10]
+            while current_datetime <= end_datetime_series:
+                series.append(current_datetime.date())
+                current_datetime += timedelta(days=1)
 
-            formatted_recent_sales = []
-            for invoice in recent_sales:
-                formatted_recent_sales.append({
-                    'id': str(invoice.id),
-                    'customerName': invoice.client_name or 'Anonymous',
-                    'amount': float(invoice.total),
-                    'date': invoice.created_at.isoformat(),
+            result = []
+            for day in series:
+                data = sales_map.get(day, {})
+                result.append({
+                    'date': timezone.make_aware(
+                        datetime.combine(day, datetime.min.time()),
+                        tz
+                    ).isoformat(),
+                    'completed': {
+                        'revenue': float(data.get('completed', {}).get('revenue', 0)),
+                        'profit': float(data.get('completed', {}).get('profit', 0)),
+                        'count': data.get('completed', {}).get('count', 0)
+                    },
+                    'credit': {
+                        'revenue': float(data.get('credit', {}).get('revenue', 0)),
+                        'profit': float(data.get('credit', {}).get('profit', 0)),
+                        'count': data.get('credit', {}).get('count', 0)
+                    }
                 })
 
-            # SALES BY CATEGORY
-            sales_by_category = invoice_line_qs.select_related('product__category').values(
-                'product__category__id',
-                'product__category__name'
-            ).annotate(
-                value=Sum(
-                    'line_total',
-                    output_field=DecimalField(max_digits=15, decimal_places=2)
-                )
-            ).order_by('-value')
-
-            formatted_categories = []
-            for category in sales_by_category:
-                if category['product__category__name']:
-                    formatted_categories.append({
-                        'name': category['product__category__name'],
-                        'value': float(category['value']),
-                    })
-
-            # MONTHLY REVENUE (Total)
-            monthly_revenue = invoice_line_qs.annotate(
-                month=TruncMonth('invoice__created_at')
-            ).values('month').annotate(
-                revenue=Sum('line_total')
-            ).order_by('month')
-
-            formatted_monthly_revenue = []
-            for entry in monthly_revenue:
-                formatted_monthly_revenue.append({
-                    'month': entry['month'].strftime('%b'),
-                    'revenue': float(entry['revenue'])
-                })
-
-            credit_invoices = Invoice.objects.filter(
-                created_at__date__range=[start_date, end_date],
-                status='CREDIT'
-            )
-            pending_payment_data = credit_invoices.aggregate(
-                pending_payment=Coalesce(
-                    Sum('_remaining_amount',
-                        output_field=DecimalField(max_digits=15, decimal_places=2)),
-                    Value(Decimal('0.00'))
-                )
-            )
-            pending_payment = float(pending_payment_data['pending_payment'] or 0.00)
-            return ServiceResponse(success=True, data={
-                'salesOverTime': formatted_sales,
-                'recentSales': formatted_recent_sales,
-                'salesByCategory': formatted_categories,
-                'monthlyRevenue': formatted_monthly_revenue,
-                'globalPendingPayment': pending_payment,
-            })
+            return ServiceResponse(success=True, data=result)
 
         except Exception as e:
-            logger.error(f"Error in get_sales_data: {str(e)}")
+            logger.error(f"Sales data error: {str(e)}", exc_info=True)
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def get_products_data(period='monthly'):
-        """
-        Get product performance data.
-        """
+    def get_top_selling_products(start_date, end_date) -> ServiceResponse:
+
         try:
-            start_date, end_date = DashboardService.get_period_boundaries(period)
+            if not start_date or not end_date:
+                today = timezone.now().date()
+                start_date = today - timedelta(days=today.weekday())
+                end_date = start_date + timedelta(days=6)
 
-            # Top selling products
-            invoice_lines_qs = InvoiceLine.objects.filter(
-                invoice__created_at__date__range=[start_date, end_date],
-                invoice__status__in=['COMPLETED', 'CREDIT']
+            lines = InvoiceLine.objects.filter(
+                invoice__status__in=['COMPLETED', 'CREDIT'],
+                invoice__created_at__date__range=[start_date, end_date]
+            )
+            # Top products query
+            top_products = (
+                lines
+                .values('product__id', 'product__name')
+                .annotate(
+                    sold=Sum('quantity'),
+                    revenue=Sum('line_total'),
+                    profit=Sum(ExpressionWrapper(
+                        (F('unit_price') - F('product__purchase_price')) * F('quantity'),
+                        output_field=DecimalField()
+                    ))
+                )
+                .order_by('-revenue')[:10]
             )
 
-            top_products = invoice_lines_qs.values(
-                'product__name'
-            ).annotate(
-                sold=Sum('quantity'),
-                revenue=Sum('line_total')
-            ).order_by('-sold')[:5]
+            # Top categories query
+            top_categories = (
+                lines
+                .values('product__category__name')
+                .annotate(
+                    sold=Sum('quantity'),
+                    revenue=Sum('line_total'),
+                    profit=Sum(ExpressionWrapper(
+                        (F('unit_price') - F('product__purchase_price')) * F('quantity'),
+                        output_field=DecimalField()
+                    ))
+                )
+                .order_by('-revenue')[:5]
+            )
 
-            formatted_top_products = []
+            # Format results
+            data = {
+                'top_products': [
+                    {
+                        'name': p['product__name'],
+                        'sold': int(p['sold'] or 0),
+                        'revenue': float(p['revenue']),
+                        'profit': float(p['profit']),
+                        'margin': round((float(p['profit']) / float(p['revenue'])) * 100, 1)
+                        if p['revenue'] and float(p['revenue']) > 0 and p['profit'] else 0
+                    }
+                    for p in top_products
+                ],
+                'top_categories': [
+                    {
+                        'name': c['product__category__name'],
+                        'sold': int(c['sold'] or 0),
+                        'revenue': float(c['revenue']),
+                        'profit': float(c['profit']),
+                        'margin': round((float(c['profit']) / float(c['revenue'])) * 100, 1)
+                        if c['revenue'] and float(c['revenue']) > 0 and c['profit'] else 0
+                    }
+                    for c in top_categories
+                ]
+            }
 
-            for i, product in enumerate(top_products):
-                formatted_top_products.append({
-                    'name': product['product__name'],
-                    'sold': product['sold'],
-                    'revenue': float(product['revenue']),
-                })
-
-            # Product performance for bar chart
-            product_performance = invoice_lines_qs.values(
-                'product__name'
-            ).annotate(
-                value=Sum('quantity')
-            ).order_by('-value')[:5]
-
-            formatted_performance = []
-            for i, product in enumerate(product_performance):
-                formatted_performance.append({
-                    'name': product['product__name'],
-                    'value': product['value'],
-                })
-
-            return ServiceResponse(success=True, data={
-                'topProducts': formatted_top_products,
-                'productPerformance': formatted_performance
-            })
+            return ServiceResponse(success=True, data=data)
 
         except Exception as e:
-            logger.error(f"Error in get_products_data: {str(e)}")
+            logger.error(f"Products data error: {str(e)}", exc_info=True)
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def get_inventory_data():
+    def get_inventory_data() -> ServiceResponse:
         """
-        Get inventory status data.
+        Get inventory status data for dashboard.
+
+        Returns:
+            ServiceResponse with inventory statistics and alerts
         """
         try:
             # Stock status overview
@@ -375,57 +359,112 @@ class DashboardService:
                 quantity__lte=F('min_quantity')
             ).count()
             out_of_stock = Product.objects.filter(quantity=0).count()
+            overstocked = Product.objects.filter(quantity__gt=F('min_quantity') * 5).count()
 
             stock_status = [
-                {'name': 'In Stock', 'value': in_stock},
-                {'name': 'Low Stock', 'value': low_stock},
-                {'name': 'Out of Stock', 'value': out_of_stock}
+                {'name': 'In Stock', 'value': in_stock, 'color': '#4CAF50'},
+                {'name': 'Low Stock', 'value': low_stock, 'color': '#FF9800'},
+                {'name': 'Out of Stock', 'value': out_of_stock, 'color': '#F44336'}
             ]
 
-            # Stock data by product
-            products = Product.objects.all()
+            # Get detailed product stock data
+            products = Product.objects.all().select_related('category')
             stock_data = []
 
             for product in products:
+                status = 'normal'
+                if product.quantity == 0:
+                    status = 'out_of_stock'
+                elif product.quantity <= product.min_quantity:
+                    status = 'low_stock'
+                elif product.quantity > (product.min_quantity * 2):
+                    status = 'overstocked'
+
                 stock_data.append({
+                    'id': product.id,
                     'name': product.name,
-                    'inStock': product.quantity if
-                    product.quantity > product.min_quantity else 0,
-                    'lowStock': product.quantity
-                    if 0 < product.quantity <= product.min_quantity else 0,
-                    'outOfStock': 'Empty stock' if product.quantity == 0 else 'In stock'
+                    'category': product.category.name,
+                    'quantity': product.quantity,
+                    'min_quantity': product.min_quantity,
+                    'status': status,
+                    'status_text': 'En stock' if product.quantity > product.min_quantity else
+                    'Stock faible' if product.quantity > 0 else 'Rupture de stock'
                 })
 
-            # Stock alerts
+            # Alerts and statistics
             alerts = {
                 'lowStock': low_stock,
                 'outOfStock': out_of_stock,
-                'overstocked': Product.objects.filter(
-                    quantity__gt=F('min_quantity') * 2).count()
+                'overstocked': overstocked,
+                'total_products': len(products),
+                'critical': Product.objects.filter(
+                    Q(quantity=0) |
+                    Q(quantity__lt=F('min_quantity') * 0.5, quantity__gt=0)
+                ).count()
             }
 
-            return ServiceResponse(success=True, data={
+            data = {
                 'stockStatus': stock_status,
                 'stockData': stock_data,
                 'alerts': alerts
-            })
+            }
+
+            return ServiceResponse(success=True, data=data)
 
         except Exception as e:
-            logger.error(f"Error in get_inventory_data: {str(e)}")
+            logger.error(f"Error in get_inventory_data: {str(e)}", exc_info=True)
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def format_period_label(date, period):
-        """
-        Format date label based on period type.
-        """
-        if period == 'daily':
-            return date.strftime('%d %b')
-        elif period == 'weekly':
-            return f"Week {date.strftime('%U')}"
-        elif period == 'monthly':
-            return date.strftime('%b')
-        elif period == 'yearly':
-            return date.strftime('%Y')
-        else:
-            return date.strftime('%b')
+    def get_recent_sales(limit: int = 10) -> ServiceResponse:
+        try:
+            # Get recent completed invoices with related data
+            recent_invoices = (
+                Invoice.objects.filter(Q(status='COMPLETED') | Q(status='CREDIT'))
+                .prefetch_related('lines__product')
+                .annotate(
+                    total_items=Sum('lines__quantity'),
+                    invoice_total=Sum('lines__line_total'),
+                    profit=Sum(
+                        ExpressionWrapper(
+                            (F('lines__unit_price') - F(
+                                'lines__product__purchase_price')) * F('lines__quantity'),
+                            output_field=DecimalField()
+                        )
+                    )
+                )
+                .order_by('-created_at')[:limit]
+            )
+
+            result = []
+            for invoice in recent_invoices:
+                top_items = [
+                    {
+                        'name': line.product.name,
+                        'quantity': line.quantity,
+                        'total': float(line.line_total)
+                    }
+                    for line in invoice.lines.all()[:10]
+                ]
+
+                result.append({
+                    'invoice_id': invoice.id,
+                    'invoice_number': invoice.number,
+                    'status': invoice.status,
+                    'date': invoice.created_at.isoformat(),
+                    'formatted_date': invoice.created_at.strftime('%d %b %Y %H:%M'),
+                    'customer': invoice.client_name if invoice.client_name else 'Anonymous',
+                    'total': float(invoice.invoice_total),
+                    'profit': float(invoice.profit),
+                    'margin': round((float(
+                        invoice.profit) / float(invoice.invoice_total)) * 100, 1)
+                    if invoice.invoice_total > 0 else 0,
+                    'items': invoice.total_items,
+                    'top_items': top_items
+                })
+
+            return ServiceResponse(success=True, data=result)
+
+        except Exception as e:
+            logger.error(f"Error in get_recent_sales: {str(e)}", exc_info=True)
+            return ServiceResponse(success=False, error=str(e))

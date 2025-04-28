@@ -76,14 +76,14 @@ class InvoiceLineInputSerializer(serializers.Serializer):
     product_id = serializers.CharField()
     quantity = serializers.IntegerField(min_value=1)
     discount = serializers.DecimalField(
-        max_digits=10, decimal_places=2, default=0.00
+        max_digits=10, decimal_places=3, default=0.00
     )
 
 
 class CreateInvoiceSerializer(serializers.Serializer):
     client_name = serializers.CharField()
     tax = serializers.DecimalField(
-        max_digits=10, decimal_places=2, default=0.00
+        max_digits=10, decimal_places=3, default=0.00
     )
     status = serializers.ChoiceField(choices=['COMPLETED', 'CANCELLED', 'CREDIT'])
     reason = serializers.CharField(required=False, allow_blank=True)
@@ -91,10 +91,10 @@ class CreateInvoiceSerializer(serializers.Serializer):
         required=False, allow_null=True, default=None
     )
     advance_paid = serializers.DecimalField(
-        max_digits=10, decimal_places=2, default=0.00
+        max_digits=15, decimal_places=3, default=0.00
     )
     remaining_amount = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True
+        max_digits=15, decimal_places=3, read_only=True
     )
     lines = serializers.ListSerializer(child=InvoiceLineInputSerializer())
 
@@ -145,7 +145,7 @@ class InvoiceQuerySerializer(serializers.Serializer):
 class PayDebtSerializer(serializers.Serializer):
     invoice_id = serializers.CharField(required=True)
     amount = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=True
+        max_digits=15, decimal_places=3, required=True
     )
 
 
@@ -153,24 +153,11 @@ class ReportQuerySerializer(serializers.Serializer):
     report_type = serializers.ChoiceField(choices=Report.REPORT_TYPE_CHOICES)
     start_date = serializers.DateTimeField(required=False)
     end_date = serializers.DateTimeField(required=False)
-    period = serializers.ChoiceField(
-        choices=['daily', 'weekly', 'monthly', 'yearly'],
-        required=False
-    )
 
     def validate(self, data):
         start_date = data.get('start_date')
         end_date = data.get('end_date')
-        period = data.get('period')
 
-        if (start_date or end_date) and period:
-            raise serializers.ValidationError(
-                'You cannot provide both period and start/end dates.'
-            )
-        if not (start_date and end_date) and not period:
-            raise serializers.ValidationError(
-                'You must provide either period or both start and end dates.'
-            )
         if start_date and end_date and end_date < start_date:
             raise serializers.ValidationError(
                 {'end_date': 'End date must be greater than start date.'}
