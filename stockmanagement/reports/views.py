@@ -346,11 +346,10 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 report_type = query_serializer.validated_data.get('report_type')
                 start_date = query_serializer.validated_data.get('start_date')
                 end_date = query_serializer.validated_data.get('end_date')
-                period = query_serializer.validated_data.get('period')
                 user = request.user
 
                 report_result = GenerateReportService.generate_report(
-                    report_type, user, start_date, end_date, period
+                    report_type, user, start_date, end_date,
                 )
 
                 response_data = {

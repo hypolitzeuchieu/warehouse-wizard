@@ -1,21 +1,14 @@
 from __future__ import annotations
 
-import calendar
 import io
 import logging
-from datetime import date
 from datetime import datetime
 from datetime import time
 from datetime import timedelta
 
-from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.db.models import F
 from django.db.models import Sum
-from django.db.models.functions import TruncDay
-from django.db.models.functions import TruncMonth
-from django.db.models.functions import TruncWeek
-from django.db.models.functions import TruncYear
 from django.template.loader import render_to_string
 from django.utils import timezone
 from reports.models import InventoryReport
@@ -33,63 +26,21 @@ logger = logging.getLogger(__name__)
 
 class GenerateReportService:
 
-    trunc_mapping = {
-        'daily': TruncDay,
-        'weekly': TruncWeek,
-        'monthly': TruncMonth,
-        'yearly': TruncYear,
-    }
-
     @staticmethod
-    def normalize_date_range(start_date, end_date):
-        if isinstance(start_date, str):
-            start_date = datetime.fromisoformat(start_date).date()
-        if isinstance(end_date, str):
-            end_date = datetime.fromisoformat(end_date).date()
-        start = datetime.combine(start_date, time.min)
-        end = datetime.combine(end_date, time.max)
-        return timezone.make_aware(start), timezone.make_aware(end)
-
-    @staticmethod
-    def get_period_boundaries(period):
-        today = timezone.now().date()
-
-        if period == 'daily':
-            start_date = end_date = today
-
-        elif period == 'weekly':
-            start_date = today - timedelta(days=today.weekday())
-            end_date = start_date + timedelta(days=6)
-
-        elif period == 'monthly':
-            start_date = today.replace(day=1)
-            last_day = calendar.monthrange(today.year, today.month)[1]
-            end_date = today.replace(day=last_day)
-
-        elif period == 'yearly':
-            start_date = date(today.year, 1, 1)
-            end_date = date(today.year, 12, 31)
-
-        else:
-            start_date = today.replace(day=1)
-            end_date = start_date + relativedelta(months=1) - timedelta(days=1)
-
-        return start_date, end_date
-
-    @staticmethod
-    def determine_date_range(period=None, start_date=None, end_date=None):
+    def get_date_range(start_date=None, end_date=None):
         if start_date and end_date:
-            return start_date, end_date
-
-        elif period:
-            return GenerateReportService.get_period_boundaries(period)
-
+            if isinstance(start_date, str):
+                start_date = datetime.fromisoformat(start_date).date()
+            if isinstance(end_date, str):
+                end_date = datetime.fromisoformat(end_date).date()
+            start = datetime.combine(start_date, time.min)
+            end = datetime.combine(end_date, time.max)
         else:
-            today = timezone.now()
-            start_date = today.replace(day=1)
-            next_month = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
-            end_date = next_month - timedelta(days=1)
-            return start_date, end_date
+            today = timezone.now().date()
+            start = datetime.combine(today, time.min)
+            end = datetime.combine(today, time.max)
+
+        return timezone.make_aware(start), timezone.make_aware(end)
 
     @staticmethod
     def decimal_to_json_serializable(obj):
@@ -115,24 +66,17 @@ class GenerateReportService:
             user,
             start_date: str = None,
             end_date: str = None,
-            period: str = None
     ) -> ServiceResponse:
         try:
             # Déterminer la plage de dates
-            start_date, end_date = GenerateReportService.determine_date_range(
-                period, start_date, end_date  # Ordre corrigé des arguments
-            )
-
-            # Normaliser les dates pour inclure heures, minutes, secondes
-            start_date, end_date = GenerateReportService.normalize_date_range(
+            start_date, end_date = GenerateReportService.get_date_range(
                 start_date, end_date
             )
-
             if report_type not in dict(Report.REPORT_TYPE_CHOICES):
                 return ServiceResponse(success=False, error='Invalid report type.')
 
             report_data = GenerateReportService._get_report_data(
-                report_type, start_date, end_date, period
+                report_type, start_date, end_date
             )
             report_data = GenerateReportService.decimal_to_json_serializable(report_data)
             report_data['report_type'] = report_type
@@ -206,13 +150,13 @@ class GenerateReportService:
 
     @staticmethod
     def _get_report_data(
-            report_type: str, start_date=None, end_date=None, period=None
+            report_type: str, start_date=None, end_date=None
     ):
         if report_type == 'inventory':
             return GenerateReportService._generate_inventory_data(start_date, end_date)
         elif report_type == 'sales':
             sales_data_response = GenerateReportService._generate_sales_data(
-                start_date, end_date, period
+                start_date, end_date
             )
             return sales_data_response.data if sales_data_response.success else {}
         return {}
@@ -259,23 +203,9 @@ class GenerateReportService:
 
     @staticmethod
     def _generate_sales_data(
-            start_date=None, end_date=None, period=None
+            start_date=None, end_date=None
     ):
         try:
-            # Assurez-vous que start_date et end_date sont bien définis
-            if not start_date or not end_date:
-                if period:
-                    start_date, end_date = GenerateReportService.get_period_boundaries(period)
-                    start_date, end_date = GenerateReportService.normalize_date_range(
-                        start_date, end_date
-                    )
-                else:
-                    today = timezone.now().date()
-                    start_date = datetime.combine(today, time.min)
-                    end_date = datetime.combine(today, time.max)
-                    start_date = timezone.make_aware(start_date)
-                    end_date = timezone.make_aware(end_date)
-
             completed_invoices = Invoice.objects.filter(
                 status='COMPLETED',
                 created_at__date__range=[start_date, end_date]
@@ -316,27 +246,14 @@ class GenerateReportService:
                 invoice__in=invoice_ids
             ).aggregate(discount=Sum('discount'))['discount'] or 0
 
-            # Utiliser le trunc_func uniquement si period est fourni
-            if period and period in GenerateReportService.trunc_mapping:
-                trunc_func = GenerateReportService.trunc_mapping.get(period)
-                sold_products = list(
-                    InvoiceLine.objects.filter(invoice_id__in=invoice_ids)
-                    .annotate(period=trunc_func('invoice__created_at'))
-                    .values('period', 'product__name', 'unit_price')
-                    .annotate(
-                        total_quantity=Sum('quantity'),
-                        total_revenue=Sum('line_total')
-                    ).order_by('-total_quantity')
-                )
-            else:
-                sold_products = list(
-                    InvoiceLine.objects.filter(invoice_id__in=invoice_ids)
-                    .values('product__name', 'unit_price')
-                    .annotate(
-                        total_quantity=Sum('quantity'),
-                        total_revenue=Sum('line_total')
-                    ).order_by('-total_quantity')
-                )
+            sold_products = list(
+                InvoiceLine.objects.filter(invoice_id__in=invoice_ids)
+                .values('product__name', 'unit_price')
+                .annotate(
+                    total_quantity=Sum('quantity'),
+                    total_revenue=Sum('line_total')
+                ).order_by('-total_quantity')
+            )
 
             return ServiceResponse(success=True, data={
                 'total_completed_sales': completed_invoices.count(),
