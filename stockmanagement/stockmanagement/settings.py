@@ -32,7 +32,7 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG')
 
-ALLOWED_HOSTS = ['victbackendmanagement.onrender.com',]
+ALLOWED_HOSTS = config('ALLOWED_HOSTS')
 
 
 # Application definition
@@ -90,6 +90,7 @@ SWAGGER_SETTINGS = {
         },
     },
     'USE_SESSION_AUTH': False,
+    'EXCEPTION_HANDLER': 'stockmanagement.utils.rester_handler.custom_exception_handler',
 }
 
 SIMPLE_JWT = {
@@ -126,6 +127,15 @@ MIDDLEWARE = [
 # CORS settings
 CORS_ALLOWED_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [config('FRONTEND_URL'),]
+CORS_ORIGIN_ALLOW_ALL = True  # Allows all origins (development only)
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
+CSRF_COOKIE_SECURE = False  # True in production with HTTPS
+
+# If using CORS headers
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'stockmanagement.urls'
 
