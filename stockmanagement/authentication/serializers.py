@@ -13,11 +13,24 @@ from tasks.send_mail import send_email
 
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
+    confirm_password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'phone_number', 'password', 'role', 'is_active']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = [
+            'id',
+            'username',
+            'email',
+            'phone_number',
+            'password',
+            'confirm_password',
+            'role',
+            'is_active'
+        ]
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'confirm_password': {'write_only': True}
+        }
 
     def validate_password(self, value):
 
@@ -29,6 +42,11 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
+        confirm_password = validated_data.pop('confirm_password', None)
+
+        if password != confirm_password:
+            raise serializers.ValidationError({'password': 'Passwords do not match.'})
+
         user = User(**validated_data)
         user.set_password(password)
         user.save()
