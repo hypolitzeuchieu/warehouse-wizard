@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from authentication.models import PasswordResetToken
+from datetime import datetime
+from datetime import timedelta
+
+import jwt
 from authentication.models import User
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
-from django.urls import reverse
+from jwt import DecodeError
+from jwt import ExpiredSignatureError
 from rest_framework import serializers
 from tasks.send_mail import send_email
 
@@ -92,16 +97,17 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
     def save(self, request):
         email = self.validated_data['email']
-        user = User.objects.get(email=email)
+        user = User.objects.filter(email=email).first()
 
-        PasswordResetToken.objects.filter(user=user).delete()
-        # Generate a unique token
-        token = PasswordResetToken.objects.create(user=user)
+        payload = {
+            'user_id': str(user.id),
+            'iat': datetime.utcnow(),
+            'exp': datetime.utcnow() + timedelta(hours=1)
+        }
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
-        # Build the reset link
         current_site = get_current_site(request).domain
-        reset_link = (f"http://{current_site}{reverse('password-reset-confirm')}?"
-                      f"token={token.token}")
+        reset_link = f"https://{current_site}/reset-password/?token={token}"
 
         # Email content
         subject = 'Password Reset Request'
@@ -114,40 +120,50 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    token = serializers.UUIDField()
+    token = serializers.CharField(required=True, max_length=1024)
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)
 
     def validate(self, data):
 
-        token = data.get('token')
-        new_password = data.get('new_password')
-        confirm_password = data.get('confirm_password')
-
-        if new_password != confirm_password:
+        if data['new_password'] != data['confirm_password']:
             raise serializers.ValidationError('Passwords do not match.')
 
         try:
-            reset_token = PasswordResetToken.objects.get(token=token)
-        except PasswordResetToken.DoesNotExist:
-            raise serializers.ValidationError('Invalid or expired token.')
+            payload = jwt.decode(
+                data['token'],
+                settings.SECRET_KEY,
+                algorithms=['HS256']
+            )
+        except ExpiredSignatureError:
+            raise serializers.ValidationError({'token': 'the link is expired.'})
+        except DecodeError:
+            raise serializers.ValidationError({'token': 'Invalid token.'})
 
-        if reset_token.is_expired():
-            raise serializers.ValidationError('This token has expired.')
+        if datetime.utcnow().timestamp() > payload['exp']:
+            raise serializers.ValidationError({'token': 'the link is expired.'})
 
         try:
-            validate_password(new_password)
-        except ValidationError as e:
-            raise serializers.ValidationError({'new_password': e.messages})
+            user = User.objects.get(id=payload['user_id'])
+        except User.DoesNotExist:
+            raise serializers.ValidationError({'token': 'User not found'})
 
-        data['user'] = reset_token.user
+        user_last_reset = user.last_password_reset.timestamp() if (
+            user.last_password_reset
+        ) else 0
+        if payload['iat'] < user_last_reset:
+            raise serializers.ValidationError({'token': 'This link is already used.'})
+
+        validate_password(data['new_password'], user)
+
+        data['user'] = user
         return data
 
     def save(self):
         user = self.validated_data['user']
         user.set_password(self.validated_data['new_password'])
+        user.last_password_reset = datetime.utcnow()
         user.save()
-        PasswordResetToken.objects.filter(user=user).delete()
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
