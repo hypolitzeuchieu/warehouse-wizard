@@ -110,6 +110,10 @@ class ProductService:
     def update_product(product_id, data) -> StockServiceResponse:
         try:
             product = Product.objects.get(id=product_id)
+            image = data.get('image', None)
+            if image:
+                image_url = upload_file_to_s3(image)
+                data['image'] = image_url
             for key, value in data.items():
                 setattr(product, key, value)
             product.save()
@@ -158,7 +162,7 @@ class ProductService:
             )
         except Exception as e:
             logger.error(f"Error in get_product_by_id: {str(e)}")
-            StockServiceResponse(
+            return StockServiceResponse(
                 False, error=f"An unexpected error occurred: {str(e)}"
             )
 
