@@ -170,3 +170,5 @@ cython_debug/
 .vercel
 .env
 .DS_Store/
+
+.gitignore
