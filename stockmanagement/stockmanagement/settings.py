@@ -7,20 +7,15 @@ from pathlib import Path
 import dj_database_url
 
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', default='localhost').split(',')
 
-
-# Application definition
 
 INSTALLED_APPS = [
     'daphne',
@@ -112,7 +107,7 @@ MIDDLEWARE = [
 # CORS settings
 CORS_ALLOWED_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [os.environ.get('FRONTEND_URL'),]
-CORS_ORIGIN_ALLOW_ALL = True  # Allows all origins (development only)
+CORS_ORIGIN_ALLOW_ALL = True
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
@@ -146,9 +141,6 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-
-# Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 if os.environ.get('PRODUCTION') == 'True':
     DATABASES = {
