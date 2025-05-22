@@ -70,3 +70,12 @@ class User(AbstractUser):
 
     def is_wholesale_client(self):
         return self.role == 'wholesale_client'
+
+
+class RevokedToken(models.Model):
+    token = models.CharField(max_length=1024, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @staticmethod
+    def is_revoked(token: str) -> bool:
+        return RevokedToken.objects.filter(token=token).exists()
