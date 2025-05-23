@@ -21,12 +21,12 @@ class QuantitySerializer(serializers.Serializer):
 
 class GetProductCategorySerializer(serializers.Serializer):
     category_id = serializers.CharField(required=True)
-    page_size = serializers.IntegerField(required=False, min_value=1, default=10)
+    page_size = serializers.IntegerField(required=False, min_value=1)
 
 
 class GetProductSubCategorySerializer(serializers.Serializer):
     subcategory_id = serializers.CharField(required=True)
-    page_size = serializers.IntegerField(required=False, min_value=1, default=10)
+    page_size = serializers.IntegerField(required=False, min_value=1)
 
 
 class SubCategorySerializer(serializers.ModelSerializer):
@@ -196,4 +196,4 @@ class ProductUpdateSerializer(serializers.Serializer):
 
 
 class PaginationQuerySerializer(serializers.Serializer):
-    page_size = serializers.IntegerField(required=False, min_value=1, default=10)
+    page_size = serializers.IntegerField(required=False, min_value=1)
