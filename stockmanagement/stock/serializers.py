@@ -12,7 +12,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'created_at']
+        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
 
 
 class QuantitySerializer(serializers.Serializer):
@@ -34,7 +34,7 @@ class SubCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SubCategory
-        fields = ['id', 'name', 'description', 'created_at', 'category_id']
+        fields = ['id', 'name', 'description', 'created_at', 'category_id', 'updated_at']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -58,6 +58,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'image',
             'image_file',
             'created_at',
+            'updated_at',
             'quantity',
             'min_quantity',
             'is_expired',

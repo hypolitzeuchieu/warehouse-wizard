@@ -40,6 +40,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'id',
             'number',
             'created_at',
+            'updated_at',
             'client_name',
             'cashier',
             'cashier_name',
