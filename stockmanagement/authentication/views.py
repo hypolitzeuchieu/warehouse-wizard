@@ -33,7 +33,12 @@ class UserCreateView(APIView):
 
     @swagger_auto_schema(
         request_body=UserSerializer,
-        responses={201: UserSerializer},
+        operation_description='Create new user',
+        responses={
+            201: UserSerializer,
+            400: 'Bad request',
+            500: 'Internal server error'
+        },
     )
     def post(self, request):
         try:
@@ -65,7 +70,12 @@ class LoginView(APIView):
 
     @swagger_auto_schema(
         request_body=LoginSerializer,
-        responses={200: LoginSerializer},
+        operation_description='Login the User',
+        responses={
+            200: LoginSerializer,
+            400: 'Bad request',
+            500: 'Internal server error'
+        },
     )
     def post(self, request):
         try:
@@ -310,10 +320,12 @@ class PasswordResetRequestView(APIView):
 
         if serializer.is_valid():
             serializer.save(request)
+            logger.info('Password reset link sent successfully.')
             return Response(
                 {'message': 'Password reset link sent successfully.'},
                 status=status.HTTP_200_OK
             )
+        logger.error(f'Error in password reset link:{serializer.errors}')
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -329,8 +341,10 @@ class PasswordResetConfirmView(APIView):
 
         if serializer.is_valid():
             serializer.save()
+            logger.info('Password reset successfully.')
             return Response(
                 {'message': 'Password reset successfully.'},
                 status=status.HTTP_200_OK
             )
+        logger.error(f'Error in password reset confirmation: {serializer.errors}')
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -18,6 +18,7 @@ from reports.serializers import InvoiceSerializer
 from reports.serializers import PayDebtSerializer
 from reports.serializers import ReportListSerializer
 from reports.serializers import ReportQuerySerializer
+from reports.serializers import UpdateInvoiceSerializer
 from reports.service.generateReport import GenerateReportService
 from reports.service.invoice_service import ReportService
 from rest_framework import status
@@ -199,6 +200,62 @@ class InvoiceViewSet(viewsets.ViewSet):
                 )
         logger.error(f"Invalid data provided: {query_serializer.errors}")
         return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        request_body=UpdateInvoiceSerializer,
+        operation_description='Mettre à jour une facture existante',
+        responses={
+            200: InvoiceSerializer,
+            400: 'Bad Request',
+            403: 'Permission Denied',
+            404: 'Not Found',
+            500: 'Internal Server Error'
+        },
+    )
+    @action(methods=['PUT'], detail=False, url_path='update-invoice')
+    def update_invoice(self, request):
+        serializer = UpdateInvoiceSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                data = serializer.validated_data
+                invoice_id = data['invoice_id']
+                user = request.user
+
+                updated_data = {
+                    'client_name': data.get('client_name'),
+                    'tax': data.get('tax'),
+                    'status': data.get('status'),
+                    'reason': data.get('reason'),
+                    'advance_paid': data.get('advance_paid'),
+                    'due_date': data.get('due_date'),
+                    'lines': data.get('lines', []),
+                }
+
+                result = service.update_invoice(
+                    invoice_id=invoice_id,
+                    updated_data=updated_data,
+                    user=user
+                )
+
+                if not result.success:
+                    status_code = status.HTTP_400_BAD_REQUEST
+                    if 'permission' in result.error.lower():
+                        status_code = status.HTTP_403_FORBIDDEN
+                    return Response({'error': result.error}, status=status_code)
+
+                invoice = result.data
+                serialized = InvoiceSerializer(invoice)
+                return Response(serialized.data, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Unexpected error occurred during invoice update: {str(e)}")
+                return Response(
+                    {'error': f'Unexpected error occurred during invoice update: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ArchiveInvoiceVieSet(viewsets.ViewSet):

@@ -6,7 +6,6 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.models import Group
 from django.contrib.auth.models import Permission
 from django.db import models
-from django.utils import timezone
 
 
 class Client(models.Model):
@@ -23,6 +22,7 @@ class Client(models.Model):
 
 class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True, null=True, blank=True)
 
     ROLE_CHOICES = [
         ('manager', 'Manager'),
@@ -35,6 +35,7 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=30, null=True, blank=True)
     address = models.TextField(null=True, blank=True)
     is_active = models.BooleanField(default=False)
+    last_password_reset = models.DateTimeField(auto_now_add=True)
 
     groups = models.ManyToManyField(
         Group,
@@ -75,17 +76,6 @@ class RevokedToken(models.Model):
     token = models.CharField(max_length=1024, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    @classmethod
-    def is_revoked(cls, token):
-        return cls.objects.filter(token=token).exists()
-
-
-class PasswordResetToken(models.Model):
-    user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name='password_reset_tokens'
-    )
-    token = models.UUIDField(default=uuid.uuid4, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def is_expired(self):
-        return (timezone.now() - self.created_at).seconds > 7200
+    @staticmethod
+    def is_revoked(token: str) -> bool:
+        return RevokedToken.objects.filter(token=token).exists()

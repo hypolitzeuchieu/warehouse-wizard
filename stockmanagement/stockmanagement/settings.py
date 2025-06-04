@@ -5,23 +5,19 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
-from decouple import config
+from dotenv import load_dotenv
 
+load_dotenv()
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG')
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', default='localhost').split(',')
 
-
-# Application definition
 
 INSTALLED_APPS = [
     'daphne',
@@ -52,9 +48,29 @@ INSTALLED_APPS = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/day',
+        'user': '1000/day'
+    },
+    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.openapi.AutoSchema',
 }
 
 ASGI_APPLICATION = 'stockmanagement.asgi.application'
@@ -112,8 +128,8 @@ MIDDLEWARE = [
 
 # CORS settings
 CORS_ALLOWED_ALL_ORIGINS = True
-CORS_ALLOWED_ORIGINS = [config('FRONTEND_URL'),]
-CORS_ORIGIN_ALLOW_ALL = True  # Allows all origins (development only)
+CORS_ALLOWED_ORIGINS = [os.getenv('FRONTEND_URL'),]
+CORS_ORIGIN_ALLOW_ALL = True
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
@@ -148,12 +164,9 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 
-# Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-if config('PRODUCTION') == 'True':
+if os.getenv('PRODUCTION') == 'True':
     DATABASES = {
-        'default': dj_database_url.parse(config('PROD_DATABASE_URL'))
+        'default': dj_database_url.parse(os.getenv('PROD_DATABASE_URL'))
     }
 
     CHANNEL_LAYERS = {
@@ -168,11 +181,11 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DB_NAME'),
-            'USER': config('DB_USER'),
-            'PASSWORD': config('DB_PASSWORD'),
-            'HOST': config('DB_HOST'),
-            'PORT': config('DB_PORT'),
+            'NAME': os.getenv('DB_NAME'),
+            'USER': os.getenv('DB_USER'),
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': os.getenv('DB_HOST'),
+            'PORT': os.getenv('DB_PORT'),
         },
     }
 
@@ -208,10 +221,10 @@ USE_TZ = True
 
 # AWS settings
 
-AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
-AWS_REGION_NAME = config('AWS_REGION_NAME')
-AWS_BUCKET_NAME = config('AWS_BUCKET_NAME')
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_REGION_NAME = os.getenv('AWS_REGION_NAME')
+AWS_BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
@@ -230,16 +243,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # SMTP settings
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = config('EMAIL_HOST')
-EMAIL_PORT = config('EMAIL_PORT')
-EMAIL_USE_TLS = config('EMAIL_USE_TLS')
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+EMAIL_HOST = os.getenv('EMAIL_HOST')
+EMAIL_PORT = os.getenv('EMAIL_PORT')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 
 # CELERY Settings
 
-CELERY_BROKER_URL = 'redis://redis:6379/0'
-CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
+CELERY_BROKER_URL = os.environ.get('REDIS_URL')
+CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
