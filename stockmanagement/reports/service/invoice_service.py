@@ -586,3 +586,101 @@ class ReportService:
         except Exception as e:
             logger.error(f"Error fetching invoices: {str(e)}")
             return ServiceResponse(success=False, error=str(e))
+
+    @staticmethod
+    def update_invoice(invoice_id, updated_data, user) -> ServiceResponse:
+        """
+        Update an existing invoice, adjusting stock and prices as needed.
+        """
+        try:
+            with transaction.atomic():
+                invoice = Invoice.objects.prefetch_related('lines').get(id=invoice_id)
+
+                if user.role != 'manager' and invoice.cashier != user:
+                    return ServiceResponse(
+                        success=False,
+                        error='You do not have permission to perform this action.'
+                    )
+                invoice.cashier = user
+
+                original_lines = {line.product_id: line for line in invoice.lines.all()}
+                updated_lines = {line['product_id']: line for line in updated_data['lines']}
+
+                # Handle removed or updated lines
+                for product_id, orig_line in original_lines.items():
+                    if product_id not in updated_lines:
+                        # Restore stock for removed line
+                        product = orig_line.product
+                        product.quantity += orig_line.quantity
+                        product.save()
+                        orig_line.delete()
+                    else:
+                        new_qty = updated_lines[product_id]['quantity']
+                        diff = new_qty - orig_line.quantity
+                        if diff != 0:
+                            product = orig_line.product
+                            # If increased, check stock
+                            if diff > 0:
+                                stock_validation = ReportService.validate_stock(
+                                    product, diff
+                                )
+                                if not stock_validation.success:
+                                    return stock_validation
+                                product.quantity -= diff
+                            else:
+                                product.quantity -= diff
+                            product.save()
+                            orig_line.quantity = new_qty
+                            orig_line.discount = updated_lines[product_id].get(
+                                'discount', orig_line.discount
+                            )
+                            orig_line.unit_price = product.get_price()
+                            orig_line.line_total = (orig_line.unit_price * new_qty
+                                                    ) - orig_line.discount
+                            orig_line.save()
+
+                # Handle new lines
+                for product_id, line_data in updated_lines.items():
+                    if product_id not in original_lines:
+                        product = Product.objects.get(id=product_id)
+                        stock_validation = ReportService.validate_stock(
+                            product, line_data['quantity']
+                        )
+                        if not stock_validation.success:
+                            return stock_validation
+                        product.quantity -= line_data['quantity']
+                        product.save()
+                        unit_price = product.get_price()
+                        discount = line_data.get('discount', Decimal('0.00'))
+                        line_total = (unit_price * line_data['quantity']) - discount
+                        invoice.lines.create(
+                            product=product,
+                            quantity=line_data['quantity'],
+                            unit_price=unit_price,
+                            discount=discount,
+                            line_total=line_total,
+                        )
+
+                # Update invoice fields
+                invoice.client_name = updated_data.get('client_name', invoice.client_name)
+                invoice.tax = updated_data.get('tax', invoice.tax)
+                invoice.status = updated_data.get('status', invoice.status)
+                invoice.reason = updated_data.get('reason', invoice.reason)
+                invoice.advance_paid = updated_data.get('advance_paid', invoice.advance_paid)
+                invoice.due_date = updated_data.get('due_date', invoice.due_date)
+                invoice.save()
+
+                # Recalculate totals
+                totals_response = ReportService.calculate_invoice_totals(invoice)
+                if not totals_response.success:
+                    transaction.set_rollback(True)
+                    return totals_response
+
+                return ServiceResponse(success=True, data=invoice)
+        except Invoice.DoesNotExist:
+            return ServiceResponse(success=False, error='Invoice not found.')
+
+        except Exception as e:
+            logger.error(f"Error updating invoice: {e}")
+            transaction.set_rollback(True)
+            return ServiceResponse(success=False, error=f"Error updating invoice: {str(e)}")
