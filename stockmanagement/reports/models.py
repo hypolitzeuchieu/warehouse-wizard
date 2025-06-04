@@ -19,6 +19,7 @@ class Invoice(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     number = models.PositiveIntegerField(unique=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     client_name = models.CharField(max_length=100, blank=True, null=True)
     cashier = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, related_name='invoices'
