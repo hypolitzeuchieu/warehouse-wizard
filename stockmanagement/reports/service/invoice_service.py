@@ -605,10 +605,8 @@ class ReportService:
                 original_lines = {line.product_id: line for line in invoice.lines.all()}
                 updated_lines = {line['product_id']: line for line in updated_data['lines']}
 
-                # Handle removed or updated lines
                 for product_id, orig_line in original_lines.items():
                     if product_id not in updated_lines:
-                        # Restore stock for removed line
                         product = orig_line.product
                         product.quantity += orig_line.quantity
                         product.save()
@@ -618,7 +616,6 @@ class ReportService:
                         diff = new_qty - orig_line.quantity
                         if diff != 0:
                             product = orig_line.product
-                            # If increased, check stock
                             if diff > 0:
                                 stock_validation = self.validate_stock(
                                     product=product, quantity=diff
@@ -638,7 +635,6 @@ class ReportService:
                                                     ) - orig_line.discount
                             orig_line.save()
 
-                # Handle new lines
                 for product_id, line_data in updated_lines.items():
                     if product_id not in original_lines:
                         product = Product.objects.get(id=product_id)
@@ -660,7 +656,6 @@ class ReportService:
                             line_total=line_total,
                         )
 
-                # Update invoice fields
                 invoice.client_name = updated_data.get('client_name', invoice.client_name)
                 invoice.tax = updated_data.get(
                     'tax', invoice.tax if invoice.tax is not None else Decimal('0.00')
