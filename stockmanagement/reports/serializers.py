@@ -246,3 +246,34 @@ class ReportListSerializer(serializers.ModelSerializer):
 
 class DownloadReportSerializer(serializers.Serializer):
     report_id = serializers.UUIDField(required=True)
+
+
+class UpdateInvoiceSerializer(serializers.Serializer):
+    invoice_id = serializers.UUIDField(required=True)
+    client_name = serializers.CharField(required=False)
+    status = serializers.ChoiceField(
+        choices=['COMPLETED', 'CANCELLED', 'CREDIT'], required=False
+    )
+    reason = serializers.CharField(required=False, allow_blank=True)
+    due_date = serializers.DateField(required=False, allow_null=True)
+    advance_paid = serializers.DecimalField(max_digits=15, decimal_places=3, required=False)
+    lines = serializers.ListSerializer(child=InvoiceLineInputSerializer(), required=False)
+
+    def validate_lines(self, value):
+        if value is not None and not value:
+            raise serializers.ValidationError(
+                'At least one line item is required if lines are provided.'
+            )
+        return value
+
+    def validate(self, data):
+        if data.get('status') == 'CREDIT':
+            if not data.get('due_date'):
+                raise serializers.ValidationError(
+                    {'due_date': 'This field is required when the status is CREDIT.'}
+                )
+            if not data.get('reason'):
+                raise serializers.ValidationError(
+                    {'reason': 'This field is required when the status is CREDIT.'}
+                )
+        return data
