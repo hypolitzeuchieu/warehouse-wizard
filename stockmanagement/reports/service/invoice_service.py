@@ -587,13 +587,12 @@ class ReportService:
             logger.error(f"Error fetching invoices: {str(e)}")
             return ServiceResponse(success=False, error=str(e))
 
-    @staticmethod
-    def update_invoice(invoice_id, updated_data, user) -> ServiceResponse:
+    def update_invoice(self, invoice_id, updated_data, user) -> ServiceResponse:
         """
         Update an existing invoice, adjusting stock and prices as needed.
         """
-        try:
-            with transaction.atomic():
+        with transaction.atomic():
+            try:
                 invoice = Invoice.objects.prefetch_related('lines').get(id=invoice_id)
 
                 if user.role != 'manager' and invoice.cashier != user:
@@ -621,8 +620,8 @@ class ReportService:
                             product = orig_line.product
                             # If increased, check stock
                             if diff > 0:
-                                stock_validation = ReportService.validate_stock(
-                                    product, diff
+                                stock_validation = self.validate_stock(
+                                    product=product, quantity=diff
                                 )
                                 if not stock_validation.success:
                                     return stock_validation
@@ -643,8 +642,8 @@ class ReportService:
                 for product_id, line_data in updated_lines.items():
                     if product_id not in original_lines:
                         product = Product.objects.get(id=product_id)
-                        stock_validation = ReportService.validate_stock(
-                            product, line_data['quantity']
+                        stock_validation = self.validate_stock(
+                            product=product, quantity=line_data['quantity']
                         )
                         if not stock_validation.success:
                             return stock_validation
@@ -663,7 +662,9 @@ class ReportService:
 
                 # Update invoice fields
                 invoice.client_name = updated_data.get('client_name', invoice.client_name)
-                invoice.tax = updated_data.get('tax', invoice.tax)
+                invoice.tax = updated_data.get(
+                    'tax', invoice.tax if invoice.tax is not None else Decimal('0.00')
+                ) or Decimal('0.00')
                 invoice.status = updated_data.get('status', invoice.status)
                 invoice.reason = updated_data.get('reason', invoice.reason)
                 invoice.advance_paid = updated_data.get('advance_paid', invoice.advance_paid)
@@ -677,10 +678,12 @@ class ReportService:
                     return totals_response
 
                 return ServiceResponse(success=True, data=invoice)
-        except Invoice.DoesNotExist:
-            return ServiceResponse(success=False, error='Invoice not found.')
+            except Invoice.DoesNotExist:
+                return ServiceResponse(success=False, error='Invoice not found.')
 
-        except Exception as e:
-            logger.error(f"Error updating invoice: {e}")
-            transaction.set_rollback(True)
-            return ServiceResponse(success=False, error=f"Error updating invoice: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error updating invoice: {e}")
+                transaction.set_rollback(True)
+                return ServiceResponse(
+                    success=False, error=f"Error updating invoice: {str(e)}"
+                )
