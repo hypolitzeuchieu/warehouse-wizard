@@ -22,6 +22,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
@@ -162,7 +163,13 @@ class RefreshTokenView(APIView):
         try:
             old_refresh = RefreshToken(raw)
             old_refresh.blacklist()
-            new_refresh = RefreshToken.for_user(request.user)
+            logger.info('Old refresh token blacklisted successfully.')
+            user_id = old_refresh.payload.get('user_id')
+            if not user_id:
+                raise TokenError('Token missing user_id claim')
+
+            user = User.objects.get(pk=user_id)
+            new_refresh = RefreshToken.for_user(user)
             data = {
                 'access_token': str(new_refresh.access_token),
                 'refresh_token': str(new_refresh),
@@ -174,6 +181,11 @@ class RefreshTokenView(APIView):
             logger.error(f"Failed to refresh token: {str(e)}")
             return Response(
                 {'error': f'Invalid or expired refresh token: {str(e)}'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'User not found for this token'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
