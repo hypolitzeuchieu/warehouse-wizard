@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 
-from authentication.models import RevokedToken
 from authentication.models import User
 from authentication.permissions import IsManagerPermission
 from authentication.serializers import AssignRoleSerializer
@@ -23,6 +22,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
@@ -116,28 +116,16 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        access_token = request.data.get('access_token')
+        raw = request.headers.get('X-Refresh-Token')
+        print('raw:', raw)
+        if not raw or not isinstance(raw, str):
+            logger.error('No refresh token found in request headers')
+            return Response({'detail': 'Refresh token is required'}, status=400)
 
-        if not access_token:
-            auth_header = request.headers.get('Authorization')
-            if auth_header and auth_header.startswith('Bearer '):
-                access_token = auth_header.split(' ')[1]
-
-        if not access_token:
-            logger.error('No access_token found in request body or headers')
-            return Response(
-                {'error': 'Access token is required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         try:
-            if RevokedToken.is_revoked(access_token):
-                return Response(
-                    {'error': 'Token is already revoked'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            RevokedToken.objects.create(token=access_token)
-
+            refresh_token = RefreshToken(raw)
+            refresh_token.blacklist()
+            logger.info('User logged out successfully.')
             return Response(
                 {'message': 'Logout successful'},
                 status=status.HTTP_205_RESET_CONTENT,
@@ -145,7 +133,60 @@ class LogoutView(APIView):
         except Exception as e:
             logger.error(f"Logout failed: {str(e)}")
             return Response(
-                {'error': f'Invalid token: {str(e)}'}, status=status.HTTP_401_UNAUTHORIZED
+                {'error': f'Invalid token: {str(e)}'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+
+class RefreshTokenView(APIView):
+    """
+    View to refresh the user's access token.
+    """
+
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        responses={
+            200: 'Access token refreshed successfully.',
+            400: 'Bad request. Refresh token is required.',
+            401: 'Invalid or expired refresh token.'
+        },
+        operation_description='Refresh the access token using a valid refresh token.'
+    )
+    def post(self, request):
+        raw = request.headers.get('X-Refresh-Token')
+        print('raw:', raw)
+        if not raw or not isinstance(raw, str):
+            logger.error('No refresh token found in request headers')
+            return Response({'detail': 'Refresh token is required'}, status=400)
+
+        try:
+            old_refresh = RefreshToken(raw)
+            old_refresh.blacklist()
+            logger.info('Old refresh token blacklisted successfully.')
+            user_id = old_refresh.payload.get('user_id')
+            if not user_id:
+                raise TokenError('Token missing user_id claim')
+
+            user = User.objects.get(pk=user_id)
+            new_refresh = RefreshToken.for_user(user)
+            data = {
+                'access_token': str(new_refresh.access_token),
+                'refresh_token': str(new_refresh),
+            }
+            logger.info('Tokens refreshed successfully')
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Failed to refresh token: {str(e)}")
+            return Response(
+                {'error': f'Invalid or expired refresh token: {str(e)}'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'User not found for this token'},
+                status=status.HTTP_401_UNAUTHORIZED
             )
 
 
