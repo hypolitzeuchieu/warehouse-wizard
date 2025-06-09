@@ -4,6 +4,7 @@ from authentication.views import LoginView
 from authentication.views import LogoutView
 from authentication.views import PasswordResetConfirmView
 from authentication.views import PasswordResetRequestView
+from authentication.views import RefreshTokenView
 from authentication.views import UserCreateView
 from authentication.views import UserInfoView
 from authentication.views import UserManagementViewSet
@@ -20,6 +21,7 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='user-login'),
     path('user-info/', UserInfoView.as_view(), name='user-info'),
     path('logout/', LogoutView.as_view(), name='user-logout'),
+    path('refresh-token/', RefreshTokenView.as_view(), name='refresh-token'),
     path('update-user/', UserUpdateView.as_view(), name='update-user'),
     path('password-reset/',
          PasswordResetRequestView.as_view(),
