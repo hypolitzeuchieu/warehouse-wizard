@@ -10,8 +10,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
-from jwt import DecodeError
-from jwt import ExpiredSignatureError
+from jwt.exceptions import JWTException
 from rest_framework import serializers
 from tasks.send_mail import send_email
 
@@ -109,13 +108,11 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         current_site = get_current_site(request).domain
         reset_link = f"https://{current_site}/reset-password/?token={token}"
 
-        # Email content
         subject = 'Password Reset Request'
         message = f"Click the following link to reset your password: {reset_link}"
         html_message = render_to_string(
             'reset_password_email.html', {'reset_url': reset_link}
         )
-        # Send email using the generic function
         send_email.delay(subject, message, [email], html_message=html_message)
 
 
@@ -135,10 +132,8 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
                 settings.SECRET_KEY,
                 algorithms=['HS256']
             )
-        except ExpiredSignatureError:
-            raise serializers.ValidationError({'token': 'the link is expired.'})
-        except DecodeError:
-            raise serializers.ValidationError({'token': 'Invalid token.'})
+        except JWTException:
+            raise serializers.ValidationError({'token': 'Invalid token or link expired.'})
 
         if datetime.utcnow().timestamp() > payload['exp']:
             raise serializers.ValidationError({'token': 'the link is expired.'})
