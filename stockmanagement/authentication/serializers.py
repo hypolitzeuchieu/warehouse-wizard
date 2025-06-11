@@ -109,13 +109,11 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         current_site = get_current_site(request).domain
         reset_link = f"https://{current_site}/reset-password/?token={token}"
 
-        # Email content
         subject = 'Password Reset Request'
         message = f"Click the following link to reset your password: {reset_link}"
         html_message = render_to_string(
             'reset_password_email.html', {'reset_url': reset_link}
         )
-        # Send email using the generic function
         send_email.delay(subject, message, [email], html_message=html_message)
 
 
