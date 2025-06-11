@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timedelta
-
-import jwt
 from authentication.models import User
-from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
-from jwt.exceptions import JWTException
+from django.utils import timezone
+from django.utils.encoding import force_bytes
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
+from django.utils.http import urlsafe_base64_encode
 from rest_framework import serializers
 from tasks.send_mail import send_email
 
@@ -98,15 +98,11 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         email = self.validated_data['email']
         user = User.objects.filter(email=email).first()
 
-        payload = {
-            'user_id': str(user.id),
-            'iat': datetime.utcnow(),
-            'exp': datetime.utcnow() + timedelta(hours=1)
-        }
-        token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
 
         current_site = get_current_site(request).domain
-        reset_link = f"https://{current_site}/reset-password/?token={token}"
+        reset_link = f"https://{current_site}/reset-password/?uid={uid}&token={token}"
 
         subject = 'Password Reset Request'
         message = f"Click the following link to reset your password: {reset_link}"
@@ -118,6 +114,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
     token = serializers.CharField(required=True, max_length=1024)
+    uid = serializers.CharField(required=True, max_length=64)
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)
 
@@ -127,28 +124,13 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             raise serializers.ValidationError('Passwords do not match.')
 
         try:
-            payload = jwt.decode(
-                data['token'],
-                settings.SECRET_KEY,
-                algorithms=['HS256']
-            )
-        except JWTException:
+            uid = force_str(urlsafe_base64_decode(data['uid']))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError({'uid': 'Invalid user ID'})
+
+        if not default_token_generator.check_token(user, data['token']):
             raise serializers.ValidationError({'token': 'Invalid token or link expired.'})
-
-        if datetime.utcnow().timestamp() > payload['exp']:
-            raise serializers.ValidationError({'token': 'the link is expired.'})
-
-        try:
-            user = User.objects.get(id=payload['user_id'])
-        except User.DoesNotExist:
-            raise serializers.ValidationError({'token': 'User not found'})
-
-        user_last_reset = user.last_password_reset.timestamp() if (
-            user.last_password_reset
-        ) else 0
-        if payload['iat'] < user_last_reset:
-            raise serializers.ValidationError({'token': 'This link is already used.'})
-
         validate_password(data['new_password'], user)
 
         data['user'] = user
@@ -157,7 +139,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     def save(self):
         user = self.validated_data['user']
         user.set_password(self.validated_data['new_password'])
-        user.last_password_reset = datetime.utcnow()
+        user.last_password_reset = timezone.now()
         user.save()
 
 
