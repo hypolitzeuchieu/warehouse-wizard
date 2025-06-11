@@ -35,7 +35,7 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=30, null=True, blank=True)
     address = models.TextField(null=True, blank=True)
     is_active = models.BooleanField(default=False)
-    last_password_reset = models.DateTimeField(auto_now_add=True)
+    last_password_reset = models.DateTimeField(null=True, blank=True)
 
     groups = models.ManyToManyField(
         Group,
