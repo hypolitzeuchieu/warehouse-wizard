@@ -10,8 +10,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
-from jwt import DecodeError
-from jwt import ExpiredSignatureError
+from jwt.exceptions import JWTException
 from rest_framework import serializers
 from tasks.send_mail import send_email
 
@@ -133,10 +132,8 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
                 settings.SECRET_KEY,
                 algorithms=['HS256']
             )
-        except ExpiredSignatureError:
-            raise serializers.ValidationError({'token': 'the link is expired.'})
-        except DecodeError:
-            raise serializers.ValidationError({'token': 'Invalid token.'})
+        except JWTException:
+            raise serializers.ValidationError({'token': 'Invalid token or link expired.'})
 
         if datetime.utcnow().timestamp() > payload['exp']:
             raise serializers.ValidationError({'token': 'the link is expired.'})
