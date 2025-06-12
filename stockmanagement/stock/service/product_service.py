@@ -33,6 +33,7 @@ class ProductService:
             unit_price,
             category_id,
             subcategory_id,
+            created_by,
             expired_date,
             quantity,
             image,
@@ -81,6 +82,7 @@ class ProductService:
                         'promotion_start_date': promotion_start_date,
                         'promotion_end_date': promotion_end_date,
                         'is_expired': False,
+                        'created_by': created_by,
                     },
                 )
                 if not created and image_url:
@@ -107,7 +109,7 @@ class ProductService:
             )
 
     @staticmethod
-    def update_product(product_id, data) -> StockServiceResponse:
+    def update_product(product_id, data, updated_by) -> StockServiceResponse:
         try:
             product = Product.objects.get(id=product_id)
             image = data.get('image', None)
@@ -116,6 +118,7 @@ class ProductService:
                 data['image'] = image_url
             for key, value in data.items():
                 setattr(product, key, value)
+            product.updated_by = updated_by
             product.save()
             logger.info(f"Product updated: {product.name}")
             return StockServiceResponse(True, data=product)
