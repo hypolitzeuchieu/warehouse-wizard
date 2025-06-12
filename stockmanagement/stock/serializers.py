@@ -9,10 +9,21 @@ from stock.models import SubCategory
 
 
 class CategorySerializer(serializers.ModelSerializer):
+    created_by = serializers.StringRelatedField(read_only=True)
+    updated_by = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        fields = [
+            'id',
+            'name',
+            'description',
+            'created_at',
+            'updated_at',
+            'created_by',
+            'updated_by'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class QuantitySerializer(serializers.Serializer):
@@ -30,11 +41,23 @@ class GetProductSubCategorySerializer(serializers.Serializer):
 
 
 class SubCategorySerializer(serializers.ModelSerializer):
-    category_id = serializers.CharField(required=True)
+    category_id = serializers.UUIDField(required=True)
+    created_by = serializers.StringRelatedField(read_only=True)
+    updated_by = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = SubCategory
-        fields = ['id', 'name', 'description', 'created_at', 'category_id', 'updated_at']
+        fields = [
+            'id',
+            'name',
+            'description',
+            'created_at',
+            'category_id',
+            'updated_at',
+            'created_by',
+            'updated_by',
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -46,6 +69,8 @@ class ProductSerializer(serializers.ModelSerializer):
         max_digits=10, decimal_places=2, write_only=True
     )
     image_file = serializers.ImageField(required=False, allow_null=True, write_only=True)
+    created_by = serializers.StringRelatedField(read_only=True)
+    updated_by = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = Product
@@ -69,6 +94,14 @@ class ProductSerializer(serializers.ModelSerializer):
             'promo_price',
             'category_id',
             'subcategory_id',
+            'created_by',
+            'updated_by',
+        ]
+        read_only_fields = [
+            'created_at',
+            'updated_at',
+            'created_by',
+            'updated_by',
         ]
 
     def validate(self, attrs):
@@ -105,6 +138,8 @@ class StockSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     subcategory = SubCategorySerializer(read_only=True)
+    created_by = serializers.StringRelatedField(read_only=True)
+    updated_by = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = Stock
@@ -113,6 +148,14 @@ class StockSerializer(serializers.ModelSerializer):
             'product',
             'category',
             'subcategory',
+            'created_by',
+            'updated_by',
+        ]
+        read_only_fields = [
+            'created_at',
+            'updated_at',
+            'created_by',
+            'updated_by',
         ]
 
 
@@ -157,6 +200,7 @@ class ProductUpdateSerializer(serializers.Serializer):
     promotion_end_date = serializers.DateTimeField(required=False, allow_null=True)
     quantity = serializers.IntegerField(min_value=0, required=False)
     min_quantity = serializers.IntegerField(min_value=0, required=False)
+    updated_by = serializers.StringRelatedField(read_only=True)
 
     def validate(self, attrs):
         """
