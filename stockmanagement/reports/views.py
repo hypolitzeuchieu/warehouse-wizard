@@ -647,30 +647,39 @@ class ExpenseViewSet(viewsets.ViewSet):
         """
         Update an existing expense record.
         """
-        try:
-            expense = Expense.objects.get(id=pk)
-        except Expense.DoesNotExist:
-            return Response(
-                {'error': 'Expense not found.'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
         serializer = CreateExpenseSerializer(data=request.data, partial=True)
         if not serializer.is_valid():
             return Response(
                 {'error': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        expense.amount = serializer.validated_data.get('amount', expense.amount)
-        expense.expense_type = serializer.validated_data.get(
-            'expense_type', expense.expense_type
-        )
-        expense.reason = serializer.validated_data.get('reason', expense.reason)
-        expense.updated_by = request.user
-        expense.save()
-        logger.info(f"Expense updated successfully: {expense}")
+        try:
+            amount = serializer.validated_data.get('amount')
+            expense_type = serializer.validated_data.get('expense_type')
+            reason = serializer.validated_data.get('reason')
+            updated_by = request.user
+            expense = ExpenseService.update_expense(
+                expense_id=pk,
+                new_amount=amount,
+                expense_type=expense_type,
+                reason=reason,
+                updated_by=updated_by
+            )
+            if expense.success:
+                logger.info(f"Expense updated successfully: {expense}")
+                return Response(
+                    ExpenseSerializer(expense.data).data, status=status.HTTP_200_OK
+                )
 
-        return Response(ExpenseSerializer(expense).data)
+            logger.error(f'Error updating expense: {expense.error}')
+            return Response({'error': expense.error}, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"Error updating expense: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @swagger_auto_schema(
         operation_description='Delete an expense record',
