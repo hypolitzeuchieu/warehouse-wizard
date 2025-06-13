@@ -682,6 +682,64 @@ class ExpenseViewSet(viewsets.ViewSet):
             )
 
     @swagger_auto_schema(
+        operation_description='get exchange summary',
+        query_serializer=InventoryQuerySerializer,
+        responses={
+            200: 'Expense summary retrieved successfully',
+            400: 'Bad Request',
+            403: 'Forbidden',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='expense-summary')
+    def get_expense_summary(self, request):
+        """
+        Retrieve a summary of expenses based on the provided date range.
+        """
+        query_serializer = InventoryQuerySerializer(data=request.query_params)
+        if query_serializer.is_valid():
+            start_date = query_serializer.validated_data.get('start_date')
+            end_date = query_serializer.validated_data.get('end_date')
+            page_size = query_serializer.validated_data.get('page_size', 10)
+
+            try:
+                expenses_summary = ExpenseService.get_expenses_summary(
+                    start_date=start_date, end_date=end_date
+                )
+                if not expenses_summary.success:
+                    return Response(
+                        {'error': expenses_summary.error},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                summary_data = expenses_summary.data
+                categories = summary_data['categories']
+                total_amount = summary_data['total']
+
+                paginator = CustomPagination()
+                paginator.page_size = page_size
+                paginated_categories = paginator.paginate_queryset(categories, request)
+
+                response_data = {
+                    'total_amount': total_amount,
+                    'categories': paginated_categories
+                }
+
+                return paginator.get_paginated_response(response_data)
+
+            except Exception as e:
+                logger.error(f"Error retrieving expense summary: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        logger.error(f"Invalid data provided: {query_serializer.errors}")
+        return Response(
+            {'error': query_serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @swagger_auto_schema(
         operation_description='Delete an expense record',
         query_serializer=QueryExpenseSerializer,
         responses={

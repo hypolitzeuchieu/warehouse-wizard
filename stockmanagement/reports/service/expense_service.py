@@ -5,10 +5,13 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import Count
+from django.db.models import Sum
 from django.utils import timezone
 from reports.models import Expense
 from reports.models import Treasure
 from reports.service.entities import ServiceResponse
+from reports.service.generateReport import GenerateReportService
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,28 @@ class ExpenseService:
 
         except Exception as e:
             logger.error(f"Error creating expense: {str(e)}")
+            return ServiceResponse(success=False, error=str(e))
+
+    @staticmethod
+    def get_expenses_summary(start_date=None, end_date=None):
+        try:
+            start_date, end_date = GenerateReportService.get_date_range(
+                start_date, end_date
+            )
+
+            expenses = Expense.objects.filter(
+                created_at__range=(start_date, end_date)
+            ).values('expense_type').annotate(
+                total=Sum('amount'),
+                count=Count('id')
+            ).order_by('-total')
+
+            return ServiceResponse(success=True, data={
+                'total': sum(e['total'] for e in expenses),
+                'categories': list(expenses)
+            })
+        except Exception as e:
+            logger.error(f"Error getting expenses summary: {str(e)}")
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
