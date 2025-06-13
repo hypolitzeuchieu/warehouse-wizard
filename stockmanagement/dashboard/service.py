@@ -9,12 +9,15 @@ from decimal import Decimal
 from typing import Dict
 from typing import Union
 
+from django.db.models import Case
 from django.db.models import Count
 from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Q
 from django.db.models import Sum
+from django.db.models import Value
+from django.db.models import When
 from django.db.models.functions import TruncDay
 from django.utils import timezone
 from reports.models import Expense
@@ -144,6 +147,9 @@ class DashboardService:
         data_dict[date_key]['profit'] += profit
         data_dict[date_key]['orders'] += 1
 
+        if invoice.status == 'CREDIT':
+            data_dict[date_key]['outstanding'] += invoice._remaining_amount
+
     @staticmethod
     def _process_expenses(
             expenses,
@@ -205,6 +211,7 @@ class DashboardService:
                 'date': current_day.strftime('%Y-%m-%dT00:00:00+00:00'),
                 'revenue': float(current_data['revenue']),
                 'profit_brute': float(current_data['profit']),
+                'outstanding': float(current_data['outstanding']),
                 'expenses': float(current_data['expenses']),
                 'profit_net': float(net_profit),
                 'orders': current_data['orders'],
@@ -252,7 +259,12 @@ class DashboardService:
                 )
                 .annotate(
                     day=TruncDay('invoice__created_at', tzinfo=tz),
-                    status=F('invoice__status')
+                    status=F('invoice__status'),
+                    outstanding=Case(
+                        When(invoice__status='CREDIT', then=F('invoice___remaining_amount')),
+                        default=Value(0, output_field=DecimalField()),
+                        output_field=DecimalField()
+                    )
                 )
                 .values('day', 'status')
                 .annotate(
@@ -261,6 +273,7 @@ class DashboardService:
                         (F('unit_price') - F('product__purchase_price')) * F('quantity'),
                         output_field=DecimalField()
                     )),
+                    outstanding_sum=Sum('outstanding'),
                     count=Count('id')
                 )
                 .order_by('day')
@@ -273,6 +286,7 @@ class DashboardService:
                 sales_map[day][status_key] = {
                     'revenue': s['revenue'] or Decimal(0),
                     'profit': s['profit'] or Decimal(0),
+                    'outstanding': s['outstanding_sum'] or Decimal(0),
                     'count': s['count']
                 }
 
@@ -310,6 +324,7 @@ class DashboardService:
                     'credit': {
                         'revenue': float(data.get('credit', {}).get('revenue', 0)),
                         'profit': float(data.get('credit', {}).get('profit', 0)),
+                        'outstanding': float(data.get('credit', {}).get('outstanding', 0)),
                         'count': data.get('credit', {}).get('count', 0)
                     }
                 })
