@@ -253,3 +253,62 @@ class InvoiceArchiveLine(models.Model):
 
     def __str__(self):
         return f"{self.product.name} (x{self.quantity})"
+
+
+class Expense(models.Model):
+    EXPENSE_TYPES = [
+        ('REPLENISHMENT', 'Replenishment'),
+        ('MISCELLANEOUS', 'Miscellaneous'),
+        ('ELECTRICITY', 'Electricity Bill'),
+        ('WATER', 'Water Bill'),
+        ('SALARY', 'Salary'),
+        ('EXTRA', 'Extra'),
+        ('MAINTENANCE', 'Maintenance'),
+        ('TAX', 'Tax'),
+        ('RENT', 'Rent'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    amount = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
+    expense_type = models.CharField(max_length=20, choices=EXPENSE_TYPES)
+    reason = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='expenses'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_expenses'
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Expense'
+        verbose_name_plural = 'Expenses'
+
+    def __str__(self):
+        return f"{self.expense_type} - {self.amount}"
+
+
+class Treasure(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    balance = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
+    total_sales = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
+    total_expenses = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
+    total_credit = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
+    outstanding_debt = models.DecimalField(max_digits=15, decimal_places=3, default=0.00)
+    last_updated = models.DateTimeField(auto_now=True)
+    history = models.JSONField(default=list)
+
+    class Meta:
+        verbose_name = 'Treasure'
+        verbose_name_plural = 'Treasures'
+
+    def __str__(self):
+        return f"Treasure - Balance: {self.balance} (Fcfa)"
