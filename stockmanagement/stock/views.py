@@ -212,9 +212,11 @@ class CategoryViewSet(viewsets.ViewSet):
             try:
                 name = serializer.validated_data.get('name')
                 description = serializer.validated_data.get('description', '')
+                created_by = request.user
                 category = Category.objects.create(
                     name=name,
                     description=description,
+                    created_by=created_by,
                 )
                 serializer = CategorySerializer(category)
                 return Response(
@@ -254,7 +256,9 @@ class CategoryViewSet(viewsets.ViewSet):
 
         serializer = CategorySerializer(category, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            category = serializer.save()
+            category.updated_by = request.user
+            category.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -333,7 +337,9 @@ class CategoryViewSet(viewsets.ViewSet):
             subcategory, data=request.data, partial=True
         )
         if serializer.is_valid():
-            serializer.save()
+            subcategory_data = serializer.save()
+            subcategory_data.updated_by = request.user
+            subcategory_data.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -430,10 +436,12 @@ class CategoryViewSet(viewsets.ViewSet):
             data = serializer.validated_data
             try:
                 category = Category.objects.get(id=data.get('category_id'))
+                created_by = request.user
                 subcategory = SubCategory.objects.create(
                     name=data.get('name'),
                     description=data.get('description'),
                     category=category,
+                    created_by=created_by,
                 )
                 serializer = SubCategorySerializer(subcategory)
                 return Response(
@@ -582,6 +590,7 @@ class ProductViewSet(viewsets.ViewSet):
                     promotion_start_date=data.get('promotion_start_date'),
                     promotion_end_date=data.get('promotion_end_date'),
                     min_quantity=data.get('min_quantity'),
+                    created_by=request.user,
                 )
                 if response.success:
                     return Response(
@@ -616,8 +625,9 @@ class ProductViewSet(viewsets.ViewSet):
         serializer = ProductUpdateSerializer(data=request.data)
         if serializer.is_valid():
             product_id = serializer.validated_data.pop('product_id')
+            updated_by = request.user
             response = self.product_service.update_product(
-                product_id, serializer.validated_data
+                product_id, serializer.validated_data, updated_by=updated_by
             )
             if response.success:
                 return Response(

@@ -7,18 +7,25 @@ from authentication.permissions import IsManagerPermission
 from django.http import FileResponse
 from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
+from reports.models import Expense
 from reports.models import InvoiceArchive
 from reports.models import Report
+from reports.models import Treasure
+from reports.serializers import CreateExpenseSerializer
 from reports.serializers import CreateInvoiceSerializer
 from reports.serializers import DownloadReportSerializer
+from reports.serializers import ExpenseSerializer
 from reports.serializers import InventoryQuerySerializer
 from reports.serializers import InvoiceArchiveSerializer
 from reports.serializers import InvoiceQuerySerializer
 from reports.serializers import InvoiceSerializer
 from reports.serializers import PayDebtSerializer
+from reports.serializers import QueryExpenseSerializer
 from reports.serializers import ReportListSerializer
 from reports.serializers import ReportQuerySerializer
+from reports.serializers import TreasureSerializer
 from reports.serializers import UpdateInvoiceSerializer
+from reports.service.expense_service import ExpenseService
 from reports.service.generateReport import GenerateReportService
 from reports.service.invoice_service import ReportService
 from rest_framework import status
@@ -508,5 +515,233 @@ class GeneralReportViewSet(viewsets.ViewSet):
             logger.error(f"Error in download_report: {str(e)}")
             return Response(
                 {'success': False, 'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ExpenseViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated, (IsCashier | IsManagerPermission)]
+
+    @swagger_auto_schema(
+        request_body=CreateExpenseSerializer,
+        operation_description='Create an expense record',
+        responses={
+            201: ExpenseSerializer,
+            400: 'Bad Request',
+            403: 'Forbidden',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['POST'], detail=False, url_path='create')
+    def create_expense(self, request):
+        serializer = CreateExpenseSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                created_by = request.user
+                amount = serializer.validated_data.get('amount')
+                expense_type = serializer.validated_data.get('expense_type')
+                reason = serializer.validated_data.get('reason')
+
+                result = ExpenseService.create_expense(
+                    amount,
+                    expense_type,
+                    reason,
+                    created_by
+                )
+
+                if result.success:
+                    return Response(
+                        ExpenseSerializer(result.data).data,
+                        status=status.HTTP_201_CREATED
+                    )
+                return Response(
+                    {'error': result.error},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error in create_expense: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Retrieve all expenses',
+        responses={
+            200: ExpenseSerializer(many=True),
+            400: 'Bad Request',
+            403: 'Forbidden',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='all')
+    def get_all_expenses(self, request):
+        """
+        Retrieve all expenses.
+        """
+        try:
+            expenses = Expense.objects.all().order_by('-created_at')
+            serializer = ExpenseSerializer(expenses, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error retrieving expenses: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description='Retrieve an expense by ID',
+        query_serializer=QueryExpenseSerializer,
+        responses={
+            200: ExpenseSerializer,
+            400: 'Bad Request',
+            403: 'Forbidden',
+            404: 'Not Found',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='expense-by-id')
+    def get_expense_by_id(self, request):
+        """
+        Retrieve an expense by its ID.
+        """
+        serializer = QueryExpenseSerializer(data=request.query_params)
+        if not serializer.is_valid():
+            return Response(
+                {'error': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        expense_id = serializer.validated_data.get('expense_id')
+
+        try:
+            expense = Expense.objects.get(id=expense_id)
+            serializer = ExpenseSerializer(expense)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Expense.DoesNotExist:
+            return Response(
+                {'error': 'Expense not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving expense: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description='Update an expense record',
+        request_body=CreateExpenseSerializer,
+        responses={
+            200: ExpenseSerializer,
+            400: 'Bad Request',
+            403: 'Forbidden',
+            404: 'Not Found',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['PUT'], detail=True, url_path='update')
+    def update_expense(self, request, pk=None):
+        """
+        Update an existing expense record.
+        """
+        serializer = CreateExpenseSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(
+                {'error': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            amount = serializer.validated_data.get('amount')
+            expense_type = serializer.validated_data.get('expense_type')
+            reason = serializer.validated_data.get('reason')
+            updated_by = request.user
+            expense = ExpenseService.update_expense(
+                expense_id=pk,
+                new_amount=amount,
+                expense_type=expense_type,
+                reason=reason,
+                updated_by=updated_by
+            )
+            if expense.success:
+                logger.info(f"Expense updated successfully: {expense}")
+                return Response(
+                    ExpenseSerializer(expense.data).data, status=status.HTTP_200_OK
+                )
+
+            logger.error(f'Error updating expense: {expense.error}')
+            return Response({'error': expense.error}, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"Error updating expense: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description='Delete an expense record',
+        query_serializer=QueryExpenseSerializer,
+        responses={
+            204: 'No Content',
+            400: 'Bad Request',
+            403: 'Forbidden',
+            404: 'Not Found',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['DELETE'], detail=False, url_path='delete')
+    def delete_expense(self, request):
+        """
+        Delete an expense record by its ID.
+        """
+        serializer = QueryExpenseSerializer(data=request.query_params)
+        if not serializer.is_valid():
+            return Response(
+                {'error': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        expense_id = serializer.validated_data.get('expense_id')
+        try:
+            expense = Expense.objects.get(id=expense_id)
+            expense.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Expense.DoesNotExist:
+            return Response(
+                {'error': 'Expense not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error deleting expense: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @swagger_auto_schema(
+        operation_description='get all treasure balance',
+        responses={
+            200: TreasureSerializer,
+            400: 'Bad Request',
+            403: 'Forbidden',
+            500: 'Internal Server Error'
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='treasure-balance')
+    def get_treasure_balance(self, request):
+        """
+        Retrieve the current treasure balance.
+        """
+        try:
+            balance = Treasure.objects.all()
+            serializer = TreasureSerializer(balance, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error retrieving treasure balance: {str(e)}")
+            return Response(
+                {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
