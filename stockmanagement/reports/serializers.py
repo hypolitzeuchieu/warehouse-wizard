@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from reports.models import Expense
 from reports.models import InventoryReport
 from reports.models import Invoice
 from reports.models import InvoiceArchive
@@ -7,6 +8,7 @@ from reports.models import InvoiceArchiveLine
 from reports.models import InvoiceLine
 from reports.models import Report
 from reports.models import SalesReport
+from reports.models import Treasure
 from rest_framework import serializers
 
 
@@ -278,3 +280,45 @@ class UpdateInvoiceSerializer(serializers.Serializer):
                     {'reason': 'This field is required when the status is CREDIT.'}
                 )
         return data
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    created_by = serializers.StringRelatedField(read_only=True)
+    updated_by = serializers.StringRelatedField(read_only=True)
+
+    class Meta:
+        model = Expense
+        fields = [
+            'id',
+            'amount',
+            'expense_type',
+            'reason',
+            'created_at',
+            'created_by',
+            'updated_at',
+            'updated_by',
+        ]
+        read_only_fields = ['created_at', 'created_by', 'updated_at', 'updated_by']
+
+
+class CreateExpenseSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=3,
+        required=True
+    )
+    expense_type = serializers.ChoiceField(
+        choices=Expense.EXPENSE_TYPES,
+        required=True
+    )
+    reason = serializers.CharField(required=True, max_length=500)
+
+
+class QueryExpenseSerializer(serializers.Serializer):
+    expense_id = serializers.UUIDField(required=True)
+
+
+class TreasureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Treasure
+        fields = '__all__'
