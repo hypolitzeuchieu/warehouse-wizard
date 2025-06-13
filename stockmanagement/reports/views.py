@@ -518,6 +518,87 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @swagger_auto_schema(
+        operation_description='Retrieve a report by ID',
+        query_serializer=DownloadReportSerializer,
+        responses={
+            200: ReportListSerializer,
+            400: 'Invalid data or business rule violation.',
+            404: 'Report not found.',
+            500: 'Internal Server Error',
+        }
+    )
+    @action(methods=['GET'], detail=False, url_path='report-by-id')
+    def get_report_by_id(self, request):
+        """
+        Retrieve a report by its ID.
+        """
+        serializer = DownloadReportSerializer(data=request.query_params)
+        if serializer.is_valid():
+            try:
+                report_id = serializer.validated_data.get('report_id')
+                report = Report.objects.filter(id=report_id).first()
+
+                if not report:
+                    return Response(
+                        {'error': 'Report not found.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                serialized_report = ReportListSerializer(report)
+                return Response(serialized_report.data, status=status.HTTP_200_OK)
+
+            except Exception as e:
+                logger.error(f"Error retrieving report: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Delete a report by ID',
+        query_serializer=DownloadReportSerializer,
+        responses={
+            204: 'No Content',
+            400: 'Invalid data or business rule violation.',
+            404: 'Report not found.',
+            500: 'Internal Server Error',
+        }
+    )
+    @action(methods=['DELETE'], detail=False, url_path='delete-report')
+    def delete_report(self, request):
+        """
+        Delete a report by its ID.
+        """
+        serializer = DownloadReportSerializer(data=request.query_params)
+        if serializer.is_valid():
+            try:
+                report_id = serializer.validated_data.get('report_id')
+                report = Report.objects.filter(id=report_id).first()
+
+                if not report:
+                    return Response(
+                        {'error': 'Report not found.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                report.delete()
+                logger.info(f"Report {report_id} deleted successfully.")
+                return Response(status=status.HTTP_204_NO_CONTENT)
+
+            except Exception as e:
+                logger.error(f"Error deleting report: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class ExpenseViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, (IsCashier | IsManagerPermission)]
