@@ -15,6 +15,7 @@ from reports.models import Invoice
 from reports.models import InvoiceArchive
 from reports.models import InvoiceArchiveLine
 from reports.service.entities import ServiceResponse
+from reports.service.expense_service import TreasureService
 from rest_framework.exceptions import ValidationError
 from stock.models import Product
 from stock.models import StockMovement
@@ -339,6 +340,27 @@ class ReportService:
                     if not status_response.success:
                         transaction.set_rollback(True)
                         return status_response
+                    if invoice.status == 'COMPLETED':
+                        TreasureService.update_balance(
+                            invoice.total,
+                            'sale',
+                            {'invoice_id': str(invoice.id)}
+                        )
+                    elif invoice.status == 'CREDIT':
+                        # Enregistrer la dette totale
+                        TreasureService.update_balance(
+                            invoice.total,
+                            'credit_sale',
+                            {'invoice_id': str(invoice.id)}
+                        )
+                        if invoice.advance_paid > 0:
+                            # Enregistrer l'acompte
+                            TreasureService.update_balance(
+                                invoice.advance_paid,
+                                'credit_payment',
+                                {'invoice_id': str(invoice.id)}
+                            )
+
                 elif invoice.status == 'CANCELLED':
                     cancel_response = ReportService.handle_cancelled_invoice(
                         invoice, sold_products
@@ -441,53 +463,67 @@ class ReportService:
 
         try:
             with transaction.atomic():
-                invoice.advance_paid += amount
-                refund_amount = 0
+                effective_payment = min(amount, remaining_debt)
+                refund_amount = amount - effective_payment
 
-                if invoice.advance_paid >= invoice.total:
-                    refund_amount = invoice.advance_paid - invoice.total
-                    invoice.advance_paid = invoice.total
-                    invoice.remaining_amount = 0
-                    invoice.reason = 'COMPLETED Invoice Transaction'
-                    invoice.refund_amount = refund_amount
+                invoice.advance_paid += effective_payment
+                invoice.remaining_amount = remaining_debt - effective_payment
+
+                if invoice.remaining_amount <= 0:
                     invoice.is_credit_settled = True
                     invoice.status = 'COMPLETED'
+                    invoice.reason = 'COMPLETED Invoice Transaction'
+
+                    if refund_amount > 0:
+                        invoice.refund_amount = refund_amount
 
                 invoice.save()
 
-            if refund_amount > 0:
-                logger.info(
-                    f"Overpayment detected for invoice ID {invoice_id}."
-                    f" Refund amount: {refund_amount}."
-                )
-                return ServiceResponse(
-                    success=True,
-                    data={
-                        'message': 'Payment processed successfully.',
-                        'advance_paid': amount,
-                        'refund_amount': refund_amount,
-                        'remaining_amount': 0,
-                        'invoice_id': invoice_id,
-                        'status': invoice.status
+                TreasureService.update_balance(
+                    amount=Decimal(effective_payment),
+                    operation_type='credit_payment',
+                    details={
+                        'invoice_id': str(invoice.id),
+                        'payment_type': 'PARTIAL' if invoice.remaining_amount > 0
+                        else 'FINAL',
+                        'remaining_debt': float(invoice.remaining_amount),
+                        'refund_issued': refund_amount > 0
                     }
                 )
-            logger.info(
-                f"Payment of {amount} successfully applied to invoice ID {invoice_id}."
-            )
-            return ServiceResponse(
-                success=True,
-                data={
-                    'message': 'Payment processed successfully.',
-                    'refund_amount': refund_amount,
+
+                if refund_amount > 0:
+                    TreasureService.update_balance(
+                        amount=Decimal(refund_amount),
+                        operation_type='refund',
+                        details={
+                            'invoice_id': str(invoice.id),
+                            'reason': f"Refund for overpayment on invoice {invoice.number}",
+                        }
+                    )
+                    logger.info(f"Issued refund of {refund_amount} for invoice {invoice.id}")
+
+                response_data = {
+                    'message': 'Payment processed successfully',
+                    'effective_payment': float(effective_payment),
+                    'refund_amount': float(refund_amount),
+                    'remaining_debt': float(invoice.remaining_amount),
                     'invoice_id': invoice_id,
                     'status': invoice.status
                 }
-            )
+
+                logger.info(
+                    f"Processed payment for invoice {invoice_id}: "
+                    f"Effective: {effective_payment}, Refund: {refund_amount}, "
+                    f"Remaining: {invoice.remaining_amount}"
+                )
+
+                return ServiceResponse(success=True, data=response_data)
 
         except Exception as e:
-            logger.error(f"Payment processing failed for invoice ID {invoice_id}: {str(e)}")
+            logger.error(f"Payment processing failed for invoice {invoice_id}: {str(e)}")
             return ServiceResponse(
-                success=False, error='An error occurred while processing the payment.'
+                success=False,
+                error=f'An error occurred while processing the payment: {str(e)}'
             )
 
     @staticmethod
