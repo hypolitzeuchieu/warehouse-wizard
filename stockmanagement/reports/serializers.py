@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from authentication.serializers import UserSerializer
 from reports.models import Expense
 from reports.models import InventoryReport
 from reports.models import Invoice
@@ -223,9 +224,7 @@ class SalesReportSerializers(serializers.ModelSerializer):
 
 
 class ReportListSerializer(serializers.ModelSerializer):
-    inventory_report = InventoryReportSerializers(read_only=True)
-    sales_report = SalesReportSerializers(read_only=True)
-    file_url = serializers.SerializerMethodField()
+    generated_by = UserSerializer(read_only=True)
 
     class Meta:
         model = Report
@@ -235,16 +234,21 @@ class ReportListSerializer(serializers.ModelSerializer):
             'generated_at',
             'generated_by',
             'description',
-            'file_url',
-            'inventory_report',
-            'sales_report',
         ]
 
-    def get_file_url(self, obj):
-        request = self.context.get('request')
-        if obj.file_path and request:
-            return request.build_absolute_uri(obj.file_path.url)
-        return None
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+
+        if instance.type.upper() == 'INVENTORY' and hasattr(instance, 'inventory_report'):
+            data['inventory_report'] = InventoryReportSerializers(
+                instance.inventory_report
+            ).data
+        elif instance.type.upper() == 'SALES' and hasattr(instance, 'sales_report'):
+            data['sales_report'] = SalesReportSerializers(
+                instance.sales_report
+            ).data
+
+        return data
 
 
 class DownloadReportSerializer(serializers.Serializer):

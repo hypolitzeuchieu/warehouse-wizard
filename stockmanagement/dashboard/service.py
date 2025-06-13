@@ -9,14 +9,18 @@ from decimal import Decimal
 from typing import Dict
 from typing import Union
 
+from django.db.models import Case
 from django.db.models import Count
 from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Q
 from django.db.models import Sum
+from django.db.models import Value
+from django.db.models import When
 from django.db.models.functions import TruncDay
 from django.utils import timezone
+from reports.models import Expense
 from reports.models import Invoice
 from reports.models import InvoiceLine
 from reports.service.invoice_service import ServiceResponse
@@ -76,6 +80,18 @@ class DashboardService:
             daily_data = defaultdict(DashboardService._initialize_daily_data)
             previous_daily_data = defaultdict(DashboardService._initialize_daily_data)
 
+            expenses = Expense.objects.filter(
+                created_at__date__range=[previous_start, end_date]
+            )
+            DashboardService._process_expenses(
+                expenses,
+                start_date,
+                end_date,
+                previous_start,
+                daily_data,
+                previous_daily_data
+            )
+
             for invoice in invoices:
                 DashboardService._process_invoice(
                     invoice,
@@ -98,7 +114,12 @@ class DashboardService:
 
     @staticmethod
     def _initialize_daily_data():
-        return {'revenue': Decimal('0.00'), 'profit': Decimal('0.00'), 'orders': 0}
+        return {
+            'revenue': Decimal('0.00'),
+            'profit': Decimal('0.00'),
+            'orders': 0,
+            'expenses': Decimal('0.00')
+        }
 
     @staticmethod
     def _process_invoice(
@@ -125,6 +146,34 @@ class DashboardService:
         data_dict[date_key]['revenue'] += invoice.total
         data_dict[date_key]['profit'] += profit
         data_dict[date_key]['orders'] += 1
+
+        if invoice.status == 'CREDIT':
+            data_dict[date_key]['outstanding'] += invoice._remaining_amount
+
+    @staticmethod
+    def _process_expenses(
+            expenses,
+            start_date,
+            end_date,
+            previous_start,
+            daily_data,
+            previous_daily_data
+    ):
+        for expense in expenses:
+            expense_date = expense.created_at.date()
+            amount = expense.amount
+
+            if start_date <= expense_date <= end_date:
+                data_dict = daily_data
+                date_key = expense_date
+            else:
+                data_dict = previous_daily_data
+                days_from_previous_start = (expense_date - previous_start).days
+                date_key = start_date + timedelta(days=days_from_previous_start)
+                if not (start_date <= date_key <= end_date):
+                    return
+
+            data_dict[date_key]['expenses'] += amount
 
     @staticmethod
     def _calculate_invoice_profit(invoice):
@@ -155,18 +204,29 @@ class DashboardService:
             previous_data = previous_daily_data.get(
                 current_day, DashboardService._initialize_daily_data()
             )
+            net_profit = current_data['profit'] - current_data['expenses']
+            previous_net_profit = previous_data['profit'] - previous_data['expenses']
 
             results.append({
                 'date': current_day.strftime('%Y-%m-%dT00:00:00+00:00'),
                 'revenue': float(current_data['revenue']),
-                'profit': float(current_data['profit']),
+                'profit_brute': float(current_data['profit']),
+                'outstanding': float(current_data['outstanding']),
+                'expenses': float(current_data['expenses']),
+                'profit_net': float(net_profit),
                 'orders': current_data['orders'],
                 'trends': {
                     'revenue': DashboardService.calculate_trend(
                         float(current_data['revenue']), float(previous_data['revenue'])
                     ),
-                    'profit': DashboardService.calculate_trend(
+                    'gross_profit': DashboardService.calculate_trend(
                         float(current_data['profit']), float(previous_data['profit'])
+                    ),
+                    'expenses': DashboardService.calculate_trend(
+                        float(current_data['expenses']), float(previous_data['expenses'])
+                    ),
+                    'net_profit': DashboardService.calculate_trend(
+                        float(net_profit), float(previous_net_profit)
                     ),
                     'orders': DashboardService.calculate_trend(
                         float(current_data['orders']), float(previous_data['orders'])
@@ -186,7 +246,6 @@ class DashboardService:
                 start_date = today - timedelta(days=6)
                 end_date = today
 
-            # Conversion correcte avec make_aware
             start_datetime = timezone.make_aware(
                 datetime.combine(start_date, datetime.min.time()), tz
             )
@@ -200,7 +259,12 @@ class DashboardService:
                 )
                 .annotate(
                     day=TruncDay('invoice__created_at', tzinfo=tz),
-                    status=F('invoice__status')
+                    status=F('invoice__status'),
+                    outstanding=Case(
+                        When(invoice__status='CREDIT', then=F('invoice___remaining_amount')),
+                        default=Value(0, output_field=DecimalField()),
+                        output_field=DecimalField()
+                    )
                 )
                 .values('day', 'status')
                 .annotate(
@@ -209,6 +273,7 @@ class DashboardService:
                         (F('unit_price') - F('product__purchase_price')) * F('quantity'),
                         output_field=DecimalField()
                     )),
+                    outstanding_sum=Sum('outstanding'),
                     count=Count('id')
                 )
                 .order_by('day')
@@ -221,6 +286,7 @@ class DashboardService:
                 sales_map[day][status_key] = {
                     'revenue': s['revenue'] or Decimal(0),
                     'profit': s['profit'] or Decimal(0),
+                    'outstanding': s['outstanding_sum'] or Decimal(0),
                     'count': s['count']
                 }
 
@@ -258,6 +324,7 @@ class DashboardService:
                     'credit': {
                         'revenue': float(data.get('credit', {}).get('revenue', 0)),
                         'profit': float(data.get('credit', {}).get('profit', 0)),
+                        'outstanding': float(data.get('credit', {}).get('outstanding', 0)),
                         'count': data.get('credit', {}).get('count', 0)
                     }
                 })

@@ -5,12 +5,14 @@ import logging
 from datetime import datetime
 from datetime import time
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import F
 from django.db.models import Sum
 from django.template.loader import render_to_string
 from django.utils import timezone
+from reports.models import Expense
 from reports.models import InventoryReport
 from reports.models import Invoice
 from reports.models import InvoiceLine
@@ -255,21 +257,49 @@ class GenerateReportService:
                 ).order_by('-total_quantity')
             )
 
+            total_expenses = Expense.objects.filter(
+                created_at__date__range=(start_date, end_date)
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+            total_purchase = InvoiceLine.objects.filter(
+                invoice__in=invoice_ids
+            ).aggregate(
+                total_purchase=Sum(F('product__purchase_price') * F('quantity'))
+            )['total_purchase'] or Decimal('0.00')
+
+            total_revenue = completed_revenue + total_credit_revenue
+            gross_profit = (profit + credit_profit)
+            net_profit_before_expenses = gross_profit - discount
+            net_profit = net_profit_before_expenses - total_expenses
+
+            expense_details = [
+                {
+                    'type': e.expense_type,
+                    'amount': float(e.amount),
+                    'reason': e.reason,
+                    'date': e.created_at.isoformat()
+                }
+                for e in Expense.objects.filter(
+                    created_at__date__range=(start_date, end_date)
+                )
+                ]
+
             return ServiceResponse(success=True, data={
                 'total_completed_sales': completed_invoices.count(),
                 'total_completed_revenue': completed_revenue,
                 'total_credit_sales': credit_invoices.count(),
                 'total_credit_revenue': total_credit_revenue,
-                'total_advance_paid': total_advance_paid,
-                'total_general': completed_revenue + total_credit_revenue,
-                'credit_profit': credit_profit,
-                'marge_brute': profit,
-                'marge_nette': profit - discount,
-                'total_profit_brute': credit_profit + profit,
-                'total_profit_nette': credit_profit + profit - discount,
-                'money_outstanding': total_remaining_amount,
+                'total_revenue': total_revenue,
+                'total_purchase': total_purchase,
                 'total_discount': discount,
-                'products_sold': sold_products
+                'total_expenses': total_expenses,
+                'total_profit_brute': gross_profit,
+                'profit_expenses_discount': net_profit_before_expenses,
+                'total_profit_net': net_profit,
+                'total_advance_paid': total_advance_paid,
+                'money_outstanding': total_remaining_amount,
+                'products_sold': sold_products,
+                'expense_details': expense_details
             })
 
         except Exception as e:
