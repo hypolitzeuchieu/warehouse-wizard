@@ -242,3 +242,8 @@ class ProductUpdateSerializer(serializers.Serializer):
 
 class PaginationQuerySerializer(serializers.Serializer):
     page_size = serializers.IntegerField(required=False, min_value=1, default=10)
+
+
+class UpdateQuantitySerializer(serializers.Serializer):
+    product_id = serializers.UUIDField(required=True)
+    quantity = serializers.IntegerField(min_value=1, required=True)

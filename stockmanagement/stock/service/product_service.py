@@ -12,6 +12,7 @@ from reports.service.invoice_service import ReportService
 from stock.models import Category
 from stock.models import Product
 from stock.models import Stock
+from stock.models import StockMovement
 from stock.models import SubCategory
 from stock.service.entities import StockServiceResponse
 from utils.s3_storage import upload_file_to_s3
@@ -244,4 +245,90 @@ class ProductService:
             return StockServiceResponse(
                 False,
                 error=f"An unexpected error occurred: {str(e)}"
+            )
+
+    @staticmethod
+    def add_product_quantity(
+            product_id: str, quantity: int, updated_by
+    ) -> StockServiceResponse:
+        """
+        Add quantity to an existing product.
+        """
+        try:
+            product = Product.objects.get(id=product_id)
+            product.quantity += quantity
+            product.updated_by = updated_by
+            product.save()
+
+            StockMovement.objects.create(
+                movement_type='ENTRY',
+                quantity=quantity,
+                product=product,
+                user=updated_by,
+                category=product.category,
+                subcategory=product.subcategory,
+                reason='Manual quantity addition'
+            )
+
+            return StockServiceResponse(True, data=product)
+        except Product.DoesNotExist:
+            return StockServiceResponse(
+                False, error=f"Product with ID {product_id} not found."
+            )
+        except Exception as e:
+            return StockServiceResponse(
+                False, error=f"An unexpected error occurred: {str(e)}"
+            )
+
+    @staticmethod
+    def reduce_product_quantity(
+            product_id: str, quantity: int, updated_by
+    ) -> StockServiceResponse:
+        """
+        Reduce quantity from an existing product with stock validation.
+        """
+        try:
+            product = Product.objects.get(id=product_id)
+
+            if product.quantity < quantity:
+                return StockServiceResponse(
+                    False,
+                    error=f"Insufficient stock. Available: {product.quantity},"
+                          f" Requested: {quantity}"
+                )
+
+            product.quantity -= quantity
+            product.updated_by = updated_by
+            product.save()
+
+            StockMovement.objects.create(
+                movement_type='EXIT',
+                quantity=quantity,
+                product=product,
+                user=updated_by,
+                category=product.category,
+                subcategory=product.subcategory,
+                reason='Manual quantity reduction'
+            )
+
+            if product.quantity < product.min_quantity:
+                message = (
+                    f"Low stock alert for {product.name}. "
+                    f"Current quantity: {product.quantity}, "
+                    f"Minimum: {product.min_quantity}"
+                )
+                notif_service.create_notification(
+                    product=product,
+                    notification_type='LOW_STOCK',
+                    message=message,
+                )
+
+            return StockServiceResponse(True, data=product)
+        except Product.DoesNotExist:
+            return StockServiceResponse(
+                False, error=f"Product with ID {product_id} not found."
+            )
+        except Exception as e:
+            return StockServiceResponse(
+                False, error=f"An unexpected error occurred: {str(e)}"
             )

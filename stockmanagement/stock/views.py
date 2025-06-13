@@ -23,6 +23,7 @@ from stock.serializers import QuantitySerializer
 from stock.serializers import StockMovementSerializer
 from stock.serializers import StockSerializer
 from stock.serializers import SubCategorySerializer
+from stock.serializers import UpdateQuantitySerializer
 from stock.service.product_service import ProductService
 from stock.service.stock_service import StockService
 
@@ -767,3 +768,85 @@ class ProductViewSet(viewsets.ViewSet):
             return Response(
                 {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @swagger_auto_schema(
+        operation_description='Add quantity to a product',
+        request_body=UpdateQuantitySerializer,
+        responses={
+            200: ProductSerializer,
+            400: 'Bad Request',
+            404: 'Product not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['POST'], detail=False, url_path='add-quantity')
+    def add_product_quantity(self, request):
+        """
+        Add quantity to an existing product.
+        """
+        serializer = UpdateQuantitySerializer(data=request.data)
+        if serializer.is_valid():
+            product_id = serializer.validated_data.get('product_id')
+            quantity = serializer.validated_data.get('quantity')
+            updated_by = request.user
+            try:
+                response = self.product_service.add_product_quantity(
+                    product_id, quantity, updated_by
+                )
+                if response.success:
+                    return Response(
+                        ProductSerializer(response.data).data,
+                        status=status.HTTP_200_OK
+                    )
+                return Response(
+                    {'error': response.error},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            except Exception as e:
+                logger.error(f"Error adding product quantity: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description='Reduce quantity from a product',
+        request_body=UpdateQuantitySerializer,
+        responses={
+            200: ProductSerializer,
+            400: 'Bad Request',
+            404: 'Product not found',
+            500: 'Internal Server Error',
+        },
+    )
+    @action(methods=['POST'], detail=False, url_path='reduce-quantity')
+    def reduce_product_quantity(self, request):
+        """
+        Reduce quantity from an existing product.
+        """
+        serializer = UpdateQuantitySerializer(data=request.data)
+        if serializer.is_valid():
+            product_id = serializer.validated_data.get('product_id')
+            quantity = serializer.validated_data.get('quantity')
+            updated_by = request.user
+            try:
+                response = self.product_service.reduce_product_quantity(
+                    product_id, quantity, updated_by
+                )
+                if response.success:
+                    return Response(
+                        ProductSerializer(response.data).data,
+                        status=status.HTTP_200_OK
+                    )
+                return Response(
+                    {'error': response.error},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            except Exception as e:
+                logger.error(f"Error reducing product quantity: {str(e)}")
+                return Response(
+                    {'error': str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
