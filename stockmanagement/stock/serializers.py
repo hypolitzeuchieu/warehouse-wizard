@@ -109,6 +109,24 @@ class ProductSerializer(serializers.ModelSerializer):
         purchase_price = attrs.get('purchase_price')
         on_promotion = attrs.get('on_promotion', False)
         promo_price = attrs.get('promo_price')
+        quantity = attrs.get('quantity', 0)
+        min_quantity = attrs.get('min_quantity', 0)
+
+        if quantity < 0:
+            raise serializers.ValidationError(
+                {'quantity': 'Quantity cannot be negative.'}
+            )
+
+        if min_quantity < 0:
+            raise serializers.ValidationError(
+                {'min_quantity': 'Minimum quantity cannot be negative.'}
+            )
+
+        if 'min_quantity' in attrs and 'quantity' not in attrs:
+            if min_quantity > attrs['min_quantity']:
+                raise serializers.ValidationError(
+                    {'quantity': 'Current quantity cannot be less than minimum quantity.'}
+                )
 
         if unit_price is not None and purchase_price is not None:
             if unit_price < purchase_price and not on_promotion:
@@ -242,3 +260,8 @@ class ProductUpdateSerializer(serializers.Serializer):
 
 class PaginationQuerySerializer(serializers.Serializer):
     page_size = serializers.IntegerField(required=False, min_value=1, default=10)
+
+
+class UpdateQuantitySerializer(serializers.Serializer):
+    product_id = serializers.UUIDField(required=True)
+    quantity = serializers.IntegerField(min_value=1, required=True)
