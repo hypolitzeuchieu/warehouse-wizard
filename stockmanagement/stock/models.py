@@ -12,6 +12,12 @@ class Category(models.Model):
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, related_name='created_categories', null=True
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, related_name='updated_categories', null=True
+    )
 
     def __str__(self):
         return self.name
@@ -26,6 +32,12 @@ class SubCategory(models.Model):
 
     category = models.ForeignKey(
         Category, on_delete=models.CASCADE, related_name='subcategories'
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, related_name='created_subcategories', null=True
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, related_name='updated_subcategories', null=True
     )
 
     def __str__(self):
@@ -62,6 +74,12 @@ class Product(models.Model):
         null=True,
         blank=True,
         related_name='products',
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, related_name='created_products', null=True
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, related_name='updated_products', null=True
     )
 
     class Meta:
