@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 
+from authentication.permissions import IsManagerPermission
+from authentication.permissions import IsStorekeeper
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import permissions
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -40,7 +41,7 @@ class StockViewSet(viewsets.ViewSet):
     """
     A ViewSet for managing inventory operations with logging and robust error handling.
     """
-    parser_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStorekeeper | IsManagerPermission]
     service = StockService()
 
     # --- Stocks ---
@@ -160,7 +161,7 @@ class CategoryViewSet(viewsets.ViewSet):
     """
     # --- Catégories ---
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStorekeeper | IsManagerPermission]
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',
@@ -550,7 +551,7 @@ class ProductViewSet(viewsets.ViewSet):
     """
 
     product_service = ProductService
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStorekeeper | IsManagerPermission]
 
     @swagger_auto_schema(
         operation_description='Create a new product while managing stock.',
