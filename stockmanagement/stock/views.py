@@ -42,7 +42,7 @@ class StockViewSet(viewsets.ViewSet):
     """
     A ViewSet for managing inventory operations with logging and robust error handling.
     """
-    permission_classes = [IsStorekeeper | IsManagerPermission | IsCashier]
+    permission_classes = [IsStorekeeper | IsManagerPermission]
     service = StockService()
 
     # --- Stocks ---
@@ -162,7 +162,7 @@ class CategoryViewSet(viewsets.ViewSet):
     """
     # --- Catégories ---
 
-    permission_classes = [IsStorekeeper | IsManagerPermission | IsCashier]
+    permission_classes = [IsStorekeeper | IsManagerPermission]
 
     @swagger_auto_schema(
         operation_description='Retrieve all category.',
@@ -552,7 +552,7 @@ class ProductViewSet(viewsets.ViewSet):
     """
 
     product_service = ProductService
-    permission_classes = [IsStorekeeper | IsManagerPermission]
+    permission_classes = [IsStorekeeper | IsManagerPermission | IsCashier]
 
     @swagger_auto_schema(
         operation_description='Create a new product while managing stock.',
