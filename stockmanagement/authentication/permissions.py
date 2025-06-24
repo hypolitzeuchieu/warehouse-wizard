@@ -30,3 +30,8 @@ class IsCashier(BasePermission):
 class IsStorekeeper(BasePermission):
     def has_permission(self, request, view):
         return has_role(request.user, 'storekeeper')
+
+
+class IsCashierOrManager(BasePermission):
+    def has_permission(self, request, view):
+        return has_role(request.user, 'cashier', 'manager')
