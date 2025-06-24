@@ -86,7 +86,6 @@ class GenerateReportService:
             report_data['created_at'] = timezone.now().isoformat()
             report_data['start_date'] = start_date.isoformat()
             report_data['end_date'] = end_date.isoformat()
-            print('report data', report_data)
 
             with transaction.atomic():
                 current_time = timezone.now()
@@ -148,6 +147,7 @@ class GenerateReportService:
                 success=True, data={'report_id': report.id, 'report_data': report_data}
             )
         except Exception as e:
+            logger.error(f'Error generating report: {e}')
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod

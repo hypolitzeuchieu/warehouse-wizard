@@ -118,7 +118,8 @@ class DashboardService:
             'revenue': Decimal('0.00'),
             'profit': Decimal('0.00'),
             'orders': 0,
-            'expenses': Decimal('0.00')
+            'expenses': Decimal('0.00'),
+            'outstanding': Decimal('0.00')
         }
 
     @staticmethod
@@ -146,6 +147,8 @@ class DashboardService:
         data_dict[date_key]['revenue'] += invoice.total
         data_dict[date_key]['profit'] += profit
         data_dict[date_key]['orders'] += 1
+        if 'outstanding' not in data_dict[date_key]:
+            data_dict[date_key]['outstanding'] = Decimal('0.00')
 
         if invoice.status == 'CREDIT':
             data_dict[date_key]['outstanding'] += invoice._remaining_amount
