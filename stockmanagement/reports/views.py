@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 
 from authentication.permissions import IsCashier
+from authentication.permissions import IsCashierOrManager
 from authentication.permissions import IsManagerPermission
+from authentication.permissions import IsStorekeeper
 from django.http import FileResponse
 from django.http import HttpResponse
 from drf_yasg.utils import swagger_auto_schema
@@ -31,7 +33,6 @@ from reports.service.invoice_service import ReportService
 from rest_framework import status
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from stock.views import CustomPagination
 
@@ -45,7 +46,7 @@ class InvoiceViewSet(viewsets.ViewSet):
     ViewSet for handling reports, invoices, and related operations.
     """
 
-    permission_classes = [IsAuthenticated, IsCashier]
+    permission_classes = [IsCashier | IsManagerPermission]
 
     # --- Invoice Endpoints ---
     @swagger_auto_schema(
@@ -269,7 +270,12 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
     """
         ViewSet for handling reports, invoices, and related operations.
     """
-    permission_classes = [IsAuthenticated, IsManagerPermission]
+    def get_permissions(self):
+        if self.action == 'archive_invoice':
+            return [IsCashierOrManager()]
+        elif self.action in ['get_archives_invoices', 'get_archive_invoice_by_id']:
+            return [IsManagerPermission()]
+        return [IsManagerPermission()]
 
     @swagger_auto_schema(
         request_body=InvoiceQuerySerializer,
@@ -387,7 +393,7 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
 
 class GeneralReportViewSet(viewsets.ViewSet):
 
-    permission_classes = [IsAuthenticated, IsCashier]
+    permission_classes = [IsManagerPermission | IsCashier | IsStorekeeper]
 
     @swagger_auto_schema(
         query_serializer=ReportQuerySerializer,
@@ -601,7 +607,7 @@ class GeneralReportViewSet(viewsets.ViewSet):
 
 
 class ExpenseViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated, (IsCashier | IsManagerPermission)]
+    permission_classes = [IsStorekeeper | IsCashier | IsManagerPermission]
 
     @swagger_auto_schema(
         request_body=CreateExpenseSerializer,
