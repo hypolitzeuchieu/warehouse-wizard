@@ -6,7 +6,7 @@ from rest_framework.permissions import BasePermission
 ROLE_HIERARCHY = {
     'manager': ['manager', 'cashier', 'storekeeper'],
     'cashier': ['cashier'],
-    'storekeeper': ['storekeeper'],
+    'stock_keeper': ['stock_keeper'],
 }
 
 
@@ -29,7 +29,7 @@ class IsCashier(BasePermission):
 
 class IsStorekeeper(BasePermission):
     def has_permission(self, request, view):
-        return has_role(request.user, 'storekeeper')
+        return has_role(request.user, 'stock_keeper')
 
 
 class IsCashierOrManager(BasePermission):
