@@ -136,7 +136,7 @@ CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
 CSRF_COOKIE_SECURE = False  # True in production with HTTPS
 
 # If using CORS headers
-CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken', 'X-Refresh-Token']
 CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'stockmanagement.urls'
