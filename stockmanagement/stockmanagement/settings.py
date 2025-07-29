@@ -30,12 +30,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'authentication',
-    'stock',
+    'apps.authentication',
+    'apps.stock',
     'whitenoise.runserver_nostatic',
-    'reports',
-    'notifications',
-    'dashboard',
+    'apps.reports',
+    'apps.notifications',
+    'apps.dashboard',
 
     'rest_framework',
     'corsheaders',
@@ -128,14 +128,14 @@ MIDDLEWARE = [
 # CORS settings
 CORS_ALLOWED_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [os.getenv('FRONTEND_URL'),]
-CORS_ORIGIN_ALLOW_ALL = True
+CORS_ORIGIN_ALLOW_ALL = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
 CSRF_COOKIE_SECURE = False  # True in production with HTTPS
 
 # If using CORS headers
-CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken', 'X-Refresh-Token']
 CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'stockmanagement.urls'
