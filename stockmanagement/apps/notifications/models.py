@@ -45,6 +45,7 @@ class Notification(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Notification'
         verbose_name_plural = 'Notifications'
+        db_table = 'notifications'
 
     def __str__(self):
         return f"{self.notification_type} for {self.product.name}"

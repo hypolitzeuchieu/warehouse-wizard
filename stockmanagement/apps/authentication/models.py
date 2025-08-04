@@ -19,6 +19,11 @@ class Client(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        verbose_name = 'Client'
+        verbose_name_plural = 'Clients'
+        db_table = 'clients'
+
 
 class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -70,3 +75,9 @@ class User(AbstractUser):
 
     def is_wholesale_client(self):
         return self.role == 'wholesale_client'
+
+    class Meta:
+        verbose_name = 'User'
+        verbose_name_plural = 'Users'
+        db_table = 'users'
+        ordering = ['username']

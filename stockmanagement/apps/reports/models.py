@@ -44,6 +44,7 @@ class Invoice(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Invoice'
         verbose_name_plural = 'Invoices'
+        db_table = 'invoices'
 
     def __str__(self):
         return f"Invoice {self.number} - {self.status}"
@@ -83,6 +84,7 @@ class InvoiceLine(models.Model):
     class Meta:
         verbose_name = 'Invoice Line'
         verbose_name_plural = 'Invoice Lines'
+        db_table = 'invoice_lines'
 
     def __str__(self):
         return f"{self.product.name} (x{self.quantity})"
@@ -113,6 +115,7 @@ class Report(models.Model):
     class Meta:
         verbose_name = 'Report'
         verbose_name_plural = 'Reports'
+        db_table = 'reports'
 
     def __str__(self):
         return f"{self.type.capitalize()} Report - {self.generated_at.date()}"
@@ -146,6 +149,7 @@ class InventoryReport(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Inventory Report'
         verbose_name_plural = 'Inventory Reports'
+        db_table = 'inventory_reports'
 
     def __str__(self):
         return f"Inventory Report - {self.start_date.date()} to {self.end_date.date()}"
@@ -179,6 +183,7 @@ class SalesReport(models.Model):
         ordering = ['-date']
         verbose_name = 'Sales Report'
         verbose_name_plural = 'Sales Reports'
+        db_table = 'sales_reports'
 
     def __str__(self):
         return f"Sales Report - {self.date}"
@@ -219,6 +224,7 @@ class InvoiceArchive(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Archived Invoice'
         verbose_name_plural = 'Archived Invoices'
+        db_table = 'archived_invoices'
 
     def __str__(self):
         return f"Invoice {self.number} - {self.status}"
@@ -250,6 +256,7 @@ class InvoiceArchiveLine(models.Model):
     class Meta:
         verbose_name = 'Archived Invoice Line'
         verbose_name_plural = 'Archived Invoice Lines'
+        db_table = 'archived_invoice_lines'
 
     def __str__(self):
         return f"{self.product.name} (x{self.quantity})"
@@ -291,6 +298,7 @@ class Expense(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Expense'
         verbose_name_plural = 'Expenses'
+        db_table = 'expenses'
 
     def __str__(self):
         return f"{self.expense_type} - {self.amount}"
@@ -309,6 +317,7 @@ class Treasure(models.Model):
     class Meta:
         verbose_name = 'Treasure'
         verbose_name_plural = 'Treasures'
+        db_table = 'treasure'
 
     def __str__(self):
         return f"Treasure - Balance: {self.balance} (Fcfa)"

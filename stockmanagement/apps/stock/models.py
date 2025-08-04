@@ -22,6 +22,12 @@ class Category(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Category'
+        verbose_name_plural = 'Categories'
+        db_table = 'categories'
+
 
 class SubCategory(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -42,6 +48,12 @@ class SubCategory(models.Model):
 
     def __str__(self):
         return f"{self.category.name} - {self.name}"
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'SubCategory'
+        verbose_name_plural = 'SubCategories'
+        db_table = 'subcategories'
 
 
 class Product(models.Model):
@@ -85,7 +97,10 @@ class Product(models.Model):
     )
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['name']
+        verbose_name = 'Product'
+        verbose_name_plural = 'Products'
+        db_table = 'products'
 
     def __str__(self):
         return f"{self.name} ({self.category.name})"
@@ -117,6 +132,9 @@ class Stock(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Stock'
+        verbose_name_plural = 'Stocks'
+        db_table = 'stocks'
 
     def __str__(self):
         return f"{self.quantity} units in {self.category.name}"
@@ -145,6 +163,9 @@ class StockMovement(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Stock Movement'
+        verbose_name_plural = 'Stock Movements'
+        db_table = 'stock_movements'
 
     def __str__(self):
         return f"{self.movement_type} - {self.product.name} ({self.quantity})"
