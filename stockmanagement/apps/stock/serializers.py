@@ -86,6 +86,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'updated_at',
             'quantity',
             'min_quantity',
+            'barcode',
+            'barcode_image_url',
             'is_expired',
             'expiry_date',
             'on_promotion',
@@ -102,6 +104,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'updated_at',
             'created_by',
             'updated_by',
+            'barcode',
+            'barcode_image_url',
         ]
 
     def validate(self, attrs):

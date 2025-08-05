@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date
 from datetime import timedelta
 
@@ -15,6 +16,7 @@ from apps.stock.service.entities import StockServiceResponse
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
+from utils.barcode_generator import BarcodeService
 from utils.s3_storage import upload_file_to_s3
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,12 @@ class ProductService:
                 )
             image_url = upload_file_to_s3(image) if image else None
 
+            barcode_value = BarcodeService.generate_ean13_barcode()
+            barcode_image_url = BarcodeService.create_and_upload_barcode_image(
+                barcode_value,
+                filename=f"{name}_{uuid.uuid4().hex[:8]}"
+            )
+
             with (transaction.atomic()):
                 product, created = Product.objects.get_or_create(
                     name=name,
@@ -76,6 +84,8 @@ class ProductService:
                         'expiry_date': expired_date,
                         'quantity': 0,
                         'image': image_url,
+                        'barcode': barcode_value,
+                        'barcode_image_url': barcode_image_url,
                         'purchase_price': purchase_price,
                         'min_quantity': min_quantity,
                         'on_promotion': on_promotion,
@@ -86,9 +96,15 @@ class ProductService:
                         'created_by': created_by,
                     },
                 )
-                if not created and image_url:
-                    product.image = image_url
-                    product.save(update_fields=['image'])
+                if not created:
+                    if image_url:
+                        product.image = image_url
+                        product.save(update_fields=['image'])
+                    elif not product.barcode:
+                        product.barcode = barcode_value
+                        product.barcode_image_url = barcode_image_url
+                        product.save(update_fields=['barcode', 'barcode_image_url'])
+
                 logger.info(f"Product image found: {product.image}")
                 logger.info(f"Product successfully created: {product.name}"
                             f" with ID: {product.id}") if created else None
@@ -112,7 +128,11 @@ class ProductService:
     @staticmethod
     def update_product(product_id, data, updated_by) -> StockServiceResponse:
         try:
-            product = Product.objects.get(id=product_id)
+            if 'barcode' in data:
+                product = Product.objects.get(barcode=data.pop('barcode'))
+            else:
+                product = Product.objects.get(id=product_id)
+
             image = data.get('image', None)
             if image:
                 image_url = upload_file_to_s3(image)
