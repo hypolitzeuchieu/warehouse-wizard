@@ -77,11 +77,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
 
 class InvoiceLineInputSerializer(serializers.Serializer):
-    product_id = serializers.CharField()
+    product_id = serializers.CharField(required=False)
+    barcode = serializers.CharField(required=False)
     quantity = serializers.IntegerField(min_value=1)
     discount = serializers.DecimalField(
         max_digits=10, decimal_places=3, default=0.00
     )
+
+    def validate(self, attrs):
+        if not attrs.get('product_id') and not attrs.get('barcode'):
+            raise serializers.ValidationError(
+                'At least product_id or barcode must be provided')
+        return attrs
 
 
 class CreateInvoiceSerializer(serializers.Serializer):

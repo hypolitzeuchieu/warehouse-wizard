@@ -165,14 +165,18 @@ class ReportService:
         sold_products = []
 
         for line_data in lines_data:
-            product_id = line_data['product_id']
             quantity = line_data['quantity']
 
+            if 'barcode' in line_data:
+                identifier = line_data['barcode']
+            else:
+                identifier = line_data['product_id']
+
             try:
-                product = Product.objects.get(id=product_id)
+                product = Product.objects.get(id=identifier)
             except Product.DoesNotExist:
                 return ServiceResponse(
-                    success=False, error=f"Product with ID {product_id} does not exist."
+                    success=False, error=f"Product with ID {identifier} does not exist."
                 )
 
             stock_validation = self.validate_stock(product, quantity)
