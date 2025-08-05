@@ -344,27 +344,7 @@ class ReportService:
                     if not status_response.success:
                         transaction.set_rollback(True)
                         return status_response
-                    if invoice.status == 'COMPLETED':
-                        TreasureService.update_balance(
-                            invoice.total,
-                            'sale',
-                            {'invoice_id': str(invoice.id)}
-                        )
-                    elif invoice.status == 'CREDIT':
-                        # Enregistrer la dette totale
-                        TreasureService.update_balance(
-                            invoice.total,
-                            'credit_sale',
-                            {'invoice_id': str(invoice.id)}
-                        )
-                        if invoice.advance_paid > 0:
-                            # Enregistrer l'acompte
-                            TreasureService.update_balance(
-                                invoice.advance_paid,
-                                'credit_payment',
-                                {'invoice_id': str(invoice.id)}
-                            )
-
+                    ReportService._update_treasure_for_status(invoice)
                 elif invoice.status == 'CANCELLED':
                     cancel_response = ReportService.handle_cancelled_invoice(
                         invoice, sold_products
@@ -389,6 +369,27 @@ class ReportService:
                 logger.error(f"Error processing invoice: {e}")
                 return ServiceResponse(
                     success=False, error=f"Unexpected error in processing invoice: {str(e)}"
+                )
+
+    @staticmethod
+    def _update_treasure_for_status(invoice):
+        if invoice.status == 'COMPLETED':
+            TreasureService.update_balance(
+                invoice.total,
+                'sale',
+                {'invoice_id': str(invoice.id)}
+            )
+        elif invoice.status == 'CREDIT':
+            TreasureService.update_balance(
+                invoice.total,
+                'credit_sale',
+                {'invoice_id': str(invoice.id)}
+            )
+            if invoice.advance_paid > 0:
+                TreasureService.update_balance(
+                    invoice.advance_paid,
+                    'credit_payment',
+                    {'invoice_id': str(invoice.id)}
                 )
 
     @staticmethod
@@ -534,15 +535,13 @@ class ReportService:
     def archive_and_delete_invoice(invoice_id) -> ServiceResponse:
         try:
             with transaction.atomic():
-                # Récupérer la facture
                 invoice = Invoice.objects.filter(id=invoice_id).first()
                 if not invoice:
                     logger.error(f"Invoice with ID {invoice_id} does not exist.")
                     return ServiceResponse(success=False, error='Invoice not found.')
 
-                # Créer une nouvelle instance d'InvoiceArchive avec les mêmes données
                 archived_invoice = InvoiceArchive(
-                    invoice_id=str(invoice.id),  # Convertir UUID en chaîne
+                    invoice_id=str(invoice.id),
                     number=invoice.number,
                     created_at=invoice.created_at,
                     client_name=invoice.client_name,
@@ -559,7 +558,6 @@ class ReportService:
                 )
                 archived_invoice.save()
 
-                # Archiver les lignes de facture
                 for line in invoice.lines.all():
                     InvoiceArchiveLine.objects.create(
                         invoice=archived_invoice,
@@ -570,10 +568,7 @@ class ReportService:
                         line_total=line.line_total,
                     )
 
-                # Supprimer la facture de la table principale
                 invoice.delete()
-
-                # Retourner une réponse réussie
                 return ServiceResponse(
                     success=True,
                     data={'message': f'Invoice {invoice_id} archived and deleted.'}

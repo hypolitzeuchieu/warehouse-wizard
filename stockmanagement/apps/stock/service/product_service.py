@@ -14,7 +14,7 @@ from apps.stock.models import StockMovement
 from apps.stock.models import SubCategory
 from apps.stock.service.entities import StockServiceResponse
 from django.db import transaction
-from django.db.models import F
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from utils.barcode_generator import BarcodeService
 from utils.s3_storage import upload_file_to_s3
@@ -51,12 +51,12 @@ class ProductService:
         Create a product or increment its stock if it already exists.
         """
         try:
-            category = Category.objects.get(id=category_id)
+            category = get_object_or_404(Category, id=category_id)
             subcategory = None
             if subcategory_id:
-                subcategory = SubCategory.objects.filter(
-                    id=subcategory_id
-                ).first()
+                subcategory = get_object_or_404(
+                    SubCategory, id=subcategory_id, category=category
+                )
 
             if expired_date and expired_date.date() < date.today():
                 return StockServiceResponse(
@@ -74,7 +74,7 @@ class ProductService:
             )
 
             with (transaction.atomic()):
-                product, created = Product.objects.get_or_create(
+                product, created = Product.objects.update_or_create(
                     name=name,
                     category=category,
                     subcategory=subcategory,
@@ -176,7 +176,10 @@ class ProductService:
         Get a product by its ID.
         """
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.select_related(
+                'category', 'subcategory', 'created_by', 'updated_by'
+            ).get(id=product_id)
+
             logger.info(f"Retrieved product: {product.name}")
             return StockServiceResponse(True, data=product)
         except Product.DoesNotExist:
@@ -221,10 +224,9 @@ class ProductService:
 
             expired_products = Product.objects.filter(
                 expiry_date__lt=now
-            ).select_related('category', 'subcategory')
-            expired_products.update(
-                is_expired=True, expiry_date=F('expiry_date')
-            )
+            ).select_related('category', 'subcategory', 'created_by')
+            ids = list(expired_products.values_list('id', flat=True))
+            Product.objects.filter(id__in=ids).update(is_expired=True)
             for product in expired_products:
                 message = (
                     f"The product {product.name} is expired. "
@@ -275,10 +277,10 @@ class ProductService:
         Add quantity to an existing product.
         """
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.select_for_update().get(id=product_id)
             product.quantity += quantity
             product.updated_by = updated_by
-            product.save()
+            product.save(update_fields=['quantity', 'updated_by'])
 
             StockMovement.objects.create(
                 movement_type='ENTRY',
@@ -308,7 +310,7 @@ class ProductService:
         Reduce quantity from an existing product with stock validation.
         """
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.select_for_update().get(id=product_id)
 
             if product.quantity < quantity:
                 return StockServiceResponse(
@@ -319,7 +321,7 @@ class ProductService:
 
             product.quantity -= quantity
             product.updated_by = updated_by
-            product.save()
+            product.save(update_fields=['quantity', 'updated_by'])
 
             StockMovement.objects.create(
                 movement_type='EXIT',
