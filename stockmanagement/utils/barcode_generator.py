@@ -5,8 +5,9 @@ import logging
 import uuid
 
 import boto3
+from barcode import EAN13
+from barcode.writer import ImageWriter
 from django.conf import settings
-from reportlab.graphics.barcode import createBarcodeDrawing
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +32,12 @@ class BarcodeService:
     @staticmethod
     def create_and_upload_barcode_image(barcode_value, filename: str = None):
         try:
-            drawing = createBarcodeDrawing(
-                'EAN13',
-                value=barcode_value,
-                barHeight=20,
-                humanReadable=True
-            )
-
             buffer = io.BytesIO()
-            drawing.save(buffer, 'PNG')
+            ean = EAN13(barcode_value, writer=ImageWriter())
+            ean.write(buffer)
             buffer.seek(0)
 
-            file_name = f"barcodes/{filename}_{barcode_value}.png"
+            file_name = f"barcodes/{filename or 'code'}_{barcode_value}.png"
             s3 = boto3.client(
                 's3',
                 aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -57,7 +52,7 @@ class BarcodeService:
                 ExtraArgs={'ContentType': 'image/png'}
             )
 
-            barcode_url = f"https://{settings.AWS_BUCKET_NAME}/{file_name}"
+            barcode_url = f"https://{settings.AWS_BUCKET_NAME}.s3.amazonaws.com/{file_name}"
             logger.info(f"Barcode image uploaded successfully: {barcode_url}")
             return barcode_url
 
