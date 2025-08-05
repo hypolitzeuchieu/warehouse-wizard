@@ -48,12 +48,10 @@ class DashboardViewSet(viewsets.ViewSet):
                 if result.success:
                     response_serializer = DashboardStatsSerializer(data=result.data)
                     if response_serializer.is_valid():
-                        logger.info(
-                            'Dashboard stats fetched successfully:', response_serializer.data
-                        )
+                        logger.info('Dashboard stats fetched successfully')
                         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-                    logger.error('Invalid Data:', response_serializer.errors)
+                    logger.error(f'Invalid Data: {response_serializer.errors}')
                     return Response(
                         response_serializer.errors,
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -93,13 +91,10 @@ class DashboardViewSet(viewsets.ViewSet):
                 if result.success:
                     response_serializer = SalesDataSerializer(data=result.data)
                     if response_serializer.is_valid():
-                        logger.info(
-                            'Sales data fetched successfully:',
-                            response_serializer.data
-                        )
+                        logger.info('Sales data fetched successfully')
                         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-                    logger.error('Invalid Data:', response_serializer.errors)
+                    logger.error(f'Invalid Data: {response_serializer.errors}')
                     return Response(
                         response_serializer.errors,
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -137,13 +132,10 @@ class DashboardViewSet(viewsets.ViewSet):
                 if result.success:
                     response_serializer = ProductsDataSerializer(data=result.data)
                     if response_serializer.is_valid():
-                        logger.info(
-                            'Products data fetched successfully:',
-                            response_serializer.data
-                        )
+                        logger.info('Products data fetched successfully')
                         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-                    logger.error('Invalid Data:', response_serializer.errors)
+                    logger.error(f'Invalid Data: {response_serializer.errors}')
                     return Response(
                         response_serializer.errors,
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -179,19 +171,16 @@ class DashboardViewSet(viewsets.ViewSet):
             if result.success:
                 response_serializer = InventoryDataDashboardSerializer(data=result.data)
                 if response_serializer.is_valid():
-                    logger.info(
-                        'Inventory data fetched successfully:',
-                        response_serializer.data
-                    )
+                    logger.info('Inventory data fetched successfully')
                     return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-                logger.error('Invalid Data:', response_serializer.errors)
+                logger.error(f'Invalid Data: {response_serializer.errors}')
                 return Response(
                     response_serializer.errors,
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-            logger.error('Error in get_inventory_data:', result.error)
+            logger.error(f'Error in get_inventory_data: {result.error}')
             return Response({'error': result.error}, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
@@ -223,13 +212,10 @@ class DashboardViewSet(viewsets.ViewSet):
                         data=result.data, many=True
                     )
                     if response_serializer.is_valid():
-                        logger.info(
-                            'Recent sales data fetched successfully:',
-                            response_serializer.data
-                        )
+                        logger.info('Recent sales data fetched successfully')
                         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-                    logger.error('Invalid Data:', response_serializer.errors)
+                    logger.error(f'Invalid Data: {response_serializer.errors}')
                     return Response(
                         response_serializer.errors,
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR

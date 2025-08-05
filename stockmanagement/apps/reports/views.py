@@ -193,7 +193,7 @@ class InvoiceViewSet(viewsets.ViewSet):
                     return Response(
                         {'error': invoices.error}, status=status.HTTP_400_BAD_REQUEST
                     )
-                paginator = CustomPagination()  #
+                paginator = CustomPagination()
                 page_size = query_serializer.validated_data.get('page_size', 10)
                 paginator.page_size = page_size
 
@@ -431,7 +431,6 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 else:
                     response_data['error'] = report_result.error
 
-                # Sérialiser directement la réponse sans contexte supplémentaire
                 return Response(
                     response_data,
                     status=status.HTTP_200_OK
