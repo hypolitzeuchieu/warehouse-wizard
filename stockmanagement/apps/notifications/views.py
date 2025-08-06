@@ -85,7 +85,7 @@ class NotificationsViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error('Invalid data:', str(serializer.errors))
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Retrieve notifications for the current user.',
@@ -161,7 +161,7 @@ class NotificationsViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error('Invalid data:', str(serializer.errors))
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Mark all notifications as read for current user.',
@@ -228,7 +228,7 @@ class NotificationsViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error('Invalid data:', str(serializer.errors))
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Archive old notifications.',
@@ -261,4 +261,4 @@ class NotificationsViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error('Invalid data:', week_serializer.errors)
-        return Response(week_serializer.errors, status.HTTP_400_BAD_REQUEST)
+        return Response({'error': week_serializer.errors}, status.HTTP_400_BAD_REQUEST)

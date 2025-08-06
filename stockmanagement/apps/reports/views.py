@@ -80,12 +80,12 @@ class InvoiceViewSet(viewsets.ViewSet):
             except Exception as e:
                 logger.error(f"Error in create_invoice: {str(e)}")
                 return Response(
-                    {f'An internal error occurred:{str(e)}'},
+                    {f'error: {str(e)}'},
                     status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=InvoiceQuerySerializer,
@@ -127,7 +127,7 @@ class InvoiceViewSet(viewsets.ViewSet):
                 )
 
         logger.error(f'invalid data: {serializer.errors}')
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         request_body=PayDebtSerializer,
@@ -161,11 +161,11 @@ class InvoiceViewSet(viewsets.ViewSet):
             except Exception as e:
                 logger.error(f"Error in pay_debt: {str(e)}")
                 return Response(
-                    {f'An internal error occurred:{str(e)}'},
+                    {f'error: {str(e)}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=InventoryQuerySerializer,
@@ -207,7 +207,7 @@ class InvoiceViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error(f"Invalid data provided: {query_serializer.errors}")
-        return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': query_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         request_body=UpdateInvoiceSerializer,
@@ -258,12 +258,11 @@ class InvoiceViewSet(viewsets.ViewSet):
             except Exception as e:
                 logger.error(f"Unexpected error occurred during invoice update: {str(e)}")
                 return Response(
-                    {'error': f'Unexpected error occurred during invoice update: {str(e)}'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {'error': {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ArchiveInvoiceVieSet(viewsets.ViewSet):
@@ -308,11 +307,10 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
             except Exception as e:
                 logger.error(f"Error in archive_invoice: {str(e)}")
                 return Response(
-                    {f'An internal error occurred:{str(e)}'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {f'error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=InventoryQuerySerializer,
@@ -328,11 +326,11 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
         """
         Retrieve Archive invoice
         """
-        query_serializer = InventoryQuerySerializer(data=request.query_params)
-        if query_serializer.is_valid():
+        serializer = InventoryQuerySerializer(data=request.query_params)
+        if serializer.is_valid():
             try:
-                start_date = query_serializer.validated_data.get('start_date')
-                end_date = query_serializer.validated_data.get('end_date')
+                start_date = serializer.validated_data.get('start_date')
+                end_date = serializer.validated_data.get('end_date')
                 invoices = service.get_archives_invoices(start_date, end_date)
                 if not invoices.success:
                     return Response(
@@ -341,7 +339,7 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
                     )
 
                 paginator = CustomPagination()  #
-                page_size = query_serializer.validated_data.get('page_size', 10)
+                page_size = serializer.validated_data.get('page_size', 10)
                 paginator.page_size = page_size
 
                 result_page = paginator.paginate_queryset(invoices.data, request)
@@ -352,11 +350,10 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
             except Exception as e:
                 logger.error(f"Error in archive_invoice: {str(e)}")
                 return Response(
-                    {f'An internal error occurred:{str(e)}'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {f'error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        logger.error(f"Invalid data provided: {query_serializer.errors}")
-        return Response(query_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Invalid data provided: {serializer.errors}")
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=InvoiceQuerySerializer,
@@ -384,11 +381,11 @@ class ArchiveInvoiceVieSet(viewsets.ViewSet):
             except Exception as e:
                 logger.error(f"Error in archive_invoice: {str(e)}")
                 return Response(
-                    {f'An internal error occurred:{str(e)}'},
+                    {f'error: {str(e)}'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class GeneralReportViewSet(viewsets.ViewSet):
@@ -474,7 +471,7 @@ class GeneralReportViewSet(viewsets.ViewSet):
         except Exception as e:
             logger.error(f"Error retrieving reports: {str(e)}")
             return Response(
-                {'success': False, 'error': 'Failed to retrieve reports.'},
+                {'success': False, 'error': {str(e)}},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -561,7 +558,7 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 )
 
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Delete a report by ID',
@@ -602,7 +599,7 @@ class GeneralReportViewSet(viewsets.ViewSet):
                 )
 
         logger.error(f"Invalid data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ExpenseViewSet(viewsets.ViewSet):
@@ -650,7 +647,7 @@ class ExpenseViewSet(viewsets.ViewSet):
                     {'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Retrieve all expenses',

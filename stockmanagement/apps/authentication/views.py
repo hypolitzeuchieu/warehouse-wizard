@@ -51,18 +51,18 @@ class UserCreateView(APIView):
 
                 user_data = UserSerializer(user).data
 
-                return Response({
-                    'message': 'User created successfully',
-                    'user': user_data,
-                    'access': access_token,
-                    'refresh': refresh_token,
-                }, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {
+                        'message': 'User created successfully',
+                        'user': user_data,
+                        'access': access_token,
+                        'refresh': refresh_token,
+                    },
+                    status=status.HTTP_201_CREATED
+                )
+            return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response(
-                {'error': 'Unexpected error occurred.', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LoginView(APIView):
@@ -102,10 +102,7 @@ class LoginView(APIView):
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
         except Exception as e:
-            return Response(
-                {'error': 'An error occurred during login', 'details': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LogoutView(APIView):
@@ -120,7 +117,9 @@ class LogoutView(APIView):
         print('raw:', raw)
         if not raw or not isinstance(raw, str):
             logger.error('No refresh token found in request headers')
-            return Response({'detail': 'Refresh token is required'}, status=400)
+            return Response(
+                {'error': 'Refresh token is required'}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             refresh_token = RefreshToken(raw)
@@ -132,10 +131,7 @@ class LogoutView(APIView):
             )
         except Exception as e:
             logger.error(f"Logout failed: {str(e)}")
-            return Response(
-                {'error': f'Invalid token: {str(e)}'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            return Response({'error': {str(e)}}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class RefreshTokenView(APIView):
@@ -158,7 +154,9 @@ class RefreshTokenView(APIView):
         print('raw:', raw)
         if not raw or not isinstance(raw, str):
             logger.error('No refresh token found in request headers')
-            return Response({'detail': 'Refresh token is required'}, status=400)
+            return Response(
+                {'error': 'Refresh token is required'}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             old_refresh = RefreshToken(raw)
@@ -185,7 +183,7 @@ class RefreshTokenView(APIView):
             )
         except User.DoesNotExist:
             return Response(
-                {'detail': 'User not found for this token'},
+                {'error': 'User not found for this token'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -268,7 +266,7 @@ class UserManagementViewSet(viewsets.ViewSet):
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             return Response(
-                {'Unexpected error': {str(e)}}, status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': {str(e)}}, status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @swagger_auto_schema(
@@ -298,10 +296,7 @@ class UserManagementViewSet(viewsets.ViewSet):
                 {'error': 'Invalid Data'}, status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
-            return Response(
-                {'error': f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserUpdateView(APIView):
@@ -321,10 +316,10 @@ class UserUpdateView(APIView):
         if serializer.is_valid():
             serializer.save()
             return Response(
-                {'detail': 'User updated successfully.'}, status=status.HTTP_200_OK
+                {'message': 'User updated successfully.'}, status=status.HTTP_200_OK
             )
         else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UserInfoView(APIView):
@@ -343,10 +338,7 @@ class UserInfoView(APIView):
             return Response(user_serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f'Error in get user info:{str(e)}')
-            return Response(
-                {'error': f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class PasswordResetRequestView(APIView):
@@ -367,7 +359,7 @@ class PasswordResetRequestView(APIView):
                 status=status.HTTP_200_OK
             )
         logger.error(f'Error in password reset link:{serializer.errors}')
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PasswordResetConfirmView(APIView):
@@ -388,4 +380,4 @@ class PasswordResetConfirmView(APIView):
                 status=status.HTTP_200_OK
             )
         logger.error(f'Error in password reset confirmation: {serializer.errors}')
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
