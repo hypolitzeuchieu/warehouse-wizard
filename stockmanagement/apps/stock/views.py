@@ -73,7 +73,7 @@ class StockViewSet(viewsets.ViewSet):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         logger.error(f"Invalid param provided:{str(serializer.errors)}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     # --- Mouvements de stock ---
 
@@ -121,7 +121,7 @@ class StockViewSet(viewsets.ViewSet):
         logger.error(
             f"Invalid process movement data provided:{str(serializer.errors)}"
         )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Retrieve all movements stock.',
@@ -231,7 +231,7 @@ class CategoryViewSet(viewsets.ViewSet):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         logger.error(f"Invalid category data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Update category.',
@@ -263,7 +263,7 @@ class CategoryViewSet(viewsets.ViewSet):
             category.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Delete category.',
@@ -344,7 +344,7 @@ class CategoryViewSet(viewsets.ViewSet):
             subcategory_data.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Delete subcategory.',
@@ -461,7 +461,7 @@ class CategoryViewSet(viewsets.ViewSet):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
         logger.error(f"Invalid subcategory data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=GetProductCategorySerializer,
@@ -501,7 +501,7 @@ class CategoryViewSet(viewsets.ViewSet):
         logger.error(
             f"Invalid category_id data provided:{str(serializer.errors)}"
         )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=GetProductSubCategorySerializer,
@@ -542,7 +542,7 @@ class CategoryViewSet(viewsets.ViewSet):
         logger.error(
             f"Invalid subcategory_id data provided:{str(serializer.errors)}"
         )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ProductViewSet(viewsets.ViewSet):
@@ -610,7 +610,7 @@ class ProductViewSet(viewsets.ViewSet):
                 )
 
         logger.error(f"Invalid product data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Update an existing product.',
@@ -639,7 +639,7 @@ class ProductViewSet(viewsets.ViewSet):
                 {'error': response.error}, status=status.HTTP_400_BAD_REQUEST
             )
         logger.error(f"Invalid product_id data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Delete a product by ID.',
@@ -668,7 +668,7 @@ class ProductViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error(f"Invalid product_id data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         query_serializer=ProductDetailSerializer,
@@ -703,11 +703,11 @@ class ProductViewSet(viewsets.ViewSet):
                     {'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         logger.error(f"Invalid product_id data provided: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Retrieve products with pagination.',
-        query_serializer=PaginationQuerySerializer,  # Serializer pour gérer les query params
+        query_serializer=PaginationQuerySerializer,
         responses={200: StockSerializer(many=True), 500: 'Internal Server Error'},
     )
     @action(detail=False, methods=['GET'], url_path='products')
@@ -809,7 +809,7 @@ class ProductViewSet(viewsets.ViewSet):
                     {'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description='Reduce quantity from a product',
@@ -850,4 +850,4 @@ class ProductViewSet(viewsets.ViewSet):
                     {'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
