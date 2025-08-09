@@ -36,17 +36,17 @@ def validate_image_format(file):
     return allowed_image_formats[file_type]
 
 
-def upload_file_to_s3(file):
+def upload_file_to_s3(file, filename: str = None):
     """
     Upload an image to S3 after validating its format.
 
     :param file: File object to upload
+    :param filename: Optional base name for the file, if not provided a UUID will be
     :return: Public URL of the uploaded image
     """
     if not file:
         return None
 
-    # Vérifier le format de l'image
     file_extension = validate_image_format(file)
     s3_client = boto3.client(
         's3',
@@ -56,9 +56,8 @@ def upload_file_to_s3(file):
     )
 
     try:
-        # Générer un nom unique
-        file_name = f"products-{uuid.uuid4()}{file_extension}"
-        # Upload du fichier avec permissions publiques
+        file_name = f"Products/{filename or 'image'}-{uuid.uuid4()}{file_extension}"
+
         s3_client.upload_fileobj(
             file.file,
             config('AWS_BUCKET_NAME'),
@@ -67,7 +66,7 @@ def upload_file_to_s3(file):
         )
         image_url = (f"https://{config('AWS_BUCKET_NAME')}.s3."
                      f"{config('AWS_REGION_NAME')}.amazonaws.com/{file_name}")
-        print(f"Image successfully uploaded to S3: {image_url}")
+        logger.info(f"Image successfully uploaded to S3: {image_url}")
         return image_url
 
     except NoCredentialsError:

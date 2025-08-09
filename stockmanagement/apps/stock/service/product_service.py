@@ -65,7 +65,7 @@ class ProductService:
                                      f"already expired (expiry date: {expired_date.date()})."
                      }
                 )
-            image_url = upload_file_to_s3(image) if image else None
+            image_url = upload_file_to_s3(image, filename=name) if image else None
 
             barcode_value = BarcodeService.generate_ean13_barcode()
             barcode_image_url = BarcodeService.create_and_upload_barcode_image(
@@ -135,7 +135,7 @@ class ProductService:
 
             image = data.get('image', None)
             if image:
-                image_url = upload_file_to_s3(image)
+                image_url = upload_file_to_s3(image, filename=product.name)
                 data['image'] = image_url
             for key, value in data.items():
                 setattr(product, key, value)
