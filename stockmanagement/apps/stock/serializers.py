@@ -8,6 +8,23 @@ from apps.stock.models import SubCategory
 from rest_framework import serializers
 
 
+def validate_product_id_or_barcode(attrs):
+    product_id = attrs.get('product_id')
+    barcode = attrs.get('barcode')
+
+    if not product_id and not barcode:
+        raise serializers.ValidationError(
+            'Either product_id or barcode must be provided.'
+        )
+
+    if product_id and barcode:
+        raise serializers.ValidationError(
+            'Only one of product_id or barcode should be provided.'
+        )
+
+    return attrs
+
+
 class CategorySerializer(serializers.ModelSerializer):
     created_by = serializers.StringRelatedField(read_only=True)
     updated_by = serializers.StringRelatedField(read_only=True)
@@ -27,7 +44,11 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class QuantitySerializer(serializers.Serializer):
-    product_id = serializers.CharField(required=True)
+    product_id = serializers.CharField(required=False, allow_blank=True)
+    barcode = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        validate_product_id_or_barcode(attrs)
 
 
 class GetProductCategorySerializer(serializers.Serializer):
@@ -201,7 +222,11 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
 
 class ProductDetailSerializer(serializers.Serializer):
-    product_id = serializers.CharField(required=True)
+    product_id = serializers.CharField(required=False, allow_blank=True)
+    barcode = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        validate_product_id_or_barcode(attrs)
 
 
 class ProductUpdateSerializer(serializers.Serializer):
@@ -267,5 +292,9 @@ class PaginationQuerySerializer(serializers.Serializer):
 
 
 class UpdateQuantitySerializer(serializers.Serializer):
-    product_id = serializers.UUIDField(required=True)
+    product_id = serializers.UUIDField(required=False, allow_blank=True)
+    barcode = serializers.CharField(required=False, allow_blank=True)
     quantity = serializers.IntegerField(min_value=1, required=True)
+
+    def validate(self, attrs):
+        validate_product_id_or_barcode(attrs)
