@@ -233,7 +233,8 @@ class ProductUpdateSerializer(serializers.Serializer):
     """
     Serializer for updating an existing product.
     """
-    product_id = serializers.CharField()
+    product_id = serializers.CharField(required=False, allow_blank=True)
+    barcode = serializers.CharField(required=False, allow_blank=True)
     name = serializers.CharField(max_length=255, required=False)
     description = serializers.CharField(allow_blank=True, required=False)
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
@@ -259,8 +260,16 @@ class ProductUpdateSerializer(serializers.Serializer):
         promotion_start_date = attrs.get('promotion_start_date')
         promotion_end_date = attrs.get('promotion_end_date')
 
-        # Promo price validation
-        if on_promotion:
+        if not attrs.get('product_id') and not attrs.get('barcode'):
+            raise serializers.ValidationError(
+                'Either product_id or barcode must be provided.'
+            )
+        elif attrs.get('product_id') and attrs.get('barcode'):
+            raise serializers.ValidationError(
+                'Only one of product_id or barcode should be provided.'
+            )
+
+        elif on_promotion:
             if promo_price is None:
                 raise serializers.ValidationError(
                     {'promo_price': 'Promo price is required '
@@ -271,8 +280,7 @@ class ProductUpdateSerializer(serializers.Serializer):
                     {'promo_price': 'Promo price must be less than the unit price.'}
                 )
 
-        # Promotion dates validation
-        if promotion_start_date and promotion_end_date:
+        elif promotion_start_date and promotion_end_date:
             if promotion_start_date >= promotion_end_date:
                 raise serializers.ValidationError(
                     {'promotion_end_date': 'Promotion end date must '
