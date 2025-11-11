@@ -16,13 +16,10 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', default='localhost').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', default='localhost,testserver').split(',') if os.getenv('ALLOWED_HOSTS') else ['localhost', 'testserver']
 
 
 INSTALLED_APPS = [
-    'daphne',
-    'channels',
-
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -30,19 +27,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'apps.authentication',
-    'apps.stock',
-    'whitenoise.runserver_nostatic',
-    'apps.reports',
-    'apps.notifications',
-    'apps.dashboard',
+    # New DDD structure
+    'infrastructure.persistence.models.apps.PersistenceModelsConfig',
 
     'rest_framework',
     'corsheaders',
-    'rest_framework_swagger',
     'rest_framework.authtoken',
     'drf_yasg',
-    'rest_framework_simplejwt.token_blacklist',
+    'rest_framework_simplejwt.token_blacklist'
 ]
 
 REST_FRAMEWORK = {
@@ -71,14 +63,7 @@ REST_FRAMEWORK = {
         'user': '1000/day'
     },
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.openapi.AutoSchema',
-}
-
-ASGI_APPLICATION = 'stockmanagement.asgi.application'
-
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
+    'EXCEPTION_HANDLER': 'shared.exceptions.handler.custom_exception_handler',
 }
 
 
@@ -88,18 +73,20 @@ SWAGGER_SETTINGS = {
             'type': 'apiKey',
             'name': 'Authorization',
             'in': 'header',
-            'description': 'Bearer token authentication. Example: "Bearer {token}"',
-        },
+            'description': (
+                'Bearer token authentication. '
+                'Example: "Bearer {token}"'
+            )
+        }
     },
-    'USE_SESSION_AUTH': False,
-    'EXCEPTION_HANDLER': 'stockmanagement.utils.rester_handler.custom_exception_handler',
+    'USE_SESSION_AUTH': False
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Short-lived access token
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Long-lived refresh token
+    'ROTATE_REFRESH_TOKENS': True,  # Issue new refresh token on each refresh
+    'BLACKLIST_AFTER_ROTATION': True,  # Blacklist old refresh tokens
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
@@ -110,6 +97,7 @@ SIMPLE_JWT = {
     'TOKEN_TYPE_CLAIM': 'token_type',
     'JTI_CLAIM': 'jti',
     'BLACKLIST_TOKEN_CHECKS': ['access', 'refresh'],
+    'UPDATE_LAST_LOGIN': True,
 }
 
 
@@ -123,6 +111,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'shared.middleware.doc_auth.DocumentationAuthMiddleware'
 ]
 
 # CORS settings
@@ -131,8 +120,8 @@ CORS_ALLOWED_ORIGINS = [os.getenv('FRONTEND_URL'),]
 CORS_ORIGIN_ALLOW_ALL = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
-CSRF_COOKIE_SECURE = False  # True in production with HTTPS
+CSRF_COOKIE_HTTPONLY = False    
+CSRF_COOKIE_SECURE = False
 
 # If using CORS headers
 CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken', 'X-Refresh-Token']
@@ -166,15 +155,6 @@ AUTHENTICATION_BACKENDS = [
 if os.getenv('PRODUCTION') == 'True':
     DATABASES = {
         'default': dj_database_url.parse(os.getenv('PROD_DATABASE_URL'))
-    }
-
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [('redis', 6379)],
-            },
-        },
     }
 else:
     DATABASES = {
@@ -221,17 +201,14 @@ AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_REGION_NAME = os.getenv('AWS_REGION_NAME')
 AWS_BUCKET_NAME = os.getenv('AWS_BUCKET_NAME')
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-AUTH_USER_MODEL = 'authentication.User'
+AUTH_USER_MODEL = 'persistence_models.RetailPulseUser'
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -253,34 +230,46 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '[{asctime}] {levelname} {name} {message}',
-            'style': '{',
+# Logging configuration
+from shared.config.logging_config import get_logging_config
+
+LOGGING = get_logging_config(debug=DEBUG)
+
+# Documentation Authentication Settings
+DOC_USERNAME = os.getenv('DOC_USERNAME', None)
+DOC_PASSWORD = os.getenv('DOC_PASSWORD', None)
+
+# Google OAuth Settings
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', None)
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', None)
+GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', None)
+
+# Password Reset Settings
+PASSWORD_RESET_EXPIRY_MINUTES = int(os.getenv('PASSWORD_RESET_EXPIRY_MINUTES', '10'))
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+
+# Cache configuration for OAuth state and rate limiting
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,
         },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
+        'TIMEOUT': 300,  # 5 minutes default
+    }
 }
+
+# Use Redis cache in production if available
+if os.getenv('PRODUCTION') == 'True' and os.getenv('REDIS_URL'):
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': os.getenv('REDIS_URL'),
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+            'KEY_PREFIX': 'retailpulse',
+            'TIMEOUT': 300,
+        }
+    }
