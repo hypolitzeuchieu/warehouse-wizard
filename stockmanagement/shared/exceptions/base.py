@@ -28,12 +28,11 @@ class BaseAPIException(Exception):
         # Support both 'detail' and 'message' for backward compatibility
         self.detail = detail or message or "An error occurred"
         self.message = self.detail  # Keep for backward compatibility
-        
+
         # Support both 'code' and 'error_code' for backward compatibility
         self.code = code or error_code or "BAD_REQUEST"
         self.error_code = self.code  # Keep for backward compatibility
-        
+
         self.status_code = status_code
         self.details = details
         super().__init__(self.detail)
-

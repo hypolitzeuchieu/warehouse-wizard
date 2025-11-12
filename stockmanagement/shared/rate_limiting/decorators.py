@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable
 
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -109,5 +109,3 @@ def rate_limit_by_user(
         period_seconds=period_seconds,
         key_func=key_func,
     )
-
-

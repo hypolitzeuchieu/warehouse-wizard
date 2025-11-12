@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from domain.finance.entities import (
@@ -18,7 +17,7 @@ class ExpenseRepository(ABC):
     """Expense repository interface."""
 
     @abstractmethod
-    def get_by_id(self, expense_id: UUID) -> Optional[Expense]:
+    def get_by_id(self, expense_id: UUID) -> Expense | None:
         """Get expense by ID."""
         pass
 
@@ -26,9 +25,9 @@ class ExpenseRepository(ABC):
     def get_by_business(
         self,
         business_id: UUID,
-        expense_type: Optional[ExpenseType] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        expense_type: ExpenseType | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[Expense]:
         """Get expenses for a business with optional filters."""
@@ -54,7 +53,7 @@ class SalaryRepository(ABC):
     """Salary repository interface."""
 
     @abstractmethod
-    def get_by_id(self, salary_id: UUID) -> Optional[Salary]:
+    def get_by_id(self, salary_id: UUID) -> Salary | None:
         """Get salary by ID."""
         pass
 
@@ -64,9 +63,7 @@ class SalaryRepository(ABC):
         pass
 
     @abstractmethod
-    def get_current_salary(
-        self, business_id: UUID, user_id: UUID
-    ) -> Optional[Salary]:
+    def get_current_salary(self, business_id: UUID, user_id: UUID) -> Salary | None:
         """Get current active salary for a user."""
         pass
 
@@ -85,14 +82,12 @@ class PayrollRepository(ABC):
     """Payroll repository interface."""
 
     @abstractmethod
-    def get_by_id(self, payroll_id: UUID) -> Optional[Payroll]:
+    def get_by_id(self, payroll_id: UUID) -> Payroll | None:
         """Get payroll by ID."""
         pass
 
     @abstractmethod
-    def get_by_user(
-        self, user_id: UUID, limit: int = 100
-    ) -> list[Payroll]:
+    def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Payroll]:
         """Get payroll history for a user."""
         pass
 
@@ -100,8 +95,8 @@ class PayrollRepository(ABC):
     def get_by_business(
         self,
         business_id: UUID,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[Payroll]:
         """Get payroll records for a business."""
@@ -122,7 +117,7 @@ class FinancialSummaryRepository(ABC):
         business_id: UUID,
         start_date: datetime,
         end_date: datetime,
-    ) -> Optional[FinancialSummary]:
+    ) -> FinancialSummary | None:
         """Get financial summary for a business in a period."""
         pass
 
@@ -130,4 +125,3 @@ class FinancialSummaryRepository(ABC):
     def create(self, summary: FinancialSummary) -> FinancialSummary:
         """Create a new financial summary."""
         pass
-

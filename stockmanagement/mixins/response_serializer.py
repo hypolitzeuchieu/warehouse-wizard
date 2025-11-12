@@ -40,7 +40,7 @@ class ValidationErrorResponseSerializer(ErrorResponseSerializer):
         default={
             "code": "VALIDATION_FAILED",
             "message": "Input validation failed",
-            "details": {"fields": {}}
+            "details": {"fields": {}},
         }
     )
 
@@ -49,7 +49,9 @@ def create_response_serializer(data_serializer=None, many=False):
     """Factory for creating dynamic success response serializers"""
 
     class DynamicSuccessResponseSerializer(BaseResponseSerializer):
-        data = data_serializer(many=many) if data_serializer else serializers.DictField(required=False)
+        data = (
+            data_serializer(many=many) if data_serializer else serializers.DictField(required=False)
+        )
 
     return DynamicSuccessResponseSerializer
 

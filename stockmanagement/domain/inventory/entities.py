@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 
@@ -23,10 +22,10 @@ class Category:
     id: UUID
     business_id: UUID
     name: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
-    created_by: Optional[UUID] = None
+    created_by: UUID | None = None
 
     def __post_init__(self) -> None:
         """Validate category data."""
@@ -42,10 +41,10 @@ class SubCategory:
     business_id: UUID
     category_id: UUID
     name: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
-    created_by: Optional[UUID] = None
+    created_by: UUID | None = None
 
     def __post_init__(self) -> None:
         """Validate subcategory data."""
@@ -60,25 +59,25 @@ class Product:
     id: UUID
     business_id: UUID
     name: str
-    description: Optional[str]
-    barcode: Optional[str]  # Barcode only, no QR code for products
-    barcode_image_url: Optional[str]
+    description: str | None
+    barcode: str | None  # Barcode only, no QR code for products
+    barcode_image_url: str | None
     category_id: UUID
-    subcategory_id: Optional[UUID]
+    subcategory_id: UUID | None
     purchase_price: Decimal
     unit_price: Decimal
-    image_url: Optional[str]
+    image_url: str | None
     quantity: int
     min_quantity: int
-    expiry_date: Optional[datetime]
+    expiry_date: datetime | None
     is_expired: bool
     on_promotion: bool
-    promotion_start_date: Optional[datetime]
-    promotion_end_date: Optional[datetime]
-    promo_price: Optional[Decimal]
+    promotion_start_date: datetime | None
+    promotion_end_date: datetime | None
+    promo_price: Decimal | None
     created_at: datetime
     updated_at: datetime
-    created_by: Optional[UUID] = None
+    created_by: UUID | None = None
 
     def get_current_price(self) -> Decimal:
         """Get current price (promo price if on promotion, else unit price)."""
@@ -106,7 +105,7 @@ class StockMovement:
     product_id: UUID
     movement_type: StockMovementType
     quantity: int
-    reason: Optional[str]
+    reason: str | None
     user_id: UUID
     created_at: datetime
     updated_at: datetime
@@ -118,4 +117,3 @@ class StockMovement:
         if self.movement_type == StockMovementType.EXIT and self.quantity > 0:
             # Exit movements should have negative quantity
             self.quantity = -abs(self.quantity)
-

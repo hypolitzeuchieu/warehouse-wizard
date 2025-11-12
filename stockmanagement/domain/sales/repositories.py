@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from domain.sales.entities import (
@@ -11,7 +10,6 @@ from domain.sales.entities import (
     InvoiceStatus,
     Order,
     OrderItem,
-    PaymentMethod,
 )
 
 
@@ -19,14 +17,12 @@ class InvoiceRepository(ABC):
     """Invoice repository interface."""
 
     @abstractmethod
-    def get_by_id(self, invoice_id: UUID) -> Optional[Invoice]:
+    def get_by_id(self, invoice_id: UUID) -> Invoice | None:
         """Get invoice by ID."""
         pass
 
     @abstractmethod
-    def get_by_number(
-        self, business_id: UUID, number: int
-    ) -> Optional[Invoice]:
+    def get_by_number(self, business_id: UUID, number: int) -> Invoice | None:
         """Get invoice by number."""
         pass
 
@@ -34,9 +30,9 @@ class InvoiceRepository(ABC):
     def get_by_business(
         self,
         business_id: UUID,
-        status: Optional[InvoiceStatus] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        status: InvoiceStatus | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[Invoice]:
         """Get invoices for a business with optional filters."""
@@ -81,14 +77,12 @@ class OrderRepository(ABC):
     """Order repository interface."""
 
     @abstractmethod
-    def get_by_id(self, order_id: UUID) -> Optional[Order]:
+    def get_by_id(self, order_id: UUID) -> Order | None:
         """Get order by ID."""
         pass
 
     @abstractmethod
-    def get_by_customer(
-        self, customer_id: UUID, limit: int = 100
-    ) -> list[Order]:
+    def get_by_customer(self, customer_id: UUID, limit: int = 100) -> list[Order]:
         """Get orders for a customer."""
         pass
 
@@ -96,7 +90,7 @@ class OrderRepository(ABC):
     def get_by_business(
         self,
         business_id: UUID,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 100,
     ) -> list[Order]:
         """Get orders for a business."""
@@ -125,4 +119,3 @@ class OrderItemRepository(ABC):
     def create(self, item: OrderItem) -> OrderItem:
         """Create a new order item."""
         pass
-

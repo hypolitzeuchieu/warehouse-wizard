@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
-from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -21,9 +18,7 @@ class PasswordResetToken(BaseModel):
     phone_number = models.CharField(max_length=30, null=True, blank=True, db_index=True)
     token = models.CharField(max_length=255, unique=True, db_index=True)
     code = models.CharField(max_length=6, null=True, blank=True)  # For SMS OTP
-    reset_type = models.CharField(
-        max_length=10, choices=[("email", "Email"), ("sms", "SMS")]
-    )
+    reset_type = models.CharField(max_length=10, choices=[("email", "Email"), ("sms", "SMS")])
     expires_at = models.DateTimeField(db_index=True)
     used = models.BooleanField(default=False)
     used_at = models.DateTimeField(null=True, blank=True)
@@ -49,8 +44,5 @@ class PasswordResetToken(BaseModel):
     def is_valid(self) -> bool:
         """Check if token is valid (not expired and not used)."""
         return (
-            not self.used
-            and self.expires_at > timezone.now()
-            and self.attempts < self.max_attempts
+            not self.used and self.expires_at > timezone.now() and self.attempts < self.max_attempts
         )
-

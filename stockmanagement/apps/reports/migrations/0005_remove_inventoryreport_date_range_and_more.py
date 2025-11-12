@@ -2,79 +2,78 @@
 from __future__ import annotations
 
 import django.db.models.deletion
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('reports', '0004_alter_invoicearchive_number'),
+        ("reports", "0004_alter_invoicearchive_number"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='inventoryreport',
-            name='date_range',
+            model_name="inventoryreport",
+            name="date_range",
         ),
         migrations.AddField(
-            model_name='inventoryreport',
-            name='data',
+            model_name="inventoryreport",
+            name="data",
             field=models.JSONField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='inventoryreport',
-            name='end_date',
+            model_name="inventoryreport",
+            name="end_date",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='inventoryreport',
-            name='notes',
+            model_name="inventoryreport",
+            name="notes",
             field=models.TextField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='inventoryreport',
-            name='report',
+            model_name="inventoryreport",
+            name="report",
             field=models.OneToOneField(
                 null=True,
                 on_delete=django.db.models.deletion.CASCADE,
-                related_name='inventory_report',
-                to='reports.report',
+                related_name="inventory_report",
+                to="reports.report",
             ),
         ),
         migrations.AddField(
-            model_name='inventoryreport',
-            name='start_date',
+            model_name="inventoryreport",
+            name="start_date",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='salesreport',
-            name='data',
+            model_name="salesreport",
+            name="data",
             field=models.JSONField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='salesreport',
-            name='end_date',
+            model_name="salesreport",
+            name="end_date",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='salesreport',
-            name='notes',
+            model_name="salesreport",
+            name="notes",
             field=models.TextField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='salesreport',
-            name='report',
+            model_name="salesreport",
+            name="report",
             field=models.OneToOneField(
                 null=True,
                 on_delete=django.db.models.deletion.CASCADE,
-                related_name='sales_report',
-                to='reports.report',
+                related_name="sales_report",
+                to="reports.report",
             ),
         ),
         migrations.AddField(
-            model_name='salesreport',
-            name='start_date',
+            model_name="salesreport",
+            name="start_date",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]

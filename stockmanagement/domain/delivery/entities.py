@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 
@@ -25,13 +24,13 @@ class Delivery:
     id: UUID
     business_id: UUID
     order_id: UUID
-    delivery_person_id: Optional[UUID]
+    delivery_person_id: UUID | None
     customer_id: UUID
     status: DeliveryStatus
     shipping_address: str
-    estimated_delivery_time: Optional[datetime]
-    actual_delivery_time: Optional[datetime]
-    notes: Optional[str]
+    estimated_delivery_time: datetime | None
+    actual_delivery_time: datetime | None
+    notes: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -45,4 +44,3 @@ class Delivery:
             DeliveryStatus.PENDING,
             DeliveryStatus.ASSIGNED,
         )
-

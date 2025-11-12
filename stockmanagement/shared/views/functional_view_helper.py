@@ -13,7 +13,7 @@ from shared.views.api_response_mixin import APIResponseMixin
 class FunctionalViewHelper(APIResponseMixin):
     """
     Helper class that provides APIResponseMixin methods for functional views.
-    
+
     Usage:
         helper = FunctionalViewHelper()
         return helper.success(message="Success", data={...})
@@ -24,7 +24,7 @@ class FunctionalViewHelper(APIResponseMixin):
     def __init__(self, request: Request | None = None):
         """
         Initialize the helper.
-        
+
         Args:
             request: Optional request object for context
         """
@@ -38,12 +38,12 @@ class FunctionalViewHelper(APIResponseMixin):
     ) -> Response | None:
         """
         Check if serializer is valid and return error response if not.
-        
+
         Args:
             serializer: DRF serializer instance
             message: Error message
             code: Error code
-            
+
         Returns:
             Response with validation errors if invalid, None if valid
         """
@@ -54,4 +54,3 @@ class FunctionalViewHelper(APIResponseMixin):
                 code=code,
             )
         return None
-

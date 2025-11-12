@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import string
 from datetime import timedelta
-from typing import Optional
 from uuid import UUID, uuid4
 
 from django.utils import timezone
 
 from domain.users.entities import OTP
 from domain.users.repositories import OTPRepository
+
+logger = logging.getLogger(__name__)
 
 
 class OTPService:
@@ -37,10 +39,9 @@ class OTPService:
     @staticmethod
     def create_otp(
         otp_repository: OTPRepository,
-        user_id: Optional[UUID] = None,
-        email: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        purpose: str = "verification",
+        user_id: UUID | None = None,
+        email: str | None = None,
+        phone_number: str | None = None,
         otp_type: str = "email",
     ) -> OTP:
         """
@@ -51,27 +52,23 @@ class OTPService:
             user_id: User ID (optional)
             email: Email address (optional)
             phone_number: Phone number (optional)
-            purpose: Purpose of OTP (signup, login, etc.)
             otp_type: Type of OTP (email or sms)
 
         Returns:
             Created OTP entity
         """
-        # Invalidate ALL previous pending OTPs for the same identifier and purpose
-        # This ensures only one valid OTP exists at a time (business rule)
         invalidated_count = otp_repository.invalidate_all_pending(
             email=email,
             phone_number=phone_number,
-            purpose=purpose,
             otp_type=otp_type,
         )
-        
+
         if invalidated_count > 0:
             logger.info(
                 f"Invalidated {invalidated_count} pending OTP(s) for "
-                f"identifier: {email or phone_number}, purpose: {purpose}, type: {otp_type}"
+                f"identifier: {email or phone_number}, type: {otp_type}"
             )
-        # Generate new OTP
+
         otp_code = OTPService.generate_otp_code()
         expires_at = timezone.now() + timedelta(minutes=OTPService.OTP_EXPIRY_MINUTES)
 
@@ -82,7 +79,6 @@ class OTPService:
             phone_number=phone_number,
             otp_code=otp_code,
             otp_type=otp_type,
-            purpose=purpose,
             expires_at=expires_at,
             verified=False,
             verified_at=None,
@@ -98,9 +94,9 @@ class OTPService:
     def verify_otp(
         otp_repository: OTPRepository,
         code: str,
-        email: Optional[str] = None,
-        phone_number: Optional[str] = None,
-    ) -> tuple[bool, Optional[OTP]]:
+        email: str | None = None,
+        phone_number: str | None = None,
+    ) -> tuple[bool, OTP | None]:
         """
         Verify an OTP code.
 
@@ -127,4 +123,3 @@ class OTPService:
             otp_repository.update(otp)
 
         return is_valid, otp
-

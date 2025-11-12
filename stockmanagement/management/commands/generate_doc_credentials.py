@@ -4,7 +4,6 @@ import secrets
 import string
 
 from django.core.management.base import BaseCommand
-from django.core.management.utils import get_random_secret_key
 
 
 class Command(BaseCommand):
@@ -39,20 +38,12 @@ class Command(BaseCommand):
             alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
             password = "".join(secrets.choice(alphabet) for _ in range(16))
 
-        self.stdout.write(
-            self.style.SUCCESS("\n" + "=" * 60)
-        )
-        self.stdout.write(
-            self.style.SUCCESS("Documentation Access Credentials Generated")
-        )
-        self.stdout.write(
-            self.style.SUCCESS("=" * 60)
-        )
+        self.stdout.write(self.style.SUCCESS("\n" + "=" * 60))
+        self.stdout.write(self.style.SUCCESS("Documentation Access Credentials Generated"))
+        self.stdout.write(self.style.SUCCESS("=" * 60))
         self.stdout.write(f"\nUsername: {self.style.WARNING(username)}")
         self.stdout.write(f"Password: {self.style.WARNING(password)}")
-        self.stdout.write(
-            self.style.SUCCESS("\n" + "=" * 60)
-        )
+        self.stdout.write(self.style.SUCCESS("\n" + "=" * 60))
         self.stdout.write(
             self.style.WARNING(
                 "\nAdd these to your .env file:\n"
@@ -60,7 +51,4 @@ class Command(BaseCommand):
                 f"DOC_PASSWORD={password}\n"
             )
         )
-        self.stdout.write(
-            self.style.SUCCESS("=" * 60 + "\n")
-        )
-
+        self.stdout.write(self.style.SUCCESS("=" * 60 + "\n"))

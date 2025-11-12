@@ -1,7 +1,6 @@
 """Sales use cases."""
 
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID, uuid4
 
 from django.db import transaction
@@ -11,28 +10,18 @@ from application.dto.sales_dto import (
     InvoiceCreateDTO,
     InvoiceLineResponseDTO,
     InvoiceResponseDTO,
-    InvoiceUpdateDTO,
-    OrderCreateDTO,
-    OrderItemResponseDTO,
-    OrderResponseDTO,
-    OrderUpdateDTO,
 )
-from domain.inventory.entities import Product
 from domain.inventory.repositories import ProductRepository
 from domain.inventory.services import InventoryDomainService
 from domain.sales.entities import (
     Invoice,
     InvoiceLine,
     InvoiceStatus,
-    Order,
-    OrderItem,
     PaymentMethod,
 )
 from domain.sales.repositories import (
     InvoiceLineRepository,
     InvoiceRepository,
-    OrderItemRepository,
-    OrderRepository,
 )
 from shared.exceptions.base import BaseAPIException
 
@@ -61,9 +50,7 @@ class CreateInvoiceUseCase:
     def execute(self, dto: InvoiceCreateDTO) -> InvoiceResponseDTO:
         """Execute invoice creation."""
         # Get next invoice number
-        invoice_number = self.invoice_repository.get_next_invoice_number(
-            self.business_id
-        )
+        invoice_number = self.invoice_repository.get_next_invoice_number(self.business_id)
 
         # Calculate totals
         subtotal = Decimal("0.00")
@@ -88,9 +75,7 @@ class CreateInvoiceUseCase:
                 )
 
             # Calculate line total
-            line_total = (
-                line_dto.unit_price * line_dto.quantity - line_dto.discount
-            )
+            line_total = line_dto.unit_price * line_dto.quantity - line_dto.discount
             subtotal += line_total
 
             lines_data.append(
@@ -165,7 +150,7 @@ class CreateInvoiceUseCase:
         return self._to_dto(invoice, invoice_lines)
 
     def _to_dto(
-        self, invoice: Invoice, lines: Optional[list[InvoiceLine]] = None
+        self, invoice: Invoice, lines: list[InvoiceLine] | None = None
     ) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
         return InvoiceResponseDTO(
@@ -230,9 +215,7 @@ class GetInvoiceUseCase:
         lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
         return self._to_dto(invoice, lines)
 
-    def _to_dto(
-        self, invoice: Invoice, lines: list[InvoiceLine]
-    ) -> InvoiceResponseDTO:
+    def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
         return InvoiceResponseDTO(
             id=invoice.id,
@@ -267,4 +250,3 @@ class GetInvoiceUseCase:
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
         )
-

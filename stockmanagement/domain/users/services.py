@@ -1,7 +1,6 @@
 """User domain services."""
 
 from datetime import timedelta
-from typing import Optional
 from uuid import UUID, uuid4
 
 from django.utils import timezone
@@ -34,9 +33,9 @@ class UserDomainService:
     def start_session(
         self,
         user_id: UUID,
-        device_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
+        device_id: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> Session:
         """Start a new user session."""
         session = Session(
@@ -52,7 +51,7 @@ class UserDomainService:
         )
         return self.session_repository.create(session)
 
-    def end_session(self, session_id: UUID) -> Optional[Session]:
+    def end_session(self, session_id: UUID) -> Session | None:
         """End a user session."""
         session = self.session_repository.get_by_id(session_id)
         if session and session.is_active:
@@ -60,13 +59,9 @@ class UserDomainService:
             return self.session_repository.update(session)
         return None
 
-    def end_user_sessions(
-        self, user_id: UUID, device_id: Optional[str] = None
-    ) -> None:
+    def end_user_sessions(self, user_id: UUID, device_id: str | None = None) -> None:
         """End all active sessions for a user (optionally for a specific device)."""
-        active_sessions = self.session_repository.get_active_sessions_by_user(
-            user_id
-        )
+        active_sessions = self.session_repository.get_active_sessions_by_user(user_id)
         for session in active_sessions:
             if device_id is None or session.device_id == device_id:
                 self.end_session(session.id)
@@ -75,8 +70,8 @@ class UserDomainService:
         self,
         user_id: UUID,
         token: str,
-        device_id: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        device_id: str | None = None,
+        ip_address: str | None = None,
         expires_in_days: int = 30,
     ) -> RefreshToken:
         """Create a new refresh token."""
@@ -102,11 +97,6 @@ class UserDomainService:
         """Revoke all refresh tokens for a user."""
         self.refresh_token_repository.revoke_all_user_tokens(user_id)
 
-    def revoke_user_device_tokens(
-        self, user_id: UUID, device_id: str
-    ) -> None:
+    def revoke_user_device_tokens(self, user_id: UUID, device_id: str) -> None:
         """Revoke refresh tokens for a specific user device."""
-        self.refresh_token_repository.revoke_user_device_tokens(
-            user_id, device_id
-        )
-
+        self.refresh_token_repository.revoke_user_device_tokens(user_id, device_id)

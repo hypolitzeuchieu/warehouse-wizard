@@ -1,7 +1,6 @@
 """Inventory domain repositories (interfaces)."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from domain.inventory.entities import (
@@ -17,7 +16,7 @@ class CategoryRepository(ABC):
     """Category repository interface."""
 
     @abstractmethod
-    def get_by_id(self, category_id: UUID) -> Optional[Category]:
+    def get_by_id(self, category_id: UUID) -> Category | None:
         """Get category by ID."""
         pass
 
@@ -46,7 +45,7 @@ class SubCategoryRepository(ABC):
     """SubCategory repository interface."""
 
     @abstractmethod
-    def get_by_id(self, subcategory_id: UUID) -> Optional[SubCategory]:
+    def get_by_id(self, subcategory_id: UUID) -> SubCategory | None:
         """Get subcategory by ID."""
         pass
 
@@ -75,12 +74,12 @@ class ProductRepository(ABC):
     """Product repository interface."""
 
     @abstractmethod
-    def get_by_id(self, product_id: UUID) -> Optional[Product]:
+    def get_by_id(self, product_id: UUID) -> Product | None:
         """Get product by ID."""
         pass
 
     @abstractmethod
-    def get_by_barcode(self, barcode: str, business_id: UUID) -> Optional[Product]:
+    def get_by_barcode(self, barcode: str, business_id: UUID) -> Product | None:
         """Get product by barcode."""
         pass
 
@@ -88,7 +87,7 @@ class ProductRepository(ABC):
     def get_by_business(
         self,
         business_id: UUID,
-        category_id: Optional[UUID] = None,
+        category_id: UUID | None = None,
         low_stock_only: bool = False,
         expired_only: bool = False,
     ) -> list[Product]:
@@ -120,14 +119,12 @@ class StockMovementRepository(ABC):
     """Stock movement repository interface."""
 
     @abstractmethod
-    def get_by_id(self, movement_id: UUID) -> Optional[StockMovement]:
+    def get_by_id(self, movement_id: UUID) -> StockMovement | None:
         """Get stock movement by ID."""
         pass
 
     @abstractmethod
-    def get_by_product(
-        self, product_id: UUID, limit: int = 100
-    ) -> list[StockMovement]:
+    def get_by_product(self, product_id: UUID, limit: int = 100) -> list[StockMovement]:
         """Get stock movements for a product."""
         pass
 
@@ -135,7 +132,7 @@ class StockMovementRepository(ABC):
     def get_by_business(
         self,
         business_id: UUID,
-        movement_type: Optional[StockMovementType] = None,
+        movement_type: StockMovementType | None = None,
         limit: int = 100,
     ) -> list[StockMovement]:
         """Get stock movements for a business."""
@@ -145,4 +142,3 @@ class StockMovementRepository(ABC):
     def create(self, movement: StockMovement) -> StockMovement:
         """Create a new stock movement."""
         pass
-

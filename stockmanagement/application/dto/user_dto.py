@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from domain.users.entities import UserRole
@@ -13,22 +12,22 @@ class UserCreateDTO:
     """DTO for creating a user."""
 
     email: str
-    name: Optional[str] = None  # Optional, will be generated from email if not provided
+    name: str | None = None
     password: str = ""
-    phone_number: Optional[str] = None
+    phone_number: str | None = None
     role: UserRole = UserRole.CUSTOMER
-    address: Optional[str] = None
+    address: str | None = None
 
 
 @dataclass
 class UserUpdateDTO:
     """DTO for updating a user."""
 
-    email: Optional[str] = None
-    name: Optional[str] = None
-    phone_number: Optional[str] = None
-    address: Optional[str] = None
-    is_active: Optional[bool] = None
+    email: str | None = None
+    name: str | None = None
+    phone_number: str | None = None
+    address: str | None = None
+    is_active: bool | None = None
 
 
 @dataclass
@@ -40,28 +39,29 @@ class UserResponseDTO:
     name: str  # Renamed from username
     role: str
     is_active: bool
+    email_verified: bool
     is_staff: bool
     is_superuser: bool
     created_at: datetime
     updated_at: datetime
-    phone_number: Optional[str] = None
-    last_login: Optional[datetime] = None
-    address: Optional[str] = None
-    avatar_url: Optional[str] = None
+    phone_number: str | None = None
+    last_login: datetime | None = None
+    address: str | None = None
+    avatar_url: str | None = None
 
 
 @dataclass
 class LoginDTO:
     """DTO for login request."""
 
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
-    password: str = ""  # Required for password-based login
-    device_id: Optional[str] = None
-    device_name: Optional[str] = None
-    device_type: Optional[str] = None
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
+    email: str | None = None
+    phone_number: str | None = None
+    password: str = ""
+    device_id: str | None = None
+    device_name: str | None = None
+    device_type: str | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
 
 
 @dataclass
@@ -71,7 +71,7 @@ class LoginResponseDTO:
     access_token: str
     refresh_token: str
     user: UserResponseDTO
-    expires_in: int  # seconds
+    expires_in: int
 
 
 @dataclass
@@ -79,7 +79,7 @@ class RefreshTokenDTO:
     """DTO for refresh token request."""
 
     refresh_token: str
-    device_id: Optional[str] = None
+    device_id: str | None = None
 
 
 @dataclass
@@ -95,7 +95,7 @@ class RefreshTokenResponseDTO:
 class LogoutDTO:
     """DTO for logout request."""
 
-    device_id: Optional[str] = None
+    device_id: str | None = None
     logout_all_devices: bool = False
 
 
@@ -103,8 +103,8 @@ class LogoutDTO:
 class OTPRequestDTO:
     """DTO for OTP request."""
 
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
+    email: str | None = None
+    phone_number: str | None = None
     otp_type: str = "email"  # email or sms
 
 
@@ -113,14 +113,15 @@ class OTPVerifyDTO:
     """DTO for OTP verification."""
 
     otp: str
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
+    email: str | None = None
+    phone_number: str | None = None
     otp_type: str = "email"
 
 
 @dataclass
 class GoogleOAuthAuthURLDTO:
     """DTO for Google OAuth auth URL request."""
+
     pass
 
 
@@ -129,7 +130,6 @@ class GoogleOAuthAuthURLResponseDTO:
     """DTO for Google OAuth auth URL response."""
 
     auth_url: str
-    expires_in: int  # seconds
 
 
 @dataclass
@@ -137,11 +137,11 @@ class GoogleOAuthCodeDTO:
     """DTO for Google OAuth code exchange."""
 
     code: str
-    device_id: Optional[str] = None
-    device_name: Optional[str] = None
-    device_type: Optional[str] = None
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
+    device_id: str | None = None
+    device_name: str | None = None
+    device_type: str | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
 
 
 @dataclass
@@ -149,11 +149,11 @@ class GoogleOAuthDTO:
     """DTO for Google OAuth (legacy - for backward compatibility)."""
 
     access_token: str
-    device_id: Optional[str] = None
-    device_name: Optional[str] = None
-    device_type: Optional[str] = None
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
+    device_id: str | None = None
+    device_name: str | None = None
+    device_type: str | None = None
+    ip_address: str | None = None
+    user_agent: str | None = None
 
 
 @dataclass
@@ -164,22 +164,22 @@ class SessionResponseDTO:
     user_id: UUID
     start_time: datetime
     created_at: datetime
-    device_id: Optional[str] = None
-    device_name: Optional[str] = None
-    device_type: Optional[str] = None
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    device_id: str | None = None
+    device_name: str | None = None
+    device_type: str | None = None
+    end_time: datetime | None = None
+    duration_seconds: float | None = None
     is_active: bool = True
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
+    ip_address: str | None = None
+    user_agent: str | None = None
 
 
 @dataclass
 class ForgotPasswordDTO:
     """DTO for forgot password request."""
 
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
+    email: str | None = None
+    phone_number: str | None = None
     reset_type: str = "email"  # email or sms
 
 
@@ -187,10 +187,10 @@ class ForgotPasswordDTO:
 class ResetPasswordDTO:
     """DTO for reset password request."""
 
-    token: Optional[str] = None  # For email reset
-    code: Optional[str] = None  # For SMS reset
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
+    token: str | None = None
+    code: str | None = None
+    email: str | None = None
+    phone_number: str | None = None
     new_password: str = ""
     reset_type: str = "email"
 
@@ -199,8 +199,7 @@ class ResetPasswordDTO:
 class ProfileUpdateDTO:
     """DTO for profile update."""
 
-    name: Optional[str] = None  # Renamed from username
-    phone_number: Optional[str] = None
-    address: Optional[str] = None
-    avatar_url: Optional[str] = None
-
+    name: str | None = None
+    phone_number: str | None = None
+    address: str | None = None
+    avatar_url: str | None = None

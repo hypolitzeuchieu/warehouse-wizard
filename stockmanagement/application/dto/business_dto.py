@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 
@@ -12,24 +11,24 @@ class BusinessCreateDTO:
 
     name: str
     unique_name: str
-    description: Optional[str] = None
-    address: Optional[str] = None
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
-    settings: Optional[dict] = None
+    description: str | None = None
+    address: str | None = None
+    phone_number: str | None = None
+    email: str | None = None
+    settings: dict | None = None
 
 
 @dataclass
 class BusinessUpdateDTO:
     """DTO for updating a business."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    address: Optional[str] = None
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
-    logo_url: Optional[str] = None
-    settings: Optional[dict] = None
+    name: str | None = None
+    description: str | None = None
+    address: str | None = None
+    phone_number: str | None = None
+    email: str | None = None
+    logo_url: str | None = None
+    settings: dict | None = None
 
 
 @dataclass
@@ -40,14 +39,14 @@ class BusinessResponseDTO:
     name: str
     unique_name: str
     owner_id: UUID
-    description: Optional[str]
-    address: Optional[str]
-    phone_number: Optional[str]
-    email: Optional[str]
-    qr_code_url: Optional[str]
-    logo_url: Optional[str]
+    description: str | None
+    address: str | None
+    phone_number: str | None
+    email: str | None
+    qr_code_url: str | None
+    logo_url: str | None
     is_active: bool
-    settings: Optional[dict]
+    settings: dict | None
     created_at: datetime
     updated_at: datetime
 
@@ -64,8 +63,8 @@ class BusinessMemberCreateDTO:
 class BusinessMemberUpdateDTO:
     """DTO for updating a business member."""
 
-    role: Optional[str] = None
-    is_active: Optional[bool] = None
+    role: str | None = None
+    is_active: bool | None = None
 
 
 @dataclass
@@ -80,6 +79,5 @@ class BusinessMemberResponseDTO:
     joined_at: datetime
     created_at: datetime
     updated_at: datetime
-    user: Optional[dict] = None  # User details
-    left_at: Optional[datetime] = None
-
+    user: dict | None = None  # User details
+    left_at: datetime | None = None

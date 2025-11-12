@@ -2,6 +2,7 @@
 """Simple script to test API endpoints manually."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -9,14 +10,13 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-import django
-from django.conf import settings
+import django  # noqa: E402
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stockmanagement.settings")
 django.setup()
 
-import requests
-from django.contrib.auth import get_user_model
+import requests  # noqa: E402
+from django.contrib.auth import get_user_model  # noqa: E402
 
 User = get_user_model()
 
@@ -100,4 +100,3 @@ if __name__ == "__main__":
                 print(f"✅ Business created with ID: {business_id}")
 
     print("\n✅ API Tests Completed!")
-

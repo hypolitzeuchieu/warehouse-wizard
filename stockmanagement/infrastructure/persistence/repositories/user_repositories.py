@@ -1,6 +1,5 @@
 """User repository implementations."""
 
-from typing import Optional
 from uuid import UUID
 
 from django.utils import timezone
@@ -14,8 +13,14 @@ from domain.users.repositories import (
 )
 from infrastructure.persistence.models.user_models import (
     Device as DeviceModel,
+)
+from infrastructure.persistence.models.user_models import (
     RefreshToken as RefreshTokenModel,
+)
+from infrastructure.persistence.models.user_models import (
     RetailPulseUser as UserModel,
+)
+from infrastructure.persistence.models.user_models import (
     Session as SessionModel,
 )
 
@@ -23,7 +28,7 @@ from infrastructure.persistence.models.user_models import (
 class UserRepositoryImpl(UserRepository):
     """Django implementation of UserRepository."""
 
-    def get_by_id(self, user_id: UUID) -> Optional[User]:
+    def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
         try:
             user_model = UserModel.objects.get(id=user_id)
@@ -31,7 +36,7 @@ class UserRepositoryImpl(UserRepository):
         except UserModel.DoesNotExist:
             return None
 
-    def get_by_email(self, email: str) -> Optional[User]:
+    def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
         try:
             user_model = UserModel.objects.get(email=email)
@@ -39,7 +44,7 @@ class UserRepositoryImpl(UserRepository):
         except UserModel.DoesNotExist:
             return None
 
-    def get_by_phone_number(self, phone_number: str) -> Optional[User]:
+    def get_by_phone_number(self, phone_number: str) -> User | None:
         """Get user by phone number."""
         try:
             user_model = UserModel.objects.get(phone_number=phone_number)
@@ -47,7 +52,15 @@ class UserRepositoryImpl(UserRepository):
         except UserModel.DoesNotExist:
             return None
 
-    def create(self, user: User, password: Optional[str] = None) -> User:
+    def get_by_google_id(self, google_id: str) -> User | None:
+        """Get user by Google ID."""
+        try:
+            user_model = UserModel.objects.get(google_id=google_id)
+            return self._to_entity(user_model)
+        except UserModel.DoesNotExist:
+            return None
+
+    def create(self, user: User, password: str | None = None) -> User:
         """Create a new user."""
         user_model = UserModel(
             id=user.id,
@@ -56,12 +69,18 @@ class UserRepositoryImpl(UserRepository):
             phone_number=user.phone_number,
             role=user.role.value if isinstance(user.role, UserRole) else user.role,
             is_active=user.is_active,
+            email_verified=user.email_verified,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,
             last_login=user.last_login,
             address=user.address,
             avatar_url=user.avatar_url,
-            auth_method=user.auth_method.value if isinstance(user.auth_method, AuthMethod) else user.auth_method,
+            auth_method=(
+                user.auth_method.value
+                if isinstance(user.auth_method, AuthMethod)
+                else user.auth_method
+            ),
+            google_id=user.google_id,
         )
         if password:
             user_model.set_password(password)
@@ -78,12 +97,16 @@ class UserRepositoryImpl(UserRepository):
         user_model.phone_number = user.phone_number
         user_model.role = user.role.value if isinstance(user.role, UserRole) else user.role
         user_model.is_active = user.is_active
+        user_model.email_verified = user.email_verified
         user_model.is_staff = user.is_staff
         user_model.is_superuser = user.is_superuser
         user_model.last_login = user.last_login
         user_model.address = user.address
         user_model.avatar_url = user.avatar_url
-        user_model.auth_method = user.auth_method.value if isinstance(user.auth_method, AuthMethod) else user.auth_method
+        user_model.auth_method = (
+            user.auth_method.value if isinstance(user.auth_method, AuthMethod) else user.auth_method
+        )
+        user_model.google_id = user.google_id
         user_model.save()
         return self._to_entity(user_model)
 
@@ -110,10 +133,12 @@ class UserRepositoryImpl(UserRepository):
         return User(
             id=user_model.id,
             email=user_model.email or "",
-            name=user_model.name or (user_model.email.split("@")[0] if user_model.email else "User"),
+            name=user_model.name
+            or (user_model.email.split("@")[0] if user_model.email else "User"),
             phone_number=user_model.phone_number,
             role=UserRole(user_model.role),
             is_active=user_model.is_active,
+            email_verified=user_model.email_verified,
             is_staff=user_model.is_staff,
             is_superuser=user_model.is_superuser,
             created_at=user_model.created_at,
@@ -121,14 +146,19 @@ class UserRepositoryImpl(UserRepository):
             last_login=user_model.last_login,
             address=user_model.address,
             avatar_url=user_model.avatar_url,
-            auth_method=AuthMethod(user_model.auth_method) if user_model.auth_method else AuthMethod.EMAIL_PASSWORD,
+            auth_method=(
+                AuthMethod(user_model.auth_method)
+                if user_model.auth_method
+                else AuthMethod.EMAIL_PASSWORD
+            ),
+            google_id=user_model.google_id,
         )
 
 
 class SessionRepositoryImpl(SessionRepository):
     """Django implementation of SessionRepository."""
 
-    def get_by_id(self, session_id: UUID) -> Optional[Session]:
+    def get_by_id(self, session_id: UUID) -> Session | None:
         """Get session by ID."""
         try:
             session_model = SessionModel.objects.get(id=session_id)
@@ -138,9 +168,7 @@ class SessionRepositoryImpl(SessionRepository):
 
     def get_active_sessions_by_user(self, user_id: UUID) -> list[Session]:
         """Get active sessions for a user."""
-        sessions = SessionModel.objects.filter(
-            user_id=user_id, end_time__isnull=True
-        )
+        sessions = SessionModel.objects.filter(user_id=user_id, end_time__isnull=True)
         return [self._to_entity(session) for session in sessions]
 
     def create(self, session: Session) -> Session:
@@ -164,45 +192,39 @@ class SessionRepositoryImpl(SessionRepository):
         session_model.save()
         return self._to_entity(session_model)
 
-    def get_user_sessions(
-        self, user_id: UUID, limit: int = 100, offset: int = 0
-    ) -> list[Session]:
+    def get_user_sessions(self, user_id: UUID, limit: int = 100, offset: int = 0) -> list[Session]:
         """Get user session history."""
-        sessions = SessionModel.objects.filter(user_id=user_id).order_by(
-            "-start_time"
-        )[offset : offset + limit]
+        sessions = SessionModel.objects.filter(user_id=user_id).order_by("-start_time")[
+            offset : offset + limit
+        ]
         return [self._to_entity(session) for session in sessions]
 
     def get_user_sessions_with_devices(
         self, user_id: UUID, limit: int = 100, offset: int = 0
-    ) -> list[tuple[Session, Optional[Device]]]:
+    ) -> list[tuple[Session, Device | None]]:
         """
         Get user session history with device information.
-        
+
         Returns:
             List of tuples (Session, Device or None)
         """
-        sessions = SessionModel.objects.filter(user_id=user_id).order_by(
-            "-start_time"
-        )[offset:offset + limit]
+        sessions = SessionModel.objects.filter(user_id=user_id).order_by("-start_time")[
+            offset : offset + limit
+        ]
 
         # Get all device_ids from sessions
         device_ids = [s.device_id for s in sessions if s.device_id]
         # Fetch devices in bulk
         devices_dict = {}
         if device_ids:
-            devices = DeviceModel.objects.filter(
-                device_id__in=device_ids, user_id=user_id
-            )
+            devices = DeviceModel.objects.filter(device_id__in=device_ids, user_id=user_id)
             devices_dict = {d.device_id: d for d in devices}
 
         # Convert to entities and pair with devices
         result = []
         for session in sessions:
             session_entity = self._to_entity(session)
-            device_model = (
-                devices_dict.get(session.device_id) if session.device_id else None
-            )
+            device_model = devices_dict.get(session.device_id) if session.device_id else None
             device_entity = None
             if device_model:
                 device_entity = Device(
@@ -239,7 +261,7 @@ class SessionRepositoryImpl(SessionRepository):
 class RefreshTokenRepositoryImpl(RefreshTokenRepository):
     """Django implementation of RefreshTokenRepository."""
 
-    def get_by_id(self, token_id: UUID) -> Optional[RefreshToken]:
+    def get_by_id(self, token_id: UUID) -> RefreshToken | None:
         """Get refresh token by ID."""
         try:
             token_model = RefreshTokenModel.objects.get(id=token_id)
@@ -247,7 +269,7 @@ class RefreshTokenRepositoryImpl(RefreshTokenRepository):
         except RefreshTokenModel.DoesNotExist:
             return None
 
-    def get_by_token(self, token: str) -> Optional[RefreshToken]:
+    def get_by_token(self, token: str) -> RefreshToken | None:
         """Get refresh token by token string."""
         try:
             token_model = RefreshTokenModel.objects.get(token=token)
@@ -255,9 +277,7 @@ class RefreshTokenRepositoryImpl(RefreshTokenRepository):
         except RefreshTokenModel.DoesNotExist:
             return None
 
-    def get_by_user_and_device(
-        self, user_id: UUID, device_id: Optional[str]
-    ) -> list[RefreshToken]:
+    def get_by_user_and_device(self, user_id: UUID, device_id: str | None) -> list[RefreshToken]:
         """Get refresh tokens for a user and device."""
         query = RefreshTokenModel.objects.filter(user_id=user_id)
         if device_id:
@@ -328,7 +348,7 @@ class RefreshTokenRepositoryImpl(RefreshTokenRepository):
 class DeviceRepositoryImpl(DeviceRepository):
     """Django implementation of DeviceRepository."""
 
-    def get_by_id(self, device_id: UUID) -> Optional[Device]:
+    def get_by_id(self, device_id: UUID) -> Device | None:
         """Get device by ID."""
         try:
             device_model = DeviceModel.objects.get(id=device_id)
@@ -336,7 +356,7 @@ class DeviceRepositoryImpl(DeviceRepository):
         except DeviceModel.DoesNotExist:
             return None
 
-    def get_by_device_id(self, device_id: str) -> Optional[Device]:
+    def get_by_device_id(self, device_id: str) -> Device | None:
         """Get device by device ID string."""
         try:
             device_model = DeviceModel.objects.get(device_id=device_id)
@@ -393,4 +413,3 @@ class DeviceRepositoryImpl(DeviceRepository):
             created_at=device_model.created_at,
             updated_at=device_model.updated_at,
         )
-

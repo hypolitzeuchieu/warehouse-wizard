@@ -1,10 +1,10 @@
-"""Authentication API views."""
-
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
+from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
@@ -12,6 +12,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from application.dto.user_dto import OTPRequestDTO
 from application.use_cases.google_oauth_use_case import (
@@ -39,10 +41,6 @@ from infrastructure.persistence.repositories import (
     SessionRepositoryImpl,
     UserRepositoryImpl,
 )
-from presentation.serializers.response_serializers import (
-    get_error_response_schema,
-    get_success_response_schema,
-)
 from presentation.serializers.user_serializers import (
     ForgotPasswordSerializer,
     GoogleOAuthCodeSerializer,
@@ -54,6 +52,7 @@ from presentation.serializers.user_serializers import (
     RefreshTokenSerializer,
     ResetPasswordSerializer,
     UserCreateSerializer,
+    UserResponseSerializer,
 )
 from shared.rate_limiting.decorators import rate_limit
 from shared.utils.jwt import generate_tokens
@@ -68,49 +67,9 @@ logger = logging.getLogger(__name__)
     operation_description="Create a new user account. OTP will be sent automatically to verify the account.",
     request_body=UserCreateSerializer,
     responses={
-        201: openapi.Response(
-            description="User created successfully",
-            schema=openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                    "message": openapi.Schema(type=openapi.TYPE_STRING),
-                    "data": openapi.Schema(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            "user": openapi.Schema(
-                                type=openapi.TYPE_OBJECT,
-                                properties={
-                                    "id": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_UUID),
-                                    "email": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL),
-                                    "name": openapi.Schema(type=openapi.TYPE_STRING),
-                                    "role": openapi.Schema(type=openapi.TYPE_STRING),
-                                },
-                            ),
-                        },
-                    ),
-                    "status_code": openapi.Schema(type=openapi.TYPE_INTEGER),
-                },
-            ),
-        ),
-        400: openapi.Response(
-            description="Validation error",
-            schema=openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                    "error": openapi.Schema(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            "code": openapi.Schema(type=openapi.TYPE_STRING),
-                            "message": openapi.Schema(type=openapi.TYPE_STRING),
-                            "details": openapi.Schema(type=openapi.TYPE_OBJECT),
-                        },
-                    ),
-                    "status_code": openapi.Schema(type=openapi.TYPE_INTEGER),
-                },
-            ),
-        ),
+        201: "User created successfully",
+        400: "Bad Request",
+        500: "Internal Server Error",
     },
     tags=["Authentication"],
 )
@@ -121,13 +80,12 @@ def signup_view(request: Request) -> Response:
     """User signup endpoint."""
     helper = FunctionalViewHelper(request)
     serializer = UserCreateSerializer(data=request.data)
-    
+
     logger.info(
         f"Signup attempt - email: {request.data.get('email', 'N/A')}, "
         f"phone: {request.data.get('phone_number', 'N/A')}"
     )
-    
-    # Check validation
+
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your input.",
@@ -136,7 +94,7 @@ def signup_view(request: Request) -> Response:
     if validation_error:
         logger.warning(
             f"Signup validation failed - email: {request.data.get('email', 'N/A')}",
-            extra={"errors": serializer.errors}
+            extra={"errors": serializer.errors},
         )
         return validation_error
 
@@ -168,19 +126,12 @@ def signup_view(request: Request) -> Response:
                 logger.error(
                     f"Failed to send OTP on signup for user {user_dto.id} ({user_dto.email}): {str(otp_error)}",
                     exc_info=True,
-                    extra={"user_id": str(user_dto.id), "email": user_dto.email}
+                    extra={"user_id": str(user_dto.id), "email": user_dto.email},
                 )
 
         return helper.success(
             message="User created successfully. Please verify OTP to activate your account.",
-            data={
-                "user": {
-                    "id": str(user_dto.id),
-                    "email": user_dto.email,
-                    "name": user_dto.name,
-                    "role": user_dto.role,
-                }
-            },
+            data={"user": UserResponseSerializer.from_dto(user_dto)},
             status_code=status.HTTP_201_CREATED,
         )
     except Exception as e:
@@ -190,21 +141,10 @@ def signup_view(request: Request) -> Response:
 @swagger_auto_schema(
     method="post",
     operation_summary="User Login",
-    operation_description="Login with email+password or phone+password. Verifies credentials and sends OTP. Use verify-otp endpoint to complete login.",
     request_body=LoginSerializer,
     responses={
-        200: openapi.Response(
-            description="Credentials verified, OTP sent successfully",
-            schema=get_success_response_schema(
-                data_schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        "expires_in_minutes": openapi.Schema(type=openapi.TYPE_INTEGER),
-                    },
-                ),
-            ),
-        ),
-        400: openapi.Response(description="Invalid credentials or validation error", schema=get_error_response_schema()),
+        200: "Credentials verified, OTP sent successfully",
+        400: "Invalid credentials or validation error",
     },
     tags=["Authentication"],
 )
@@ -215,7 +155,7 @@ def login_view(request: Request) -> Response:
     """User login endpoint - verifies credentials and sends OTP."""
     helper = FunctionalViewHelper(request)
     serializer = LoginSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -229,7 +169,7 @@ def login_view(request: Request) -> Response:
         dto = serializer.to_dto(request)
         identifier = dto.email or dto.phone_number or "unknown"
         logger.info(f"Login attempt - identifier: {identifier}")
-        
+
         # Find user by email or phone_number
         user = None
         if dto.email:
@@ -257,23 +197,30 @@ def login_view(request: Request) -> Response:
                 code="INVALID_CREDENTIALS",
             )
 
-        # Check if user is active
+        # Check if account is active (not disabled by admin)
         if not user.is_active:
-            logger.warning(f"Login failed - inactive account: {user.id} ({identifier})")
+            logger.warning(f"Login failed - account disabled: {user.id} ({identifier})")
             return helper.error(
-                message="User account is not active. Please verify your OTP first.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                code="ACCOUNT_INACTIVE",
+                message="Your account has been disabled. Please contact support.",
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="ACCOUNT_DISABLED",
             )
-        
-        logger.debug(f"Credentials verified for user: {user.id} ({identifier})")
+
+        # Credentials are valid - send OTP even if email is not verified
+        # Email will be verified automatically when OTP is verified
+        if not user.email_verified:
+            logger.info(
+                f"Login with unverified email - sending OTP to verify: {user.id} ({identifier})"
+            )
+        else:
+            logger.debug(f"Credentials verified for user: {user.id} ({identifier})")
 
         # Credentials are valid, send OTP
         otp_use_case = RequestOTPUseCase(
             otp_repository=OTPRepositoryImpl(),
             user_repository=UserRepositoryImpl(),
         )
-        
+
         # Determine OTP type based on available info
         otp_type = "email" if user.email else "sms"
         otp_request_dto = OTPRequestDTO(
@@ -281,7 +228,7 @@ def login_view(request: Request) -> Response:
             phone_number=user.phone_number if not user.email else None,
             otp_type=otp_type,
         )
-        
+
         result = otp_use_case.execute(otp_request_dto)
         logger.info(
             f"OTP sent for login - user: {user.id} ({identifier}), "
@@ -302,13 +249,9 @@ def login_view(request: Request) -> Response:
 @swagger_auto_schema(
     method="post",
     operation_summary="Verify OTP",
-    operation_description="Verify OTP code and receive access/refresh tokens. For signup: activates account. For login: requires active account. Device information is registered/updated for database consistency.",
+    operation_description="Verify OTP code and receive access/refresh tokens.",
     request_body=OTPVerifySerializer,
-    responses={
-        200: openapi.Response(description="OTP verified successfully, tokens issued"),
-        400: openapi.Response(description="Invalid or expired OTP"),
-        403: openapi.Response(description="Account inactive (for login OTP)"),
-    },
+    responses={200: "OTP verified successfully.", 400: "Invalid or expired OTP."},
     tags=["Authentication"],
 )
 @api_view(["POST"])
@@ -318,7 +261,7 @@ def verify_otp_view(request: Request) -> Response:
     """OTP verification endpoint - returns tokens after verification."""
     helper = FunctionalViewHelper(request)
     serializer = OTPVerifySerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -330,25 +273,25 @@ def verify_otp_view(request: Request) -> Response:
 
     try:
         dto = serializer.to_dto()
-        
+
         # Get device info from request
         from shared.rate_limiting.decorators import get_client_ip
         from shared.utils.device import get_or_detect_device_type
-        
+
         device_id = serializer.validated_data.get("device_id")
         device_name = serializer.validated_data.get("device_name")
         user_agent = request.META.get("HTTP_USER_AGENT", "")
         provided_device_type = serializer.validated_data.get("device_type")
         device_type = get_or_detect_device_type(provided_device_type, user_agent)
         ip_address = get_client_ip(request)
-        
+
         user_domain_service = UserDomainService(
             user_repository=UserRepositoryImpl(),
             session_repository=SessionRepositoryImpl(),
             refresh_token_repository=RefreshTokenRepositoryImpl(),
             device_repository=DeviceRepositoryImpl(),
         )
-        
+
         use_case = VerifyOTPUseCase(
             otp_repository=OTPRepositoryImpl(),
             user_repository=UserRepositoryImpl(),
@@ -362,7 +305,7 @@ def verify_otp_view(request: Request) -> Response:
             return generate_tokens(user)
 
         login_response = use_case.execute(
-            dto, 
+            dto,
             generate_tokens_func,
             device_id=device_id,
             device_name=device_name,
@@ -371,20 +314,15 @@ def verify_otp_view(request: Request) -> Response:
             user_agent=user_agent,
         )
 
+        from presentation.serializers.user_serializers import UserResponseSerializer
+
         return helper.success(
             message="OTP verified successfully. Login completed.",
             data={
                 "access_token": login_response.access_token,
                 "refresh_token": login_response.refresh_token,
                 "expires_in": login_response.expires_in,
-                "user": {
-                    "id": str(login_response.user.id),
-                    "email": login_response.user.email,
-                    "name": login_response.user.name,
-                    "role": login_response.user.role,
-                    "is_active": login_response.user.is_active,
-                    "avatar_url": login_response.user.avatar_url,
-                },
+                "user": UserResponseSerializer.from_dto(login_response.user),
             },
             status_code=status.HTTP_200_OK,
         )
@@ -410,7 +348,7 @@ def request_otp_view(request: Request) -> Response:
     """Request OTP endpoint."""
     helper = FunctionalViewHelper(request)
     serializer = OTPRequestSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -442,7 +380,7 @@ def request_otp_view(request: Request) -> Response:
 @swagger_auto_schema(
     method="get",
     operation_summary="Get Google OAuth URL",
-    operation_description="Generate Google OAuth authorization URL. No parameters required. Signup/login is auto-detected during callback based on whether user exists.",
+    operation_description="Generate Google OAuth authorization URL.",
     responses={
         200: openapi.Response(description="Auth URL generated successfully"),
         503: openapi.Response(description="Google OAuth not configured"),
@@ -471,7 +409,6 @@ def google_auth_url_view(request: Request) -> Response:
             message="Google OAuth authorization URL generated successfully",
             data={
                 "auth_url": response_dto.auth_url,
-                "expires_in": response_dto.expires_in,
             },
             status_code=status.HTTP_200_OK,
         )
@@ -488,7 +425,7 @@ def google_auth_url_view(request: Request) -> Response:
 @swagger_auto_schema(
     method="post",
     operation_summary="Google OAuth Callback",
-    operation_description="Exchange Google OAuth code for access token and authenticate user. Signup/login is auto-detected: if user doesn't exist, it's signup; if user exists with Google OAuth auth_method, it's login. Only 'code' parameter is required.",
+    operation_description="Exchange Google OAuth code for access token and authenticate user.",
     request_body=GoogleOAuthCodeSerializer,
     responses={
         200: openapi.Response(description="Google OAuth authentication successful"),
@@ -504,7 +441,7 @@ def google_callback_view(request: Request) -> Response:
     """Google OAuth callback endpoint - exchanges code for tokens."""
     helper = FunctionalViewHelper(request)
     serializer = GoogleOAuthCodeSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -537,11 +474,9 @@ def google_callback_view(request: Request) -> Response:
             google_oauth_service=GoogleOAuthService(),
         )
 
-        def generate_tokens_func(user: Any) -> dict[str, Any]:
-            """Generate JWT tokens."""
-            return generate_tokens(user)
+        login_response = use_case.execute(dto, generate_tokens)
 
-        login_response = use_case.execute(dto, generate_tokens_func)
+        from presentation.serializers.user_serializers import UserResponseSerializer
 
         return helper.success(
             message="Google OAuth authentication successful",
@@ -549,14 +484,7 @@ def google_callback_view(request: Request) -> Response:
                 "access_token": login_response.access_token,
                 "refresh_token": login_response.refresh_token,
                 "expires_in": login_response.expires_in,
-                "user": {
-                    "id": str(login_response.user.id),
-                    "email": login_response.user.email,
-                    "name": login_response.user.name,
-                    "role": login_response.user.role,
-                    "is_active": login_response.user.is_active,
-                    "avatar_url": login_response.user.avatar_url,
-                },
+                "user": UserResponseSerializer.from_dto(login_response.user),
             },
             status_code=status.HTTP_200_OK,
         )
@@ -581,7 +509,7 @@ def refresh_token_view(request: Request) -> Response:
     """Refresh token endpoint."""
     helper = FunctionalViewHelper(request)
     serializer = RefreshTokenSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -658,7 +586,7 @@ def logout_view(request: Request) -> Response:
     """User logout endpoint."""
     helper = FunctionalViewHelper(request)
     serializer = LogoutSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -669,6 +597,53 @@ def logout_view(request: Request) -> Response:
         return validation_error
 
     try:
+        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+        if auth_header.startswith("Bearer "):
+            token_string = auth_header.split(" ")[1]
+            try:
+                # Decode the token to get jti and expiration
+                access_token = AccessToken(token_string)
+                jti = access_token.get("jti")
+
+                # Blacklist the access token
+                if jti:
+                    try:
+                        # Try to find existing OutstandingToken by jti
+                        outstanding_token = OutstandingToken.objects.get(jti=jti)
+                    except OutstandingToken.DoesNotExist:
+                        # Create OutstandingToken for this access token
+                        exp_timestamp = access_token.get("exp")
+                        iat_timestamp = access_token.get("iat")
+                        expires_at = (
+                            datetime.fromtimestamp(exp_timestamp, tz=UTC)
+                            if exp_timestamp
+                            else timezone.now() + timezone.timedelta(hours=1)
+                        )
+                        created_at = (
+                            datetime.fromtimestamp(iat_timestamp, tz=UTC)
+                            if iat_timestamp
+                            else timezone.now()
+                        )
+
+                        outstanding_token = OutstandingToken.objects.create(
+                            jti=jti,
+                            user=request.user,
+                            token=token_string,
+                            created_at=created_at,
+                            expires_at=expires_at,
+                        )
+                        logger.info(f"Created OutstandingToken for access token (jti: {jti})")
+
+                    # Blacklist the token (this will prevent it from being used)
+                    BlacklistedToken.objects.get_or_create(token=outstanding_token)
+                    logger.info(f"Access token blacklisted for user {request.user.id} (jti: {jti})")
+            except Exception as token_error:
+                logger.warning(
+                    f"Failed to blacklist access token: {str(token_error)}. "
+                    f"Continuing with logout anyway.",
+                    exc_info=True,
+                )
+
         dto = serializer.to_dto()
         user_domain_service = UserDomainService(
             user_repository=UserRepositoryImpl(),
@@ -676,6 +651,69 @@ def logout_view(request: Request) -> Response:
             refresh_token_repository=RefreshTokenRepositoryImpl(),
             device_repository=DeviceRepositoryImpl(),
         )
+
+        # Get refresh tokens to blacklist before revoking them
+        refresh_token_repo = RefreshTokenRepositoryImpl()
+        if dto.logout_all_devices:
+            # Get all active refresh tokens for this user
+            refresh_tokens = refresh_token_repo.get_by_user_and_device(request.user.id, None)
+        elif dto.device_id:
+            # Get refresh tokens for specific device
+            refresh_tokens = refresh_token_repo.get_by_user_and_device(
+                request.user.id, dto.device_id
+            )
+        else:
+            # Get all active refresh tokens (for current session logout)
+            refresh_tokens = refresh_token_repo.get_by_user_and_device(request.user.id, None)
+
+        # Blacklist all refresh tokens JWT in simplejwt blacklist system
+        for refresh_token_entity in refresh_tokens:
+            if refresh_token_entity.token and not refresh_token_entity.revoked:
+                try:
+                    # Decode the refresh token JWT to get jti
+                    refresh_token_jwt = RefreshToken(refresh_token_entity.token)
+                    jti = refresh_token_jwt.get("jti")
+
+                    if jti:
+                        try:
+                            # Try to find existing OutstandingToken by jti
+                            outstanding_token = OutstandingToken.objects.get(jti=jti)
+                        except OutstandingToken.DoesNotExist:
+                            # Create OutstandingToken for this refresh token
+                            exp_timestamp = refresh_token_jwt.get("exp")
+                            iat_timestamp = refresh_token_jwt.get("iat")
+                            expires_at = (
+                                datetime.fromtimestamp(exp_timestamp, tz=UTC)
+                                if exp_timestamp
+                                else timezone.now() + timezone.timedelta(days=30)
+                            )
+                            created_at = (
+                                datetime.fromtimestamp(iat_timestamp, tz=UTC)
+                                if iat_timestamp
+                                else timezone.now()
+                            )
+
+                            outstanding_token = OutstandingToken.objects.create(
+                                jti=jti,
+                                user=request.user,
+                                token=refresh_token_entity.token,
+                                created_at=created_at,
+                                expires_at=expires_at,
+                            )
+                            logger.info(f"Created OutstandingToken for refresh token (jti: {jti})")
+
+                        # Blacklist the refresh token
+                        BlacklistedToken.objects.get_or_create(token=outstanding_token)
+                        logger.info(
+                            f"Refresh token blacklisted for user {request.user.id} (jti: {jti})"
+                        )
+                except Exception as refresh_token_error:
+                    logger.warning(
+                        f"Failed to blacklist refresh token {refresh_token_entity.id}: {str(refresh_token_error)}. "
+                        f"Continuing with logout anyway.",
+                        exc_info=True,
+                    )
+
         use_case = LogoutUseCase(
             refresh_token_repository=RefreshTokenRepositoryImpl(),
             session_repository=SessionRepositoryImpl(),
@@ -718,7 +756,7 @@ def forgot_password_view(request: Request) -> Response:
     """Forgot password endpoint - sends reset link/code."""
     helper = FunctionalViewHelper(request)
     serializer = ForgotPasswordSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -764,7 +802,7 @@ def reset_password_view(request: Request) -> Response:
     """Reset password endpoint - validates token/code and changes password."""
     helper = FunctionalViewHelper(request)
     serializer = ResetPasswordSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -802,27 +840,17 @@ def reset_password_view(request: Request) -> Response:
 def profile_view(request: Request) -> Response:
     """Get user profile endpoint."""
     helper = FunctionalViewHelper(request)
-    
+
     try:
         logger.info(f"Profile request for user {request.user.id}")
         use_case = GetProfileUseCase(user_repository=UserRepositoryImpl())
         user_dto = use_case.execute(request.user.id)
 
+        from presentation.serializers.user_serializers import UserResponseSerializer
+
         return helper.success(
             message="Profile retrieved successfully",
-            data={
-                "id": str(user_dto.id),
-                "email": user_dto.email,
-                "name": user_dto.name,
-                "phone_number": user_dto.phone_number,
-                "role": user_dto.role,
-                "is_active": user_dto.is_active,
-                "avatar_url": user_dto.avatar_url,
-                "address": user_dto.address,
-                "last_login": user_dto.last_login.isoformat() if user_dto.last_login else None,
-                "created_at": user_dto.created_at.isoformat(),
-                "updated_at": user_dto.updated_at.isoformat(),
-            },
+            data=UserResponseSerializer.from_dto(user_dto),
             status_code=status.HTTP_200_OK,
         )
     except Exception as e:
@@ -847,7 +875,7 @@ def update_profile_view(request: Request) -> Response:
     """Update user profile endpoint."""
     helper = FunctionalViewHelper(request)
     serializer = ProfileUpdateSerializer(data=request.data)
-    
+
     # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
@@ -862,21 +890,11 @@ def update_profile_view(request: Request) -> Response:
         use_case = UpdateProfileUseCase(user_repository=UserRepositoryImpl())
         user_dto = use_case.execute(request.user.id, dto)
 
+        from presentation.serializers.user_serializers import UserResponseSerializer
+
         return helper.success(
             message="Profile updated successfully",
-            data={
-                "id": str(user_dto.id),
-                "email": user_dto.email,
-                "name": user_dto.name,
-                "phone_number": user_dto.phone_number,
-                "role": user_dto.role,
-                "is_active": user_dto.is_active,
-                "avatar_url": user_dto.avatar_url,
-                "address": user_dto.address,
-                "last_login": user_dto.last_login.isoformat() if user_dto.last_login else None,
-                "created_at": user_dto.created_at.isoformat(),
-                "updated_at": user_dto.updated_at.isoformat(),
-            },
+            data=UserResponseSerializer.from_dto(user_dto),
             status_code=status.HTTP_200_OK,
         )
     except Exception as e:
@@ -914,7 +932,7 @@ def update_profile_view(request: Request) -> Response:
 def user_sessions_view(request: Request) -> Response:
     """Get user sessions endpoint."""
     helper = FunctionalViewHelper(request)
-    
+
     try:
         limit = int(request.query_params.get("limit", 100))
         offset = int(request.query_params.get("offset", 0))
@@ -947,4 +965,3 @@ def user_sessions_view(request: Request) -> Response:
         )
     except Exception as e:
         return helper.handle_exception(e)
-

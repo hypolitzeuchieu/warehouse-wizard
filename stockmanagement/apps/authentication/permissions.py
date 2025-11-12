@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from rest_framework.permissions import BasePermission
 
-
 ROLE_HIERARCHY = {
-    'manager': ['manager', 'cashier', 'storekeeper'],
-    'cashier': ['cashier'],
-    'stock_keeper': ['stock_keeper'],
+    "manager": ["manager", "cashier", "storekeeper"],
+    "cashier": ["cashier"],
+    "stock_keeper": ["stock_keeper"],
 }
 
 
@@ -19,19 +18,19 @@ def has_role(user, *roles):
 
 class IsManagerPermission(BasePermission):
     def has_permission(self, request, view):
-        return has_role(request.user, 'manager')
+        return has_role(request.user, "manager")
 
 
 class IsCashier(BasePermission):
     def has_permission(self, request, view):
-        return has_role(request.user, 'cashier')
+        return has_role(request.user, "cashier")
 
 
 class IsStorekeeper(BasePermission):
     def has_permission(self, request, view):
-        return has_role(request.user, 'stock_keeper')
+        return has_role(request.user, "stock_keeper")
 
 
 class IsCashierOrManager(BasePermission):
     def has_permission(self, request, view):
-        return has_role(request.user, 'cashier', 'manager')
+        return has_role(request.user, "cashier", "manager")

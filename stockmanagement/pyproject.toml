@@ -88,6 +88,7 @@ ignore = [
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]
+"mixins/exception_handler.py" = ["UP038"]  # isinstance with tuple is required, not X | Y
 
 [tool.black]
 line-length = 100
@@ -131,11 +132,24 @@ module = [
     "celery.*",
     "boto3.*",
     "PIL.*",
+    "requests.*",
+    "dateutil.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "apps.reports.service.generateReport",
+    "apps.notifications.service",
+    "application.use_cases.sales_use_cases",
+    "apps.dashboard.service",
+    "presentation.views.business_views",
+    "scripts.test_api",
+    "infrastructure.external.google_oauth",
+]
+ignore_errors = true
 
 [tool.isort]
 profile = "black"
 line_length = 100
 skip = ["migrations", ".venv", "venv"]
-

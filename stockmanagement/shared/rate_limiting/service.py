@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
-from django.conf import settings
 from django.core.cache import cache
 
 
@@ -80,5 +78,3 @@ class RateLimitingService:
         """
         cache_key = f"rate_limit:{key}"
         self.cache.delete(cache_key)
-
-

@@ -1,25 +1,24 @@
 """User use cases."""
 
-from typing import Optional
+from datetime import UTC
 from uuid import UUID, uuid4
 
 from django.utils import timezone
+from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import RefreshToken as JWTRefreshToken
 
 from application.dto.user_dto import (
-    GoogleOAuthDTO,
     LoginDTO,
     LoginResponseDTO,
     LogoutDTO,
-    OTPRequestDTO,
-    OTPVerifyDTO,
     RefreshTokenDTO,
     RefreshTokenResponseDTO,
     SessionResponseDTO,
     UserCreateDTO,
     UserResponseDTO,
-    UserUpdateDTO,
 )
-from domain.users.entities import AuthMethod, Device, RefreshToken, Session, User, UserRole
+from domain.users.entities import AuthMethod, Device, Session, User, UserRole
 from domain.users.repositories import (
     DeviceRepository,
     RefreshTokenRepository,
@@ -64,7 +63,8 @@ class CreateUserUseCase:
             name=name,
             phone_number=dto.phone_number,
             role=dto.role,
-            is_active=False,
+            is_active=True,  # Account is active by default (can be disabled by admin)
+            email_verified=False,  # Email/phone not verified yet
             is_staff=False,
             is_superuser=False,
             last_login=None,
@@ -87,6 +87,7 @@ class CreateUserUseCase:
             phone_number=user.phone_number,
             role=user.role.value if isinstance(user.role, UserRole) else user.role,
             is_active=user.is_active,
+            email_verified=user.email_verified,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,
             last_login=user.last_login,
@@ -113,9 +114,7 @@ class LoginUseCase:
         self.session_repository = session_repository
         self.device_repository = device_repository
 
-    def execute(
-        self, dto: LoginDTO, generate_tokens_func
-    ) -> LoginResponseDTO:
+    def execute(self, dto: LoginDTO, generate_tokens_func) -> LoginResponseDTO:
         """Execute login with email+password or phone+password."""
         # Find user by email or phone_number
         user_model = None
@@ -139,16 +138,24 @@ class LoginUseCase:
                 status_code=401,
             )
 
-        # Check if user is active
+        # Check if account is active (not disabled by admin)
         if not user_model.is_active:
             raise BaseAPIException(
-                detail="User account is not active. Please verify your OTP first.",
-                code="ACCOUNT_INACTIVE",
+                detail="Your account has been disabled. Please contact support.",
+                code="ACCOUNT_DISABLED",
+                status_code=403,
+            )
+
+        # Check if email is verified
+        if not user_model.email_verified:
+            raise BaseAPIException(
+                detail="Please verify your email/phone with OTP first.",
+                code="EMAIL_NOT_VERIFIED",
                 status_code=403,
             )
 
         # Start session
-        session = self.user_domain_service.start_session(
+        self.user_domain_service.start_session(
             user_id=user_model.id,
             device_id=dto.device_id,
             ip_address=dto.ip_address,
@@ -180,7 +187,7 @@ class LoginUseCase:
         tokens = generate_tokens_func(user_model)
 
         # Create refresh token
-        refresh_token_entity = self.user_domain_service.create_refresh_token(
+        self.user_domain_service.create_refresh_token(
             user_id=user_model.id,
             token=tokens["refresh"],
             device_id=dto.device_id,
@@ -195,10 +202,13 @@ class LoginUseCase:
                 email=user_model.email or "",
                 name=user_model.name,
                 phone_number=user_model.phone_number,
-                role=user_model.role.value
-                if isinstance(user_model.role, UserRole)
-                else user_model.role,
+                role=(
+                    user_model.role.value
+                    if isinstance(user_model.role, UserRole)
+                    else user_model.role
+                ),
                 is_active=user_model.is_active,
+                email_verified=user_model.email_verified,
                 is_staff=user_model.is_staff,
                 is_superuser=user_model.is_superuser,
                 last_login=timezone.now(),
@@ -225,14 +235,46 @@ class RefreshTokenUseCase:
         self.user_repository = user_repository
         self.user_domain_service = user_domain_service
 
-    def execute(
-        self, dto: RefreshTokenDTO, generate_tokens_func
-    ) -> RefreshTokenResponseDTO:
+    def execute(self, dto: RefreshTokenDTO, generate_tokens_func) -> RefreshTokenResponseDTO:
         """Execute token refresh."""
-        # Get refresh token
-        refresh_token = self.refresh_token_repository.get_by_token(
-            dto.refresh_token
-        )
+        # First, validate JWT token expiration and blacklist
+        # JWTRefreshToken automatically validates expiration (exp claim)
+        # If expired, it will raise InvalidToken
+        try:
+            refresh_token_jwt = JWTRefreshToken(dto.refresh_token)
+
+            jti = refresh_token_jwt.get("jti")
+
+            if jti:
+                try:
+                    outstanding_token = OutstandingToken.objects.get(jti=jti)
+                    if BlacklistedToken.objects.filter(token=outstanding_token).exists():
+                        raise BaseAPIException(
+                            detail="Refresh token has been blacklisted (logged out)",
+                            code="REFRESH_TOKEN_BLACKLISTED",
+                            status_code=401,
+                        )
+                except OutstandingToken.DoesNotExist:
+                    # Token not in outstanding tokens, might be a new token
+                    # This is OK, continue with validation
+                    pass
+        except InvalidToken as e:
+            # Invalid JWT token format or expired
+            # JWTRefreshToken automatically checks expiration (exp claim)
+            raise BaseAPIException(
+                detail=f"Invalid or expired refresh token: {str(e)}",
+                code="INVALID_REFRESH_TOKEN",
+                status_code=401,
+            ) from e
+        except Exception as e:
+            # Log error but continue with repository check
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error checking refresh token blacklist: {e}", exc_info=True)
+
+        # Get refresh token from repository
+        refresh_token = self.refresh_token_repository.get_by_token(dto.refresh_token)
 
         if not refresh_token or not refresh_token.is_valid():
             raise BaseAPIException(
@@ -250,14 +292,64 @@ class RefreshTokenUseCase:
                 status_code=404,
             )
 
-        # Revoke old refresh token
+        # Blacklist and revoke old refresh token
+        # First blacklist the JWT token in simplejwt blacklist system
+        try:
+            old_refresh_token_jwt = JWTRefreshToken(dto.refresh_token)
+            old_jti = old_refresh_token_jwt.get("jti")
+
+            if old_jti:
+                try:
+                    outstanding_token = OutstandingToken.objects.get(jti=old_jti)
+                    BlacklistedToken.objects.get_or_create(token=outstanding_token)
+                except OutstandingToken.DoesNotExist:
+                    # Create OutstandingToken for this refresh token before blacklisting
+                    from datetime import datetime
+
+                    from django.utils import timezone
+
+                    exp_timestamp = old_refresh_token_jwt.get("exp")
+                    iat_timestamp = old_refresh_token_jwt.get("iat")
+                    expires_at = (
+                        datetime.fromtimestamp(exp_timestamp, tz=UTC)
+                        if exp_timestamp
+                        else timezone.now() + timezone.timedelta(days=30)
+                    )
+                    created_at = (
+                        datetime.fromtimestamp(iat_timestamp, tz=UTC)
+                        if iat_timestamp
+                        else timezone.now()
+                    )
+
+                    # Get user model for OutstandingToken
+                    from django.contrib.auth import get_user_model
+
+                    UserModel = get_user_model()
+                    user_model = UserModel.objects.get(id=refresh_token.user_id)
+
+                    outstanding_token = OutstandingToken.objects.create(
+                        jti=old_jti,
+                        user=user_model,
+                        token=dto.refresh_token,
+                        created_at=created_at,
+                        expires_at=expires_at,
+                    )
+                    BlacklistedToken.objects.get_or_create(token=outstanding_token)
+        except Exception as e:
+            # Log error but continue with revocation
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to blacklist old refresh token: {e}", exc_info=True)
+
+        # Revoke old refresh token in our database
         self.user_domain_service.revoke_refresh_token(refresh_token.id)
 
         # Generate new tokens
         tokens = generate_tokens_func(user)
 
         # Create new refresh token (rotation)
-        new_refresh_token = self.user_domain_service.create_refresh_token(
+        self.user_domain_service.create_refresh_token(
             user_id=user.id,
             token=tokens["refresh"],
             device_id=dto.device_id or refresh_token.device_id,
@@ -294,17 +386,11 @@ class LogoutUseCase:
             self.user_domain_service.end_user_sessions(self.user_id)
             self.user_domain_service.revoke_all_user_tokens(self.user_id)
         elif dto.device_id:
-            self.user_domain_service.end_user_sessions(
-                self.user_id, dto.device_id
-            )
-            self.user_domain_service.revoke_user_device_tokens(
-                self.user_id, dto.device_id
-            )
+            self.user_domain_service.end_user_sessions(self.user_id, dto.device_id)
+            self.user_domain_service.revoke_user_device_tokens(self.user_id, dto.device_id)
         else:
             # End current session (would need to track current session)
-            active_sessions = (
-                self.session_repository.get_active_sessions_by_user(self.user_id)
-            )
+            active_sessions = self.session_repository.get_active_sessions_by_user(self.user_id)
             for session in active_sessions:
                 self.user_domain_service.end_session(session.id)
 
@@ -312,28 +398,25 @@ class LogoutUseCase:
 class GetUserSessionsUseCase:
     """Use case for getting user sessions."""
 
-    def __init__(
-        self, session_repository: SessionRepository, user_id: UUID
-    ) -> None:
+    def __init__(self, session_repository: SessionRepository, user_id: UUID) -> None:
         """Initialize use case."""
         self.session_repository = session_repository
         self.user_id = user_id
 
-    def execute(
-        self, limit: int = 100, offset: int = 0
-    ) -> list[SessionResponseDTO]:
+    def execute(self, limit: int = 100, offset: int = 0) -> list[SessionResponseDTO]:
         """Execute getting sessions."""
         # Use the new method that includes device information
-        if hasattr(self.session_repository, 'get_user_sessions_with_devices'):
+        if hasattr(self.session_repository, "get_user_sessions_with_devices"):
             sessions_with_devices = self.session_repository.get_user_sessions_with_devices(
                 self.user_id, limit, offset
             )
-            return [self._to_dto_with_device(session, device) for session, device in sessions_with_devices]
+            return [
+                self._to_dto_with_device(session, device)
+                for session, device in sessions_with_devices
+            ]
         else:
             # Fallback to old method if not available
-            sessions = self.session_repository.get_user_sessions(
-                self.user_id, limit, offset
-            )
+            sessions = self.session_repository.get_user_sessions(self.user_id, limit, offset)
             return [self._to_dto(session) for session in sessions]
 
     def _to_dto(self, session: Session) -> SessionResponseDTO:
@@ -351,9 +434,7 @@ class GetUserSessionsUseCase:
             created_at=session.created_at,
         )
 
-    def _to_dto_with_device(
-        self, session: Session, device: Optional[Device]
-    ) -> SessionResponseDTO:
+    def _to_dto_with_device(self, session: Session, device: Device | None) -> SessionResponseDTO:
         """Convert session entity to DTO with device information."""
         return SessionResponseDTO(
             id=session.id,

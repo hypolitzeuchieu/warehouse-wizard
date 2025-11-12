@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 
@@ -32,7 +31,7 @@ class Expense:
     amount: Decimal
     reason: str
     user_id: UUID  # User who created the expense
-    approved_by: Optional[UUID]  # User who approved the expense
+    approved_by: UUID | None  # User who approved the expense
     is_approved: bool
     created_at: datetime
     updated_at: datetime
@@ -58,7 +57,7 @@ class Salary:
     deductions: Decimal
     bonuses: Decimal
     effective_from: datetime
-    effective_to: Optional[datetime]
+    effective_to: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -105,4 +104,3 @@ class FinancialSummary:
         if self.total_revenue == 0:
             return Decimal("0.00")
         return (self.net_profit / self.total_revenue) * 100
-

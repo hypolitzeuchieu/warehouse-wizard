@@ -1,7 +1,6 @@
 """User domain value objects."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -25,7 +24,7 @@ class PhoneNumber:
     """Phone number value object."""
 
     value: str
-    country_code: Optional[str] = None
+    country_code: str | None = None
 
     def __post_init__(self) -> None:
         """Validate phone number."""
@@ -45,9 +44,9 @@ class Address:
 
     street: str
     city: str
-    state: Optional[str] = None
-    postal_code: Optional[str] = None
-    country: Optional[str] = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
 
     def __str__(self) -> str:
         """Return formatted address."""
@@ -59,4 +58,3 @@ class Address:
         if self.country:
             parts.append(self.country)
         return ", ".join(parts)
-

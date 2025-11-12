@@ -5,8 +5,7 @@ import uuid
 
 import django.db.models.deletion
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -14,16 +13,16 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('stock', '0001_initial'),
+        ("stock", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Notification',
+            name="Notification",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -32,43 +31,43 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    'notification_type',
+                    "notification_type",
                     models.CharField(
                         choices=[
-                            ('CRITICAL_STOCK', 'Critical Stock'),
-                            ('EXPIRED', 'Expired Product'),
-                            ('NEAR_EXPIRY', 'Near Expiry'),
+                            ("CRITICAL_STOCK", "Critical Stock"),
+                            ("EXPIRED", "Expired Product"),
+                            ("NEAR_EXPIRY", "Near Expiry"),
                         ],
-                        default='CRITICAL_STOCK',
+                        default="CRITICAL_STOCK",
                         max_length=20,
                     ),
                 ),
-                ('message', models.TextField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('is_read', models.BooleanField(default=False)),
+                ("message", models.TextField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("is_read", models.BooleanField(default=False)),
                 (
-                    'product',
+                    "product",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='notifications',
-                        to='stock.product',
+                        related_name="notifications",
+                        to="stock.product",
                     ),
                 ),
                 (
-                    'user',
+                    "user",
                     models.ForeignKey(
                         blank=True,
                         null=True,
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='notifications',
+                        related_name="notifications",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Notification',
-                'verbose_name_plural': 'Notifications',
-                'ordering': ['-created_at'],
+                "verbose_name": "Notification",
+                "verbose_name_plural": "Notifications",
+                "ordering": ["-created_at"],
             },
         ),
     ]

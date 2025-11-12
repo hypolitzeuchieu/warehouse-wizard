@@ -12,7 +12,6 @@ from application.use_cases.sales_use_cases import (
     CreateInvoiceUseCase,
     GetInvoiceUseCase,
 )
-from domain.inventory.repositories import ProductRepository
 from domain.inventory.services import InventoryDomainService
 from infrastructure.persistence.repositories import (
     InvoiceLineRepositoryImpl,
@@ -134,4 +133,3 @@ def get_invoice_view(request: Request, business_id: UUID, invoice_id: UUID) -> R
         )
     except Exception as e:
         return ResponseMixin.from_exception(e)
-

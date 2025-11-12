@@ -1,6 +1,5 @@
 """Tests for inventory endpoints."""
 
-import json
 from uuid import uuid4
 
 import pytest
@@ -57,9 +56,7 @@ def business_and_user(api_client):
         "name": "Test Supermarket",
         "unique_name": f"test-market-{uuid4().hex[:8]}",
     }
-    business_response = api_client.post(
-        business_url, data=business_data, format="json"
-    )
+    business_response = api_client.post(business_url, data=business_data, format="json")
     business_id = business_response.data["data"]["id"]
 
     business = Business.objects.get(id=business_id)
@@ -98,9 +95,7 @@ class TestProductEndpoints:
         assert "Product created successfully" in response.data["message"]
         assert response.data["data"]["name"] == "Test Product"
 
-    def test_create_product_invalid_category(
-        self, api_client, business_and_user
-    ):
+    def test_create_product_invalid_category(self, api_client, business_and_user):
         """Test product creation with invalid category."""
         user, business = business_and_user
 
@@ -117,9 +112,7 @@ class TestProductEndpoints:
         assert "error" in response.data
         assert "category" in response.data["error"]["message"].lower()
 
-    def test_get_low_stock_products(
-        self, api_client, business_and_user
-    ):
+    def test_get_low_stock_products(self, api_client, business_and_user):
         """Test getting low stock products."""
         user, business = business_and_user
 
@@ -142,4 +135,3 @@ class TestProductEndpoints:
         assert response.data["status"] is True
         assert "data" in response.data
         assert isinstance(response.data["data"], list)
-

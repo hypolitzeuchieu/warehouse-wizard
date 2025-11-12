@@ -1,6 +1,5 @@
 """Business use cases."""
 
-from typing import Optional
 from uuid import UUID, uuid4
 
 from django.utils import timezone
@@ -9,7 +8,6 @@ from application.dto.business_dto import (
     BusinessCreateDTO,
     BusinessMemberCreateDTO,
     BusinessMemberResponseDTO,
-    BusinessMemberUpdateDTO,
     BusinessResponseDTO,
     BusinessUpdateDTO,
 )
@@ -57,9 +55,7 @@ class CreateBusinessUseCase:
             )
 
         # Check if unique_name already exists
-        existing = self.business_repository.get_by_unique_name(
-            dto.unique_name
-        )
+        existing = self.business_repository.get_by_unique_name(dto.unique_name)
         if existing:
             raise BaseAPIException(
                 detail="Business with this unique name already exists",
@@ -142,9 +138,7 @@ class UpdateBusinessUseCase:
                 status_code=404,
             )
 
-        if not self.business_domain_service.can_user_manage_members(
-            self.business_id, self.user_id
-        ):
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
             raise BaseAPIException(
                 detail="You don't have permission to update this business",
                 code="PERMISSION_DENIED",
@@ -243,9 +237,7 @@ class AddBusinessMemberUseCase:
     def execute(self, dto: BusinessMemberCreateDTO) -> BusinessMemberResponseDTO:
         """Execute adding business member."""
         # Check permissions
-        if not self.business_domain_service.can_user_manage_members(
-            self.business_id, self.user_id
-        ):
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
             raise BaseAPIException(
                 detail="You don't have permission to add members",
                 code="PERMISSION_DENIED",
@@ -253,10 +245,8 @@ class AddBusinessMemberUseCase:
             )
 
         # Check if user is already a member
-        existing_members = (
-            self.business_member_repository.get_business_members(
-                self.business_id, active_only=True
-            )
+        existing_members = self.business_member_repository.get_business_members(
+            self.business_id, active_only=True
         )
         if any(member.user_id == dto.user_id for member in existing_members):
             raise BaseAPIException(
@@ -292,9 +282,7 @@ class AddBusinessMemberUseCase:
         member = self.business_member_repository.create(member)
         return self._to_dto(member)
 
-    def _to_dto(
-        self, member: BusinessMember
-    ) -> BusinessMemberResponseDTO:
+    def _to_dto(self, member: BusinessMember) -> BusinessMemberResponseDTO:
         """Convert business member entity to DTO."""
         return BusinessMemberResponseDTO(
             id=member.id,
@@ -328,9 +316,7 @@ class RemoveBusinessMemberUseCase:
     def execute(self, member_id: UUID) -> None:
         """Execute removing business member."""
         # Check permissions
-        if not self.business_domain_service.can_user_manage_members(
-            self.business_id, self.user_id
-        ):
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
             raise BaseAPIException(
                 detail="You don't have permission to remove members",
                 code="PERMISSION_DENIED",
@@ -350,4 +336,3 @@ class RemoveBusinessMemberUseCase:
                 )
 
         self.business_member_repository.remove(member_id)
-

@@ -15,13 +15,12 @@ class PersistenceModelsConfig(AppConfig):
         """Import models when app is ready."""
         # Import all models to ensure they're registered with Django
         from infrastructure.persistence.models import (  # noqa: F401
-            user_models,
             business_models,
-            inventory_models,
-            sales_models,
-            finance_models,
-            notification_models,
-            delivery_models,
             customer_models,
+            delivery_models,
+            finance_models,
+            inventory_models,
+            notification_models,
+            sales_models,
+            user_models,
         )
-

@@ -1,6 +1,5 @@
 """Notification repository implementations."""
 
-from typing import Optional
 from uuid import UUID
 
 from domain.notifications.entities import (
@@ -17,12 +16,12 @@ from infrastructure.persistence.models.notification_models import (
 class NotificationRepositoryImpl(NotificationRepository):
     """Django implementation of NotificationRepository."""
 
-    def get_by_id(self, notification_id: UUID) -> Optional[Notification]:
+    def get_by_id(self, notification_id: UUID) -> Notification | None:
         """Get notification by ID."""
         try:
-            notification_model = NotificationModel.objects.select_related(
-                "user", "business"
-            ).get(id=notification_id)
+            notification_model = NotificationModel.objects.select_related("user", "business").get(
+                id=notification_id
+            )
             return self._to_entity(notification_model)
         except NotificationModel.DoesNotExist:
             return None
@@ -30,14 +29,12 @@ class NotificationRepositoryImpl(NotificationRepository):
     def get_by_user(
         self,
         user_id: UUID,
-        status: Optional[NotificationStatus] = None,
-        notification_type: Optional[NotificationType] = None,
+        status: NotificationStatus | None = None,
+        notification_type: NotificationType | None = None,
         limit: int = 100,
     ) -> list[Notification]:
         """Get notifications for a user with optional filters."""
-        query = NotificationModel.objects.filter(user_id=user_id).select_related(
-            "business"
-        )
+        query = NotificationModel.objects.filter(user_id=user_id).select_related("business")
 
         if status:
             query = query.filter(status=status.value)
@@ -50,9 +47,7 @@ class NotificationRepositoryImpl(NotificationRepository):
 
     def get_unread_count(self, user_id: UUID) -> int:
         """Get count of unread notifications for a user."""
-        return NotificationModel.objects.filter(
-            user_id=user_id, status="UNREAD"
-        ).count()
+        return NotificationModel.objects.filter(user_id=user_id, status="UNREAD").count()
 
     def create(self, notification: Notification) -> Notification:
         """Create a new notification."""
@@ -83,21 +78,17 @@ class NotificationRepositoryImpl(NotificationRepository):
         """Mark all notifications as read for a user."""
         from django.utils import timezone
 
-        NotificationModel.objects.filter(
-            user_id=user_id, status="UNREAD"
-        ).update(status="READ", read_at=timezone.now())
+        NotificationModel.objects.filter(user_id=user_id, status="UNREAD").update(
+            status="READ", read_at=timezone.now()
+        )
 
-    def _to_entity(
-        self, notification_model: NotificationModel
-    ) -> Notification:
+    def _to_entity(self, notification_model: NotificationModel) -> Notification:
         """Convert Django model to domain entity."""
         return Notification(
             id=notification_model.id,
             user_id=notification_model.user_id,
             business_id=notification_model.business_id,
-            notification_type=NotificationType(
-                notification_model.notification_type
-            ),
+            notification_type=NotificationType(notification_model.notification_type),
             status=NotificationStatus(notification_model.status),
             title=notification_model.title,
             message=notification_model.message,
@@ -106,4 +97,3 @@ class NotificationRepositoryImpl(NotificationRepository):
             created_at=notification_model.created_at,
             read_at=notification_model.read_at,
         )
-

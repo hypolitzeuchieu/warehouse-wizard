@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
-
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 from domain.users.entities import UserRole
 from infrastructure.persistence.models.base_model import BaseModel
@@ -16,17 +14,25 @@ class RetailPulseUser(AbstractUser, BaseModel):
     """RetailPulse User model."""
 
     email = models.EmailField(unique=True, null=True, blank=True)
-    username = models.CharField(max_length=150, null=True, blank=True, unique=False, help_text="Deprecated: Use name instead")
-    name = models.CharField(max_length=150, null=True, blank=True, help_text="User's display name (not unique)")
-    
-    USERNAME_FIELD = 'email'  # Use email for authentication instead of username
-    REQUIRED_FIELDS = []  # No required fields besides email
+    username = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        unique=False,
+        help_text="Deprecated: Use name instead",
+    )
+    name = models.CharField(
+        max_length=150, null=True, blank=True, help_text="User's display name (not unique)"
+    )
+
+    USERNAME_FIELD = "email"  # Use email for authentication instead of username
+    REQUIRED_FIELDS: list[str] = []  # No required fields besides email
     phone_number = models.CharField(
-        max_length=30, 
-        unique=True, 
-        null=True, 
-        blank=True, 
-        help_text="Unique phone number for login (required if email is not provided)"
+        max_length=30,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Unique phone number for login (required if email is not provided)",
     )
     address = models.TextField(null=True, blank=True)
     avatar_url = models.URLField(max_length=500, null=True, blank=True)  # Google or custom avatar
@@ -45,7 +51,16 @@ class RetailPulseUser(AbstractUser, BaseModel):
         choices=[(role.value, role.name) for role in UserRole],
         default=UserRole.CUSTOMER.value,
     )
-    is_active = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True, help_text="Account status")
+    email_verified = models.BooleanField(default=False, help_text="Email/phone verification status")
+    google_id = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text="Google OAuth user ID",
+    )
     last_login = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -88,9 +103,7 @@ class RetailPulseUser(AbstractUser, BaseModel):
 class Session(BaseModel):
     """User session model for tracking time spent on platform."""
 
-    user = models.ForeignKey(
-        RetailPulseUser, on_delete=models.CASCADE, related_name="sessions"
-    )
+    user = models.ForeignKey(RetailPulseUser, on_delete=models.CASCADE, related_name="sessions")
     device_id = models.CharField(max_length=255, null=True, blank=True)
     start_time = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)
@@ -153,7 +166,7 @@ class RefreshToken(BaseModel):
 
     def is_expired(self) -> bool:
         """Check if token is expired."""
-        return datetime.utcnow() > self.expires_at.replace(tzinfo=None)
+        return timezone.now() > self.expires_at
 
     def is_valid(self) -> bool:
         """Check if token is valid (not expired and not revoked)."""
@@ -163,14 +176,10 @@ class RefreshToken(BaseModel):
 class Device(BaseModel):
     """User device model for multi-device management."""
 
-    user = models.ForeignKey(
-        RetailPulseUser, on_delete=models.CASCADE, related_name="devices"
-    )
+    user = models.ForeignKey(RetailPulseUser, on_delete=models.CASCADE, related_name="devices")
     device_id = models.CharField(max_length=255, unique=True)
     device_name = models.CharField(max_length=255, null=True, blank=True)
-    device_type = models.CharField(
-        max_length=50, null=True, blank=True
-    )  # mobile, tablet, desktop
+    device_type = models.CharField(max_length=50, null=True, blank=True)  # mobile, tablet, desktop
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(null=True, blank=True)
     last_used_at = models.DateTimeField(auto_now=True)
@@ -187,4 +196,3 @@ class Device(BaseModel):
 
     def __str__(self) -> str:
         return f"Device {self.device_id} - {self.user.name or self.user.email}"
-

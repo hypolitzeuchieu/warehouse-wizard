@@ -1,6 +1,5 @@
 """Inventory serializers."""
 
-from datetime import datetime
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -19,9 +18,7 @@ class ProductCreateSerializer(serializers.Serializer):
     barcode = serializers.CharField(max_length=100, required=False, allow_blank=True)
     category_id = serializers.UUIDField(required=True)
     subcategory_id = serializers.UUIDField(required=False, allow_null=True)
-    purchase_price = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True
-    )
+    purchase_price = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
     unit_price = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
@@ -51,9 +48,7 @@ class StockMovementCreateSerializer(serializers.Serializer):
     """Serializer for stock movement creation."""
 
     product_id = serializers.UUIDField(required=True)
-    movement_type = serializers.ChoiceField(
-        choices=["ENTRY", "EXIT", "ADJUSTMENT"], required=True
-    )
+    movement_type = serializers.ChoiceField(choices=["ENTRY", "EXIT", "ADJUSTMENT"], required=True)
     quantity = serializers.IntegerField(required=True, min_value=1)
     reason = serializers.CharField(required=False, allow_blank=True)
 
@@ -65,4 +60,3 @@ class StockMovementCreateSerializer(serializers.Serializer):
             quantity=self.validated_data["quantity"],
             reason=self.validated_data.get("reason"),
         )
-

@@ -1,32 +1,36 @@
 """User domain repositories (interfaces)."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
-from domain.users.entities import Device, OTP, RefreshToken, Session, User, UserRole
+from domain.users.entities import OTP, Device, RefreshToken, Session, User, UserRole
 
 
 class UserRepository(ABC):
     """User repository interface."""
 
     @abstractmethod
-    def get_by_id(self, user_id: UUID) -> Optional[User]:
+    def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
         pass
 
     @abstractmethod
-    def get_by_email(self, email: str) -> Optional[User]:
+    def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
         pass
 
     @abstractmethod
-    def get_by_phone_number(self, phone_number: str) -> Optional[User]:
+    def get_by_phone_number(self, phone_number: str) -> User | None:
         """Get user by phone number."""
         pass
 
     @abstractmethod
-    def create(self, user: User, password: Optional[str] = None) -> User:
+    def get_by_google_id(self, google_id: str) -> User | None:
+        """Get user by Google ID."""
+        pass
+
+    @abstractmethod
+    def create(self, user: User, password: str | None = None) -> User:
         """Create a new user."""
         pass
 
@@ -55,7 +59,7 @@ class SessionRepository(ABC):
     """Session repository interface."""
 
     @abstractmethod
-    def get_by_id(self, session_id: UUID) -> Optional[Session]:
+    def get_by_id(self, session_id: UUID) -> Session | None:
         """Get session by ID."""
         pass
 
@@ -75,9 +79,7 @@ class SessionRepository(ABC):
         pass
 
     @abstractmethod
-    def get_user_sessions(
-        self, user_id: UUID, limit: int = 100, offset: int = 0
-    ) -> list[Session]:
+    def get_user_sessions(self, user_id: UUID, limit: int = 100, offset: int = 0) -> list[Session]:
         """Get user session history."""
         pass
 
@@ -86,12 +88,12 @@ class RefreshTokenRepository(ABC):
     """Refresh token repository interface."""
 
     @abstractmethod
-    def get_by_id(self, token_id: UUID) -> Optional[RefreshToken]:
+    def get_by_id(self, token_id: UUID) -> RefreshToken | None:
         """Get refresh token by ID."""
         pass
 
     @abstractmethod
-    def get_by_token(self, token: str) -> Optional[RefreshToken]:
+    def get_by_token(self, token: str) -> RefreshToken | None:
         """Get refresh token by token string."""
         pass
 
@@ -125,12 +127,12 @@ class DeviceRepository(ABC):
     """Device repository interface."""
 
     @abstractmethod
-    def get_by_id(self, device_id: UUID) -> Optional[Device]:
+    def get_by_id(self, device_id: UUID) -> Device | None:
         """Get device by ID."""
         pass
 
     @abstractmethod
-    def get_by_device_id(self, device_id: str) -> Optional[Device]:
+    def get_by_device_id(self, device_id: str) -> Device | None:
         """Get device by device_id string."""
         pass
 
@@ -159,29 +161,25 @@ class OTPRepository(ABC):
     """OTP repository interface."""
 
     @abstractmethod
-    def get_by_id(self, otp_id: UUID) -> Optional[OTP]:
+    def get_by_id(self, otp_id: UUID) -> OTP | None:
         """Get OTP by ID."""
         pass
 
     @abstractmethod
     def get_by_code(
-        self, code: str, email: Optional[str] = None, phone_number: Optional[str] = None
-    ) -> Optional[OTP]:
+        self, code: str, email: str | None = None, phone_number: str | None = None
+    ) -> OTP | None:
         """Get OTP by code and identifier."""
         pass
 
     @abstractmethod
-    def get_latest_by_email(
-        self, email: str, purpose: str, otp_type: str
-    ) -> Optional[OTP]:
-        """Get latest OTP by email, purpose, and type."""
+    def get_latest_by_email(self, email: str, otp_type: str) -> OTP | None:
+        """Get latest OTP by email and type."""
         pass
 
     @abstractmethod
-    def get_latest_by_phone(
-        self, phone_number: str, purpose: str, otp_type: str
-    ) -> Optional[OTP]:
-        """Get latest OTP by phone number, purpose, and type."""
+    def get_latest_by_phone(self, phone_number: str, otp_type: str) -> OTP | None:
+        """Get latest OTP by phone number and type."""
         pass
 
     @abstractmethod
@@ -207,19 +205,17 @@ class OTPRepository(ABC):
     @abstractmethod
     def invalidate_all_pending(
         self,
-        email: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        purpose: Optional[str] = None,
-        otp_type: Optional[str] = None,
+        email: str | None = None,
+        phone_number: str | None = None,
+        otp_type: str | None = None,
     ) -> int:
         """Invalidate all pending (non-verified) OTPs for given criteria.
-        
+
         Args:
             email: Email address (optional)
             phone_number: Phone number (optional)
-            purpose: Purpose of OTP (optional)
             otp_type: Type of OTP (optional)
-            
+
         Returns:
             Number of OTPs invalidated
         """

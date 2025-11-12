@@ -2,14 +2,20 @@
 
 from django.contrib import admin
 
-from infrastructure.persistence.models.otp_models import OTP
-from infrastructure.persistence.models.password_reset_models import PasswordResetToken
-from infrastructure.persistence.models.user_models import (
-    Device, RefreshToken, RetailPulseUser, Session,
-)
 from infrastructure.persistence.models.business_models import (
     Business,
     BusinessMember,
+)
+from infrastructure.persistence.models.customer_models import (
+    Customer,
+    CustomerPurchaseHistory,
+)
+from infrastructure.persistence.models.delivery_models import Delivery
+from infrastructure.persistence.models.finance_models import (
+    Expense,
+    FinancialSummary,
+    Payroll,
+    Salary,
 )
 from infrastructure.persistence.models.inventory_models import (
     Category,
@@ -17,20 +23,20 @@ from infrastructure.persistence.models.inventory_models import (
     StockMovement,
     SubCategory,
 )
-from infrastructure.persistence.models.sales_models import (
-    Invoice, InvoiceLine, Order, OrderItem,
-)
-from infrastructure.persistence.models.finance_models import (
-    Expense,
-    FinancialSummary,
-    Payroll,
-    Salary,
-)
 from infrastructure.persistence.models.notification_models import Notification
-from infrastructure.persistence.models.delivery_models import Delivery
-from infrastructure.persistence.models.customer_models import (
-    Customer,
-    CustomerPurchaseHistory,
+from infrastructure.persistence.models.otp_models import OTP
+from infrastructure.persistence.models.password_reset_models import PasswordResetToken
+from infrastructure.persistence.models.sales_models import (
+    Invoice,
+    InvoiceLine,
+    Order,
+    OrderItem,
+)
+from infrastructure.persistence.models.user_models import (
+    Device,
+    RefreshToken,
+    RetailPulseUser,
+    Session,
 )
 
 # Register models with admin (optional, can be customized later)

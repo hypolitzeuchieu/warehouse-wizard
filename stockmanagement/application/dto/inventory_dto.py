@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 
@@ -12,15 +11,15 @@ class CategoryCreateDTO:
     """DTO for creating a category."""
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
 class CategoryUpdateDTO:
     """DTO for updating a category."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
 
 
 @dataclass
@@ -30,7 +29,7 @@ class CategoryResponseDTO:
     id: UUID
     business_id: UUID
     name: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -41,15 +40,15 @@ class SubCategoryCreateDTO:
 
     category_id: UUID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
 class SubCategoryUpdateDTO:
     """DTO for updating a subcategory."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
 
 
 @dataclass
@@ -60,7 +59,7 @@ class SubCategoryResponseDTO:
     business_id: UUID
     category_id: UUID
     name: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -73,30 +72,30 @@ class ProductCreateDTO:
     category_id: UUID
     purchase_price: Decimal
     unit_price: Decimal
-    description: Optional[str] = None
-    barcode: Optional[str] = None
-    subcategory_id: Optional[UUID] = None
-    image_url: Optional[str] = None
+    description: str | None = None
+    barcode: str | None = None
+    subcategory_id: UUID | None = None
+    image_url: str | None = None
     quantity: int = 0
     min_quantity: int = 10
-    expiry_date: Optional[datetime] = None
+    expiry_date: datetime | None = None
 
 
 @dataclass
 class ProductUpdateDTO:
     """DTO for updating a product."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    barcode: Optional[str] = None
-    category_id: Optional[UUID] = None
-    subcategory_id: Optional[UUID] = None
-    purchase_price: Optional[Decimal] = None
-    unit_price: Optional[Decimal] = None
-    image_url: Optional[str] = None
-    quantity: Optional[int] = None
-    min_quantity: Optional[int] = None
-    expiry_date: Optional[datetime] = None
+    name: str | None = None
+    description: str | None = None
+    barcode: str | None = None
+    category_id: UUID | None = None
+    subcategory_id: UUID | None = None
+    purchase_price: Decimal | None = None
+    unit_price: Decimal | None = None
+    image_url: str | None = None
+    quantity: int | None = None
+    min_quantity: int | None = None
+    expiry_date: datetime | None = None
 
 
 @dataclass
@@ -106,24 +105,24 @@ class ProductResponseDTO:
     id: UUID
     business_id: UUID
     name: str
-    description: Optional[str]
-    barcode: Optional[str]
-    barcode_image_url: Optional[str]
+    description: str | None
+    barcode: str | None
+    barcode_image_url: str | None
     category_id: UUID
-    subcategory_id: Optional[UUID]
+    subcategory_id: UUID | None
     purchase_price: Decimal
     unit_price: Decimal
     current_price: Decimal
-    image_url: Optional[str]
+    image_url: str | None
     quantity: int
     min_quantity: int
     is_low_stock: bool
-    expiry_date: Optional[datetime]
+    expiry_date: datetime | None
     is_expired: bool
     on_promotion: bool
-    promotion_start_date: Optional[datetime]
-    promotion_end_date: Optional[datetime]
-    promo_price: Optional[Decimal]
+    promotion_start_date: datetime | None
+    promotion_end_date: datetime | None
+    promo_price: Decimal | None
     created_at: datetime
     updated_at: datetime
 
@@ -135,7 +134,7 @@ class StockMovementCreateDTO:
     product_id: UUID
     movement_type: str  # ENTRY, EXIT, ADJUSTMENT
     quantity: int
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @dataclass
@@ -149,7 +148,6 @@ class StockMovementResponseDTO:
     quantity: int
     user_id: UUID
     created_at: datetime
-    product_name: Optional[str] = None
-    reason: Optional[str] = None
-    user_name: Optional[str] = None
-
+    product_name: str | None = None
+    reason: str | None = None
+    user_name: str | None = None

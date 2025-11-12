@@ -45,19 +45,18 @@ class ForgotPasswordUseCase:
             BaseAPIException: If user not found or sending fails
         """
         # Get expiration time from environment (default 10 minutes)
-        expiration_minutes = int(
-            getattr(settings, "PASSWORD_RESET_EXPIRY_MINUTES", 10)
-        )
-        
+        expiration_minutes = int(getattr(settings, "PASSWORD_RESET_EXPIRY_MINUTES", 10))
+
         # Get frontend URL for reset link
         frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
 
         # Find user by identifier
+        from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
+
         user = None
         if dto.email:
             user = self.user_repository.get_by_email(dto.email)
         elif dto.phone_number:
-            from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
             try:
                 user_model = UserModel.objects.get(phone_number=dto.phone_number)
                 user = self.user_repository.get_by_id(user_model.id)
@@ -71,9 +70,19 @@ class ForgotPasswordUseCase:
                 "expires_in_minutes": expiration_minutes,
             }
 
+        # Get Django model instance for database operations
+        try:
+            user_model = UserModel.objects.get(id=user.id)
+        except UserModel.DoesNotExist:
+            # Don't reveal if user exists for security
+            return {
+                "message": f"If the {dto.reset_type} exists, a reset link/code has been sent.",
+                "expires_in_minutes": expiration_minutes,
+            }
+
         # Invalidate previous reset tokens for this user
         PasswordResetTokenModel.objects.filter(
-            user=user, used=False, reset_type=dto.reset_type
+            user_id=user.id, used=False, reset_type=dto.reset_type
         ).update(used=True, used_at=timezone.now())
 
         # Generate token or code
@@ -88,7 +97,7 @@ class ForgotPasswordUseCase:
         expires_at = timezone.now() + timedelta(minutes=expiration_minutes)
         reset_token = PasswordResetTokenModel.objects.create(
             id=uuid4(),
-            user=user,
+            user=user_model,
             email=dto.email,
             phone_number=dto.phone_number,
             token=token,
@@ -156,15 +165,13 @@ class ResetPasswordUseCase:
         reset_token = None
         if dto.reset_type == "email" and dto.token:
             try:
-                reset_token = PasswordResetTokenModel.objects.get(
-                    token=dto.token, used=False
-                )
+                reset_token = PasswordResetTokenModel.objects.get(token=dto.token, used=False)
             except PasswordResetTokenModel.DoesNotExist:
                 raise BaseAPIException(
                     detail="Invalid or expired reset token",
                     code="INVALID_RESET_TOKEN",
                     status_code=400,
-                )
+                ) from None
         elif dto.reset_type == "sms" and dto.code:
             query = PasswordResetTokenModel.objects.filter(
                 code=dto.code, used=False, reset_type="sms"
@@ -225,7 +232,7 @@ class ResetPasswordUseCase:
         user_model = UserModel.objects.get(id=user.id)
         user_model.set_password(dto.new_password)
         user_model.save()
-        
+
         # Update domain entity
         user.updated_at = timezone.now()
         self.user_repository.update(user)
@@ -236,9 +243,8 @@ class ResetPasswordUseCase:
         reset_token.save()
 
         # Invalidate all other reset tokens for this user
-        PasswordResetTokenModel.objects.filter(
-            user=user_model, used=False
-        ).update(used=True, used_at=timezone.now())
+        PasswordResetTokenModel.objects.filter(user=user_model, used=False).update(
+            used=True, used_at=timezone.now()
+        )
 
         return {"message": "Password reset successfully"}
-

@@ -51,6 +51,7 @@ class GetProfileUseCase:
             phone_number=user.phone_number,
             role=user.role.value if isinstance(user.role, UserRole) else user.role,
             is_active=user.is_active,
+            email_verified=user.email_verified,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,
             last_login=user.last_login,
@@ -114,6 +115,7 @@ class UpdateProfileUseCase:
             phone_number=user.phone_number,
             role=user.role.value if isinstance(user.role, UserRole) else user.role,
             is_active=user.is_active,
+            email_verified=user.email_verified,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,
             last_login=user.last_login,
@@ -122,4 +124,3 @@ class UpdateProfileUseCase:
             created_at=user.created_at,
             updated_at=user.updated_at,
         )
-

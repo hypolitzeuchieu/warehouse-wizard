@@ -1,6 +1,5 @@
 """Business repository implementations."""
 
-from typing import Optional
 from uuid import UUID
 
 from django.utils import timezone
@@ -12,6 +11,8 @@ from domain.business.repositories import (
 )
 from infrastructure.persistence.models.business_models import (
     Business as BusinessModel,
+)
+from infrastructure.persistence.models.business_models import (
     BusinessMember as BusinessMemberModel,
 )
 
@@ -19,17 +20,15 @@ from infrastructure.persistence.models.business_models import (
 class BusinessRepositoryImpl(BusinessRepository):
     """Django implementation of BusinessRepository."""
 
-    def get_by_id(self, business_id: UUID) -> Optional[Business]:
+    def get_by_id(self, business_id: UUID) -> Business | None:
         """Get business by ID."""
         try:
-            business_model = BusinessModel.objects.select_related("owner").get(
-                id=business_id
-            )
+            business_model = BusinessModel.objects.select_related("owner").get(id=business_id)
             return self._to_entity(business_model)
         except BusinessModel.DoesNotExist:
             return None
 
-    def get_by_unique_name(self, unique_name: str) -> Optional[Business]:
+    def get_by_unique_name(self, unique_name: str) -> Business | None:
         """Get business by unique name."""
         try:
             business_model = BusinessModel.objects.select_related("owner").get(
@@ -41,9 +40,7 @@ class BusinessRepositoryImpl(BusinessRepository):
 
     def get_by_owner(self, owner_id: UUID) -> list[Business]:
         """Get businesses owned by a user."""
-        businesses = BusinessModel.objects.filter(owner_id=owner_id).select_related(
-            "owner"
-        )
+        businesses = BusinessModel.objects.filter(owner_id=owner_id).select_related("owner")
         return [self._to_entity(business) for business in businesses]
 
     def create(self, business: Business) -> Business:
@@ -118,12 +115,12 @@ class BusinessRepositoryImpl(BusinessRepository):
 class BusinessMemberRepositoryImpl(BusinessMemberRepository):
     """Django implementation of BusinessMemberRepository."""
 
-    def get_by_id(self, member_id: UUID) -> Optional[BusinessMember]:
+    def get_by_id(self, member_id: UUID) -> BusinessMember | None:
         """Get business member by ID."""
         try:
-            member_model = BusinessMemberModel.objects.select_related(
-                "business", "user"
-            ).get(id=member_id)
+            member_model = BusinessMemberModel.objects.select_related("business", "user").get(
+                id=member_id
+            )
             return self._to_entity(member_model)
         except BusinessMemberModel.DoesNotExist:
             return None
@@ -203,4 +200,3 @@ class BusinessMemberRepositoryImpl(BusinessMemberRepository):
             created_at=member_model.created_at,
             updated_at=member_model.updated_at,
         )
-

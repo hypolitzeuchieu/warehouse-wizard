@@ -1,36 +1,22 @@
 """Inventory use cases."""
 
-from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 from django.utils import timezone
 
 from application.dto.inventory_dto import (
-    CategoryCreateDTO,
-    CategoryResponseDTO,
-    CategoryUpdateDTO,
     ProductCreateDTO,
     ProductResponseDTO,
-    ProductUpdateDTO,
     StockMovementCreateDTO,
     StockMovementResponseDTO,
-    SubCategoryCreateDTO,
-    SubCategoryResponseDTO,
-    SubCategoryUpdateDTO,
 )
 from domain.inventory.entities import (
-    Category,
     Product,
     StockMovement,
-    StockMovementType,
-    SubCategory,
 )
 from domain.inventory.repositories import (
     CategoryRepository,
     ProductRepository,
-    StockMovementRepository,
-    SubCategoryRepository,
 )
 from domain.inventory.services import InventoryDomainService
 from shared.exceptions.base import BaseAPIException
@@ -65,9 +51,7 @@ class CreateProductUseCase:
 
         # Check if barcode already exists
         if dto.barcode:
-            existing = self.product_repository.get_by_barcode(
-                dto.barcode, self.business_id
-            )
+            existing = self.product_repository.get_by_barcode(dto.barcode, self.business_id)
             if existing:
                 raise BaseAPIException(
                     detail="Product with this barcode already exists",
@@ -153,9 +137,7 @@ class RecordStockMovementUseCase:
         self.business_id = business_id
         self.user_id = user_id
 
-    def execute(
-        self, dto: StockMovementCreateDTO
-    ) -> StockMovementResponseDTO:
+    def execute(self, dto: StockMovementCreateDTO) -> StockMovementResponseDTO:
         """Execute stock movement recording."""
         # Validate product exists
         product = self.product_repository.get_by_id(dto.product_id)
@@ -195,7 +177,7 @@ class RecordStockMovementUseCase:
         return self._to_dto(movement, updated_product)
 
     def _to_dto(
-        self, movement: StockMovement, product: Optional[Product] = None
+        self, movement: StockMovement, product: Product | None = None
     ) -> StockMovementResponseDTO:
         """Convert stock movement entity to DTO."""
         return StockMovementResponseDTO(
@@ -214,18 +196,14 @@ class RecordStockMovementUseCase:
 class GetLowStockProductsUseCase:
     """Use case for getting low stock products."""
 
-    def __init__(
-        self, inventory_domain_service: InventoryDomainService, business_id: UUID
-    ) -> None:
+    def __init__(self, inventory_domain_service: InventoryDomainService, business_id: UUID) -> None:
         """Initialize use case."""
         self.inventory_domain_service = inventory_domain_service
         self.business_id = business_id
 
     def execute(self) -> list[ProductResponseDTO]:
         """Execute getting low stock products."""
-        products = self.inventory_domain_service.get_low_stock_products(
-            self.business_id
-        )
+        products = self.inventory_domain_service.get_low_stock_products(self.business_id)
         return [
             ProductResponseDTO(
                 id=p.id,
@@ -259,18 +237,14 @@ class GetLowStockProductsUseCase:
 class CheckExpiredProductsUseCase:
     """Use case for checking expired products."""
 
-    def __init__(
-        self, inventory_domain_service: InventoryDomainService, business_id: UUID
-    ) -> None:
+    def __init__(self, inventory_domain_service: InventoryDomainService, business_id: UUID) -> None:
         """Initialize use case."""
         self.inventory_domain_service = inventory_domain_service
         self.business_id = business_id
 
     def execute(self) -> list[ProductResponseDTO]:
         """Execute checking expired products."""
-        products = self.inventory_domain_service.check_expired_products(
-            self.business_id
-        )
+        products = self.inventory_domain_service.check_expired_products(self.business_id)
         return [
             ProductResponseDTO(
                 id=p.id,
@@ -299,4 +273,3 @@ class CheckExpiredProductsUseCase:
             )
             for p in products
         ]
-

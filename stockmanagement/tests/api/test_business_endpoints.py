@@ -1,6 +1,5 @@
 """Tests for business endpoints."""
 
-import json
 from uuid import uuid4
 
 import pytest
@@ -75,9 +74,7 @@ class TestBusinessEndpoints:
         assert response.data["data"]["name"] == business_data["name"]
         assert response.data["data"]["unique_name"] == business_data["unique_name"]
 
-    def test_create_business_duplicate_unique_name(
-        self, api_client, authenticated_user
-    ):
+    def test_create_business_duplicate_unique_name(self, api_client, authenticated_user):
         """Test business creation with duplicate unique name."""
         url = reverse("api:create-business")
         business_data = {
@@ -115,9 +112,7 @@ class TestBusinessEndpoints:
             "name": "Test Supermarket",
             "unique_name": f"test-market-{uuid4().hex[:8]}",
         }
-        create_response = api_client.post(
-            create_url, data=business_data, format="json"
-        )
+        create_response = api_client.post(create_url, data=business_data, format="json")
         business_id = create_response.data["data"]["id"]
 
         # Update business
@@ -140,9 +135,7 @@ class TestBusinessEndpoints:
             "name": "Test Supermarket",
             "unique_name": f"test-market-{uuid4().hex[:8]}",
         }
-        create_response = api_client.post(
-            create_url, data=business_data, format="json"
-        )
+        create_response = api_client.post(create_url, data=business_data, format="json")
         business_id = create_response.data["data"]["id"]
 
         # Delete business
@@ -152,4 +145,3 @@ class TestBusinessEndpoints:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["status"] is True
         assert "deleted successfully" in response.data["message"].lower()
-

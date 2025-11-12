@@ -1,7 +1,6 @@
 """Notifications domain repositories (interfaces)."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from domain.notifications.entities import (
@@ -15,7 +14,7 @@ class NotificationRepository(ABC):
     """Notification repository interface."""
 
     @abstractmethod
-    def get_by_id(self, notification_id: UUID) -> Optional[Notification]:
+    def get_by_id(self, notification_id: UUID) -> Notification | None:
         """Get notification by ID."""
         pass
 
@@ -23,8 +22,8 @@ class NotificationRepository(ABC):
     def get_by_user(
         self,
         user_id: UUID,
-        status: Optional[NotificationStatus] = None,
-        notification_type: Optional[NotificationType] = None,
+        status: NotificationStatus | None = None,
+        notification_type: NotificationType | None = None,
         limit: int = 100,
     ) -> list[Notification]:
         """Get notifications for a user with optional filters."""
@@ -49,4 +48,3 @@ class NotificationRepository(ABC):
     def mark_all_as_read(self, user_id: UUID) -> None:
         """Mark all notifications as read for a user."""
         pass
-

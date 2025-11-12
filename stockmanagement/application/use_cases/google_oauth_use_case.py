@@ -3,27 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 from uuid import uuid4
 
+from django.utils import timezone
+
 from application.dto.user_dto import (
-    GoogleOAuthAuthURLDTO,
     GoogleOAuthAuthURLResponseDTO,
     GoogleOAuthCodeDTO,
-    GoogleOAuthDTO,
     LoginResponseDTO,
     UserResponseDTO,
 )
 from domain.users.entities import AuthMethod, Device, User, UserRole
 from domain.users.repositories import DeviceRepository, UserRepository
 from domain.users.services import UserDomainService
-from django.utils import timezone
 from infrastructure.external.google_oauth import GoogleOAuthService
-from infrastructure.persistence.repositories import (
-    DeviceRepositoryImpl,
-    RefreshTokenRepositoryImpl,
-    SessionRepositoryImpl,
-)
+from infrastructure.persistence.repositories import SessionRepositoryImpl
 from shared.exceptions.base import BaseAPIException
 
 logger = logging.getLogger(__name__)
@@ -39,8 +34,6 @@ class GoogleOAuthAuthURLUseCase:
     def execute(self) -> GoogleOAuthAuthURLResponseDTO:
         """
         Generate Google OAuth authorization URL.
-        
-        Note: Purpose (signup/login) is auto-detected during callback based on whether user exists.
 
         Returns:
             GoogleOAuthAuthURLResponseDTO with auth URL
@@ -53,10 +46,7 @@ class GoogleOAuthAuthURLUseCase:
 
         result = self.google_oauth_service.generate_auth_url()
 
-        return GoogleOAuthAuthURLResponseDTO(
-            auth_url=result["auth_url"],
-            expires_in=result["expires_in"],
-        )
+        return GoogleOAuthAuthURLResponseDTO(auth_url=result)
 
 
 class GoogleOAuthCodeUseCase:
@@ -77,9 +67,7 @@ class GoogleOAuthCodeUseCase:
         self.device_repository = device_repository
         self.google_oauth_service = google_oauth_service
 
-    def execute(
-        self, dto: GoogleOAuthCodeDTO, generate_tokens_func: Callable
-    ) -> LoginResponseDTO:
+    def execute(self, dto: GoogleOAuthCodeDTO, generate_tokens_func: Callable) -> LoginResponseDTO:
         """
         Exchange Google OAuth code for tokens and authenticate user.
 
@@ -93,7 +81,6 @@ class GoogleOAuthCodeUseCase:
         Raises:
             BaseAPIException: If code exchange fails or user creation/login fails
         """
-        # Exchange code for token and get user info
         google_data = self.google_oauth_service.exchange_code_for_token(code=dto.code)
 
         if not google_data:
@@ -120,46 +107,71 @@ class GoogleOAuthCodeUseCase:
             )
 
         avatar_url = google_data.get("picture")
+        google_id = google_data.get("sub")
 
-        # Check if user exists
-        user = self.user_repository.get_by_email(email)
+        if not google_id:
+            raise BaseAPIException(
+                detail="Google user ID not found",
+                code="GOOGLE_ID_MISSING",
+                status_code=400,
+            )
+
+        # Check if user exists by google_id first (most reliable)
+        user = self.user_repository.get_by_google_id(google_id)
+
+        # If not found by google_id, check by email (for migration/edge cases)
+        if not user:
+            user = self.user_repository.get_by_email(email)
 
         if not user:
-            # Auto-detect: User doesn't exist, so this is a signup flow
-            logger.info(f"Google OAuth signup detected for email: {email}")
-
-            # Generate name from email (name is not unique)
+            logger.info(f"Google OAuth signup detected for email: {email}, google_id: {google_id}")
             name = email.split("@")[0]
 
-            # Create new user from Google info
             user = User(
                 id=uuid4(),
                 email=email,
                 name=name,
                 phone_number=None,
-                role=UserRole.CUSTOMER,  # Default role, can be changed when creating business
-                is_active=True,  # Google verified users are active
+                role=UserRole.CUSTOMER,
+                is_active=True,
+                email_verified=True,
                 is_staff=False,
                 is_superuser=False,
                 last_login=None,
                 address=None,
-                avatar_url=avatar_url,  # Set Google avatar
+                avatar_url=avatar_url,
                 created_at=timezone.now(),
                 updated_at=timezone.now(),
-                auth_method=AuthMethod.GOOGLE_OAUTH,  # Mark as Google OAuth signup
+                auth_method=AuthMethod.GOOGLE_OAUTH,
+                google_id=google_id,
             )
             user = self.user_repository.create(user)
         else:
-            # Auto-detect: User exists, so this is a login flow
-            logger.info(f"Google OAuth login detected for email: {email}")
+            logger.info(f"Google OAuth login detected for email: {email}, google_id: {google_id}")
 
-            # Security: Check if user registered with Google OAuth
-            if user.auth_method != AuthMethod.GOOGLE_OAUTH:
-                raise BaseAPIException(
-                    detail=f"Account was created with {user.auth_method.value}. Please use the original authentication method to login.",
-                    code="AUTH_METHOD_MISMATCH",
-                    status_code=400,
+            # Check if user has a google_id (created with Google OAuth)
+            if not user.google_id:
+                if user.auth_method != AuthMethod.GOOGLE_OAUTH:
+                    raise BaseAPIException(
+                        detail="This account was created with email/password. Please use email and password to login.",
+                        code="AUTH_METHOD_MISMATCH",
+                        status_code=400,
+                    )
+
+                # Save google_id for existing Google OAuth accounts
+                logger.info(
+                    f"Updating existing Google OAuth account with google_id - user_id: {user.id}, "
+                    f"email: {email}, google_id: {google_id}"
                 )
+                user.google_id = google_id
+                user = self.user_repository.update(user)
+            else:
+                if user.google_id != google_id:
+                    raise BaseAPIException(
+                        detail="Google account mismatch. Please use the Google account you signed up with.",
+                        code="GOOGLE_ID_MISMATCH",
+                        status_code=400,
+                    )
 
             # Security: Ensure email consistency
             if user.email and user.email.lower() != email.lower():
@@ -169,7 +181,6 @@ class GoogleOAuthCodeUseCase:
                     status_code=400,
                 )
 
-            # Update avatar if provided and different
             if avatar_url and user.avatar_url != avatar_url:
                 user.avatar_url = avatar_url
                 user = self.user_repository.update(user)
@@ -177,6 +188,10 @@ class GoogleOAuthCodeUseCase:
             # Ensure user is active
             if not user.is_active:
                 user.is_active = True
+                user = self.user_repository.update(user)
+
+            if not user.email_verified:
+                user.email_verified = True
                 user = self.user_repository.update(user)
 
         # Create or update device if device_id provided
@@ -212,7 +227,7 @@ class GoogleOAuthCodeUseCase:
                 self.device_repository.create(device)
 
         # Create session
-        session = self.user_domain_service.start_session(
+        self.user_domain_service.start_session(
             user_id=user.id,
             device_id=dto.device_id,
             ip_address=dto.ip_address,
@@ -244,6 +259,7 @@ class GoogleOAuthCodeUseCase:
                 phone_number=user.phone_number,
                 role=user.role.value if isinstance(user.role, UserRole) else user.role,
                 is_active=user.is_active,
+                email_verified=user.email_verified,
                 is_staff=user.is_staff,
                 is_superuser=user.is_superuser,
                 last_login=user.last_login,
@@ -253,48 +269,4 @@ class GoogleOAuthCodeUseCase:
                 updated_at=user.updated_at,
             ),
             expires_in=tokens.get("expires_in", 3600),
-        )
-
-
-class GoogleOAuthUseCase:
-    """Use case for Google OAuth authentication (legacy - for backward compatibility)."""
-
-    def __init__(
-        self,
-        user_repository: UserRepository,
-        user_domain_service: UserDomainService,
-        session_repository: SessionRepositoryImpl,
-        device_repository: DeviceRepository,
-        google_oauth_service: GoogleOAuthService,
-    ):
-        """Initialize use case."""
-        self.user_repository = user_repository
-        self.user_domain_service = user_domain_service
-        self.session_repository = session_repository
-        self.device_repository = device_repository
-        self.google_oauth_service = google_oauth_service
-
-    def execute(
-        self, dto: GoogleOAuthDTO, generate_tokens_func: Callable
-    ) -> LoginResponseDTO:
-        """
-        Execute Google OAuth authentication (legacy method).
-
-        Args:
-            dto: Google OAuth DTO
-            generate_tokens_func: Function to generate JWT tokens
-
-        Returns:
-            LoginResponseDTO with tokens and user info
-
-        Raises:
-            ValueError: If token is invalid
-            Exception: If user creation/login fails
-        """
-        # This is legacy - we should use GoogleOAuthCodeUseCase instead
-        # But keeping for backward compatibility
-        raise BaseAPIException(
-            detail="This endpoint is deprecated. Please use /auth/google/auth-url and /auth/google/callback",
-            code="DEPRECATED_ENDPOINT",
-            status_code=410,
         )

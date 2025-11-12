@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from django.contrib.auth.models import AbstractUser
-from django.contrib.auth.models import Group
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.db import models
 
 
@@ -20,9 +18,9 @@ class Client(models.Model):
         return self.name
 
     class Meta:
-        verbose_name = 'Client'
-        verbose_name_plural = 'Clients'
-        db_table = 'clients'
+        verbose_name = "Client"
+        verbose_name_plural = "Clients"
+        db_table = "clients"
 
 
 class User(AbstractUser):
@@ -30,11 +28,11 @@ class User(AbstractUser):
     email = models.EmailField(unique=True, null=True, blank=True)
 
     ROLE_CHOICES = [
-        ('manager', 'Manager'),
-        ('cashier', 'Cashier'),
-        ('stock_keeper', 'Stock Keeper'),
-        ('wholesale_client', 'Wholesale Client'),
-        ('sales_agent', 'Sales Agent'),
+        ("manager", "Manager"),
+        ("cashier", "Cashier"),
+        ("stock_keeper", "Stock Keeper"),
+        ("wholesale_client", "Wholesale Client"),
+        ("sales_agent", "Sales Agent"),
     ]
     role = models.CharField(max_length=30, choices=ROLE_CHOICES)
     phone_number = models.CharField(max_length=30, null=True, blank=True)
@@ -44,17 +42,17 @@ class User(AbstractUser):
 
     groups = models.ManyToManyField(
         Group,
-        related_name='custom_user_groups',
+        related_name="custom_user_groups",
         blank=True,
     )
     user_permissions = models.ManyToManyField(
         Permission,
-        related_name='custom_user_permissions',
+        related_name="custom_user_permissions",
         blank=True,
     )
 
     def save(self, *args, **kwargs):
-        if self.role == 'manager':
+        if self.role == "manager":
             self.is_superuser = True
             self.is_staff = True
             self.is_active = True
@@ -65,19 +63,19 @@ class User(AbstractUser):
             self.groups.add(group)
 
     def is_manager(self):
-        return self.role == 'manager'
+        return self.role == "manager"
 
     def is_cashier(self):
-        return self.role == 'cashier'
+        return self.role == "cashier"
 
     def is_stock_keeper(self):
-        return self.role == 'stock_keeper'
+        return self.role == "stock_keeper"
 
     def is_wholesale_client(self):
-        return self.role == 'wholesale_client'
+        return self.role == "wholesale_client"
 
     class Meta:
-        verbose_name = 'User'
-        verbose_name_plural = 'Users'
-        db_table = 'users'
-        ordering = ['username']
+        verbose_name = "User"
+        verbose_name_plural = "Users"
+        db_table = "users"
+        ordering = ["username"]

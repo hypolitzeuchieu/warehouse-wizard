@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from django.db.models import Q
@@ -19,8 +17,7 @@ class OTPRepositoryImpl(OTPRepository):
 
     def create(self, otp: OTPEntity) -> OTPEntity:
         """Create a new OTP."""
-        from django.utils import timezone
-        
+
         otp_model = OTPModel.objects.create(
             id=otp.id,
             user_id=otp.user_id,
@@ -28,7 +25,6 @@ class OTPRepositoryImpl(OTPRepository):
             phone_number=otp.phone_number,
             otp_code=otp.otp_code,
             otp_type=otp.otp_type,
-            purpose=otp.purpose,
             expires_at=otp.expires_at,
             verified=otp.verified,
             verified_at=otp.verified_at,
@@ -39,7 +35,7 @@ class OTPRepositoryImpl(OTPRepository):
         )
         return self._to_domain_entity(otp_model)
 
-    def get_by_id(self, otp_id: UUID) -> Optional[OTPEntity]:
+    def get_by_id(self, otp_id: UUID) -> OTPEntity | None:
         """Get OTP by ID."""
         try:
             otp_model = OTPModel.objects.get(id=otp_id)
@@ -48,8 +44,8 @@ class OTPRepositoryImpl(OTPRepository):
             return None
 
     def get_by_code(
-        self, code: str, email: Optional[str] = None, phone_number: Optional[str] = None
-    ) -> Optional[OTPEntity]:
+        self, code: str, email: str | None = None, phone_number: str | None = None
+    ) -> OTPEntity | None:
         """Get OTP by code and identifier."""
         query = Q(otp_code=code, verified=False)
         if email:
@@ -65,15 +61,11 @@ class OTPRepositoryImpl(OTPRepository):
         except OTPModel.DoesNotExist:
             return None
 
-    def get_latest_by_email(
-        self, email: str, purpose: str, otp_type: str
-    ) -> Optional[OTPEntity]:
-        """Get latest OTP by email, purpose, and type."""
+    def get_latest_by_email(self, email: str, otp_type: str) -> OTPEntity | None:
+        """Get latest OTP by email and type."""
         try:
             otp_model = (
-                OTPModel.objects.filter(
-                    email=email, purpose=purpose, otp_type=otp_type, verified=False
-                )
+                OTPModel.objects.filter(email=email, otp_type=otp_type, verified=False)
                 .order_by("-created_at")
                 .first()
             )
@@ -83,15 +75,12 @@ class OTPRepositoryImpl(OTPRepository):
         except OTPModel.DoesNotExist:
             return None
 
-    def get_latest_by_phone(
-        self, phone_number: str, purpose: str, otp_type: str
-    ) -> Optional[OTPEntity]:
-        """Get latest OTP by phone number, purpose, and type."""
+    def get_latest_by_phone(self, phone_number: str, otp_type: str) -> OTPEntity | None:
+        """Get latest OTP by phone number and type."""
         try:
             otp_model = (
                 OTPModel.objects.filter(
                     phone_number=phone_number,
-                    purpose=purpose,
                     otp_type=otp_type,
                     verified=False,
                 )
@@ -127,23 +116,20 @@ class OTPRepositoryImpl(OTPRepository):
 
     def invalidate_all_pending(
         self,
-        email: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        purpose: Optional[str] = None,
-        otp_type: Optional[str] = None,
+        email: str | None = None,
+        phone_number: str | None = None,
+        otp_type: str | None = None,
     ) -> int:
         """Invalidate all pending (non-verified) OTPs for given criteria."""
         query = Q(verified=False)
-        
+
         if email:
             query &= Q(email=email)
         if phone_number:
             query &= Q(phone_number=phone_number)
-        if purpose:
-            query &= Q(purpose=purpose)
         if otp_type:
             query &= Q(otp_type=otp_type)
-        
+
         count = OTPModel.objects.filter(query).update(
             verified=True,
             verified_at=timezone.now(),
@@ -160,7 +146,6 @@ class OTPRepositoryImpl(OTPRepository):
             phone_number=model.phone_number,
             otp_code=model.otp_code,
             otp_type=model.otp_type,
-            purpose=model.purpose,
             expires_at=model.expires_at,
             verified=model.verified,
             verified_at=model.verified_at,
@@ -169,4 +154,3 @@ class OTPRepositoryImpl(OTPRepository):
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
-

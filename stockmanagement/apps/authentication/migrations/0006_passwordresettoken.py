@@ -5,36 +5,35 @@ import uuid
 
 import django.db.models.deletion
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('authentication', '0005_rename_blacklistedtoken_revokedtoken'),
+        ("authentication", "0005_rename_blacklistedtoken_revokedtoken"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PasswordResetToken',
+            name="PasswordResetToken",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.BigAutoField(
                         auto_created=True,
                         primary_key=True,
                         serialize=False,
-                        verbose_name='ID',
+                        verbose_name="ID",
                     ),
                 ),
-                ('token', models.UUIDField(default=uuid.uuid4, unique=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("token", models.UUIDField(default=uuid.uuid4, unique=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'user',
+                    "user",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='password_reset_tokens',
+                        related_name="password_reset_tokens",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),

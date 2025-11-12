@@ -1,6 +1,5 @@
 """Tests for authentication endpoints."""
 
-import json
 from uuid import uuid4
 
 import pytest
@@ -87,9 +86,7 @@ class TestLoginEndpoint:
         """Test successful login."""
         # First, create a user
         signup_url = reverse("api:signup")
-        signup_response = api_client.post(
-            signup_url, data=test_user_data, format="json"
-        )
+        signup_response = api_client.post(signup_url, data=test_user_data, format="json")
         assert signup_response.status_code == status.HTTP_201_CREATED
 
         # Activate user (in real scenario, this would be done via OTP)
@@ -167,17 +164,13 @@ class TestRefreshTokenEndpoint:
             "email": test_user_data["email"],
             "password": test_user_data["password"],
         }
-        login_response = api_client.post(
-            login_url, data=login_data, format="json"
-        )
+        login_response = api_client.post(login_url, data=login_data, format="json")
         refresh_token = login_response.data["data"]["refresh_token"]
 
         # Refresh token
         refresh_url = reverse("api:refresh-token")
         refresh_data = {"refresh_token": refresh_token}
-        response = api_client.post(
-            refresh_url, data=refresh_data, format="json"
-        )
+        response = api_client.post(refresh_url, data=refresh_data, format="json")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["status"] is True
@@ -214,9 +207,7 @@ class TestLogoutEndpoint:
             "email": test_user_data["email"],
             "password": test_user_data["password"],
         }
-        login_response = api_client.post(
-            login_url, data=login_data, format="json"
-        )
+        login_response = api_client.post(login_url, data=login_data, format="json")
         access_token = login_response.data["data"]["access_token"]
 
         # Logout
@@ -227,4 +218,3 @@ class TestLogoutEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["status"] is True
         assert "Logout successful" in response.data["message"]
-

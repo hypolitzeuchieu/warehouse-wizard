@@ -1,7 +1,6 @@
 """Finance repository implementations."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from django.db import models
@@ -21,8 +20,14 @@ from domain.finance.repositories import (
 )
 from infrastructure.persistence.models.finance_models import (
     Expense as ExpenseModel,
+)
+from infrastructure.persistence.models.finance_models import (
     FinancialSummary as FinancialSummaryModel,
+)
+from infrastructure.persistence.models.finance_models import (
     Payroll as PayrollModel,
+)
+from infrastructure.persistence.models.finance_models import (
     Salary as SalaryModel,
 )
 
@@ -30,7 +35,7 @@ from infrastructure.persistence.models.finance_models import (
 class ExpenseRepositoryImpl(ExpenseRepository):
     """Django implementation of ExpenseRepository."""
 
-    def get_by_id(self, expense_id: UUID) -> Optional[Expense]:
+    def get_by_id(self, expense_id: UUID) -> Expense | None:
         """Get expense by ID."""
         try:
             expense_model = ExpenseModel.objects.select_related(
@@ -43,15 +48,15 @@ class ExpenseRepositoryImpl(ExpenseRepository):
     def get_by_business(
         self,
         business_id: UUID,
-        expense_type: Optional[ExpenseType] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        expense_type: ExpenseType | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[Expense]:
         """Get expenses for a business with optional filters."""
-        query = ExpenseModel.objects.filter(
-            business_id=business_id
-        ).select_related("user", "approved_by")
+        query = ExpenseModel.objects.filter(business_id=business_id).select_related(
+            "user", "approved_by"
+        )
 
         if expense_type:
             query = query.filter(expense_type=expense_type.value)
@@ -114,26 +119,20 @@ class ExpenseRepositoryImpl(ExpenseRepository):
 class SalaryRepositoryImpl(SalaryRepository):
     """Django implementation of SalaryRepository."""
 
-    def get_by_id(self, salary_id: UUID) -> Optional[Salary]:
+    def get_by_id(self, salary_id: UUID) -> Salary | None:
         """Get salary by ID."""
         try:
-            salary_model = SalaryModel.objects.select_related(
-                "business", "user"
-            ).get(id=salary_id)
+            salary_model = SalaryModel.objects.select_related("business", "user").get(id=salary_id)
             return self._to_entity(salary_model)
         except SalaryModel.DoesNotExist:
             return None
 
     def get_by_user(self, user_id: UUID) -> list[Salary]:
         """Get salary history for a user."""
-        salaries = SalaryModel.objects.filter(
-            user_id=user_id
-        ).select_related("business")
+        salaries = SalaryModel.objects.filter(user_id=user_id).select_related("business")
         return [self._to_entity(salary) for salary in salaries]
 
-    def get_current_salary(
-        self, business_id: UUID, user_id: UUID
-    ) -> Optional[Salary]:
+    def get_current_salary(self, business_id: UUID, user_id: UUID) -> Salary | None:
         """Get current active salary for a user."""
         now = datetime.utcnow()
         try:
@@ -143,10 +142,7 @@ class SalaryRepositoryImpl(SalaryRepository):
                     user_id=user_id,
                     effective_from__lte=now,
                 )
-                .filter(
-                    models.Q(effective_to__isnull=True)
-                    | models.Q(effective_to__gte=now)
-                )
+                .filter(models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=now))
                 .order_by("-effective_from")
                 .first()
             )
@@ -207,19 +203,17 @@ class SalaryRepositoryImpl(SalaryRepository):
 class PayrollRepositoryImpl(PayrollRepository):
     """Django implementation of PayrollRepository."""
 
-    def get_by_id(self, payroll_id: UUID) -> Optional[Payroll]:
+    def get_by_id(self, payroll_id: UUID) -> Payroll | None:
         """Get payroll by ID."""
         try:
-            payroll_model = PayrollModel.objects.select_related(
-                "business", "user", "salary"
-            ).get(id=payroll_id)
+            payroll_model = PayrollModel.objects.select_related("business", "user", "salary").get(
+                id=payroll_id
+            )
             return self._to_entity(payroll_model)
         except PayrollModel.DoesNotExist:
             return None
 
-    def get_by_user(
-        self, user_id: UUID, limit: int = 100
-    ) -> list[Payroll]:
+    def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Payroll]:
         """Get payroll history for a user."""
         payrolls = (
             PayrollModel.objects.filter(user_id=user_id)
@@ -231,14 +225,14 @@ class PayrollRepositoryImpl(PayrollRepository):
     def get_by_business(
         self,
         business_id: UUID,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[Payroll]:
         """Get payroll records for a business."""
-        query = PayrollModel.objects.filter(
-            business_id=business_id
-        ).select_related("user", "salary")
+        query = PayrollModel.objects.filter(business_id=business_id).select_related(
+            "user", "salary"
+        )
 
         if start_date:
             query = query.filter(payment_date__gte=start_date)
@@ -294,7 +288,7 @@ class FinancialSummaryRepositoryImpl(FinancialSummaryRepository):
         business_id: UUID,
         start_date: datetime,
         end_date: datetime,
-    ) -> Optional[FinancialSummary]:
+    ) -> FinancialSummary | None:
         """Get financial summary for a business in a period."""
         try:
             summary_model = FinancialSummaryModel.objects.get(
@@ -321,9 +315,7 @@ class FinancialSummaryRepositoryImpl(FinancialSummaryRepository):
         summary_model.save()
         return self._to_entity(summary_model)
 
-    def _to_entity(
-        self, summary_model: FinancialSummaryModel
-    ) -> FinancialSummary:
+    def _to_entity(self, summary_model: FinancialSummaryModel) -> FinancialSummary:
         """Convert Django model to domain entity."""
         return FinancialSummary(
             business_id=summary_model.business_id,
@@ -336,4 +328,3 @@ class FinancialSummaryRepositoryImpl(FinancialSummaryRepository):
             tax_amount=summary_model.tax_amount,
             created_at=summary_model.created_at,
         )
-

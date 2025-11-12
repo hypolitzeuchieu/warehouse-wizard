@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from django.conf import settings
 from django.core.mail import send_mail
-from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
 
@@ -16,26 +14,19 @@ class EmailService:
     """Service for sending emails."""
 
     @staticmethod
-    def send_otp_email(email: str, otp_code: str, purpose: str = "verification") -> bool:
+    def send_otp_email(email: str, otp_code: str) -> bool:
         """
         Send OTP via email.
 
         Args:
             email: Recipient email address
             otp_code: OTP code to send
-            purpose: Purpose of OTP (signup, login, etc.)
 
         Returns:
             True if email sent successfully, False otherwise
         """
         try:
             subject = "Your RetailPulse Verification Code"
-            if purpose == "signup":
-                subject = "Welcome to RetailPulse - Verify Your Account"
-            elif purpose == "login":
-                subject = "Your RetailPulse Login Code"
-            elif purpose == "password_reset":
-                subject = "RetailPulse Password Reset Code"
 
             message = f"Your verification code is: {otp_code}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this code, please ignore this email."
 
@@ -103,4 +94,3 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send password reset email to {email}: {str(e)}")
             return False
-

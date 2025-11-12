@@ -1,6 +1,5 @@
 """Customer repository implementations."""
 
-from typing import Optional
 from uuid import UUID
 
 from domain.customer.entities import Customer, CustomerPurchaseHistory
@@ -10,6 +9,8 @@ from domain.customer.repositories import (
 )
 from infrastructure.persistence.models.customer_models import (
     Customer as CustomerModel,
+)
+from infrastructure.persistence.models.customer_models import (
     CustomerPurchaseHistory as CustomerPurchaseHistoryModel,
 )
 
@@ -17,19 +18,15 @@ from infrastructure.persistence.models.customer_models import (
 class CustomerRepositoryImpl(CustomerRepository):
     """Django implementation of CustomerRepository."""
 
-    def get_by_id(self, customer_id: UUID) -> Optional[Customer]:
+    def get_by_id(self, customer_id: UUID) -> Customer | None:
         """Get customer by ID."""
         try:
-            customer_model = CustomerModel.objects.select_related(
-                "business"
-            ).get(id=customer_id)
+            customer_model = CustomerModel.objects.select_related("business").get(id=customer_id)
             return self._to_entity(customer_model)
         except CustomerModel.DoesNotExist:
             return None
 
-    def get_by_email(
-        self, email: str, business_id: Optional[UUID] = None
-    ) -> Optional[Customer]:
+    def get_by_email(self, email: str, business_id: UUID | None = None) -> Customer | None:
         """Get customer by email."""
         try:
             query = CustomerModel.objects.filter(email=email)
@@ -42,9 +39,7 @@ class CustomerRepositoryImpl(CustomerRepository):
         except CustomerModel.DoesNotExist:
             return None
 
-    def get_by_phone(
-        self, phone_number: str, business_id: Optional[UUID] = None
-    ) -> Optional[Customer]:
+    def get_by_phone(self, phone_number: str, business_id: UUID | None = None) -> Customer | None:
         """Get customer by phone number."""
         try:
             query = CustomerModel.objects.filter(phone_number=phone_number)
@@ -57,13 +52,11 @@ class CustomerRepositoryImpl(CustomerRepository):
         except CustomerModel.DoesNotExist:
             return None
 
-    def get_by_business(
-        self, business_id: UUID, limit: int = 100
-    ) -> list[Customer]:
+    def get_by_business(self, business_id: UUID, limit: int = 100) -> list[Customer]:
         """Get customers for a business."""
-        customers = CustomerModel.objects.filter(
-            business_id=business_id
-        ).select_related("business")[:limit]
+        customers = CustomerModel.objects.filter(business_id=business_id).select_related(
+            "business"
+        )[:limit]
         return [self._to_entity(customer) for customer in customers]
 
     def create(self, customer: Customer) -> Customer:
@@ -116,9 +109,7 @@ class CustomerRepositoryImpl(CustomerRepository):
 class CustomerPurchaseHistoryRepositoryImpl(CustomerPurchaseHistoryRepository):
     """Django implementation of CustomerPurchaseHistoryRepository."""
 
-    def get_by_customer(
-        self, customer_id: UUID, limit: int = 100
-    ) -> list[CustomerPurchaseHistory]:
+    def get_by_customer(self, customer_id: UUID, limit: int = 100) -> list[CustomerPurchaseHistory]:
         """Get purchase history for a customer."""
         history = (
             CustomerPurchaseHistoryModel.objects.filter(customer_id=customer_id)
@@ -127,9 +118,7 @@ class CustomerPurchaseHistoryRepositoryImpl(CustomerPurchaseHistoryRepository):
         )
         return [self._to_entity(record) for record in history]
 
-    def create(
-        self, history: CustomerPurchaseHistory
-    ) -> CustomerPurchaseHistory:
+    def create(self, history: CustomerPurchaseHistory) -> CustomerPurchaseHistory:
         """Create a new purchase history record."""
         history_model = CustomerPurchaseHistoryModel(
             id=history.id,
@@ -142,9 +131,7 @@ class CustomerPurchaseHistoryRepositoryImpl(CustomerPurchaseHistoryRepository):
         history_model.save()
         return self._to_entity(history_model)
 
-    def _to_entity(
-        self, history_model: CustomerPurchaseHistoryModel
-    ) -> CustomerPurchaseHistory:
+    def _to_entity(self, history_model: CustomerPurchaseHistoryModel) -> CustomerPurchaseHistory:
         """Convert Django model to domain entity."""
         return CustomerPurchaseHistory(
             id=history_model.id,
@@ -155,4 +142,3 @@ class CustomerPurchaseHistoryRepositoryImpl(CustomerPurchaseHistoryRepository):
             purchase_date=history_model.purchase_date,
             created_at=history_model.created_at,
         )
-

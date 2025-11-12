@@ -49,7 +49,7 @@ def get_success_response_schema(data_schema: Any = None) -> openapi.Schema:
         "message": openapi.Schema(type=openapi.TYPE_STRING),
         "status_code": openapi.Schema(type=openapi.TYPE_INTEGER),
     }
-    
+
     if data_schema:
         properties["data"] = data_schema
     else:
@@ -57,7 +57,7 @@ def get_success_response_schema(data_schema: Any = None) -> openapi.Schema:
             type=openapi.TYPE_OBJECT,
             description="Response data",
         )
-    
+
     return openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties=properties,
@@ -111,4 +111,3 @@ def get_paginated_response_schema(item_schema: Any = None) -> openapi.Schema:
             ),
         },
     )
-

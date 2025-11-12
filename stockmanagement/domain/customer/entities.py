@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 
@@ -12,11 +11,11 @@ class Customer:
     """Customer entity."""
 
     id: UUID
-    business_id: Optional[UUID]  # None for platform-wide customers
+    business_id: UUID | None  # None for platform-wide customers
     name: str
-    email: Optional[str]
-    phone_number: Optional[str]
-    address: Optional[str]
+    email: str | None
+    phone_number: str | None
+    address: str | None
     loyalty_points: Decimal
     total_purchases: Decimal
     created_at: datetime
@@ -39,4 +38,3 @@ class CustomerPurchaseHistory:
     total_amount: Decimal
     purchase_date: datetime
     created_at: datetime
-

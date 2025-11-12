@@ -1,7 +1,6 @@
 """Business domain repositories (interfaces)."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from domain.business.entities import Business, BusinessMember
@@ -11,12 +10,12 @@ class BusinessRepository(ABC):
     """Business repository interface."""
 
     @abstractmethod
-    def get_by_id(self, business_id: UUID) -> Optional[Business]:
+    def get_by_id(self, business_id: UUID) -> Business | None:
         """Get business by ID."""
         pass
 
     @abstractmethod
-    def get_by_unique_name(self, unique_name: str) -> Optional[Business]:
+    def get_by_unique_name(self, unique_name: str) -> Business | None:
         """Get business by unique name."""
         pass
 
@@ -41,9 +40,7 @@ class BusinessRepository(ABC):
         pass
 
     @abstractmethod
-    def user_has_access(
-        self, business_id: UUID, user_id: UUID
-    ) -> bool:
+    def user_has_access(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user has access to business."""
         pass
 
@@ -52,7 +49,7 @@ class BusinessMemberRepository(ABC):
     """Business member repository interface."""
 
     @abstractmethod
-    def get_by_id(self, member_id: UUID) -> Optional[BusinessMember]:
+    def get_by_id(self, member_id: UUID) -> BusinessMember | None:
         """Get business member by ID."""
         pass
 
@@ -92,4 +89,3 @@ class BusinessMemberRepository(ABC):
     def is_manager(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user is a manager of the business."""
         pass
-

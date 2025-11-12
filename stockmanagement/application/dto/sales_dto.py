@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 
@@ -21,28 +20,28 @@ class InvoiceLineCreateDTO:
 class InvoiceCreateDTO:
     """DTO for creating an invoice."""
 
-    customer_name: Optional[str] = None
-    customer_id: Optional[UUID] = None
+    customer_name: str | None = None
+    customer_id: UUID | None = None
     lines: list[InvoiceLineCreateDTO] = None
     tax: Decimal = Decimal("0.00")
     discount: Decimal = Decimal("0.00")
     payment_method: str = "cash"
-    due_date: Optional[datetime] = None
-    reason: Optional[str] = None
+    due_date: datetime | None = None
+    reason: str | None = None
 
 
 @dataclass
 class InvoiceUpdateDTO:
     """DTO for updating an invoice."""
 
-    status: Optional[str] = None
-    tax: Optional[Decimal] = None
-    discount: Optional[Decimal] = None
-    advance_paid: Optional[Decimal] = None
-    payment_method: Optional[str] = None
-    due_date: Optional[datetime] = None
-    is_credit_settled: Optional[bool] = None
-    reason: Optional[str] = None
+    status: str | None = None
+    tax: Decimal | None = None
+    discount: Decimal | None = None
+    advance_paid: Decimal | None = None
+    payment_method: str | None = None
+    due_date: datetime | None = None
+    is_credit_settled: bool | None = None
+    reason: str | None = None
 
 
 @dataclass
@@ -57,7 +56,7 @@ class InvoiceLineResponseDTO:
     discount: Decimal
     line_total: Decimal
     created_at: datetime
-    product_name: Optional[str] = None
+    product_name: str | None = None
 
 
 @dataclass
@@ -78,12 +77,12 @@ class InvoiceResponseDTO:
     is_credit_settled: bool
     created_at: datetime
     updated_at: datetime
-    customer_name: Optional[str] = None
-    customer_id: Optional[UUID] = None
-    cashier_name: Optional[str] = None
-    due_date: Optional[datetime] = None
-    reason: Optional[str] = None
-    lines: Optional[list[InvoiceLineResponseDTO]] = None
+    customer_name: str | None = None
+    customer_id: UUID | None = None
+    cashier_name: str | None = None
+    due_date: datetime | None = None
+    reason: str | None = None
+    lines: list[InvoiceLineResponseDTO] | None = None
 
 
 @dataclass
@@ -101,19 +100,19 @@ class OrderCreateDTO:
 
     customer_id: UUID
     items: list[OrderItemCreateDTO]
-    payment_method: Optional[str] = None
-    shipping_address: Optional[str] = None
-    notes: Optional[str] = None
+    payment_method: str | None = None
+    shipping_address: str | None = None
+    notes: str | None = None
 
 
 @dataclass
 class OrderUpdateDTO:
     """DTO for updating an order."""
 
-    status: Optional[str] = None
-    payment_method: Optional[str] = None
-    shipping_address: Optional[str] = None
-    notes: Optional[str] = None
+    status: str | None = None
+    payment_method: str | None = None
+    shipping_address: str | None = None
+    notes: str | None = None
 
 
 @dataclass
@@ -127,7 +126,7 @@ class OrderItemResponseDTO:
     unit_price: Decimal
     line_total: Decimal
     created_at: datetime
-    product_name: Optional[str] = None
+    product_name: str | None = None
 
 
 @dataclass
@@ -142,10 +141,9 @@ class OrderResponseDTO:
     total: Decimal
     created_at: datetime
     updated_at: datetime
-    customer_name: Optional[str] = None
-    payment_method: Optional[str] = None
-    shipping_address: Optional[str] = None
-    notes: Optional[str] = None
-    items: Optional[list[OrderItemResponseDTO]] = None
-    delivered_at: Optional[datetime] = None
-
+    customer_name: str | None = None
+    payment_method: str | None = None
+    shipping_address: str | None = None
+    notes: str | None = None
+    items: list[OrderItemResponseDTO] | None = None
+    delivered_at: datetime | None = None

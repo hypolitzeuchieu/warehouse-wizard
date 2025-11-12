@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import logging
-import os
 from pathlib import Path
-
-from django.conf import settings
 
 
 def get_logging_config(debug: bool = False) -> dict:
@@ -132,4 +128,3 @@ def get_logging_config(debug: bool = False) -> dict:
             },
         },
     }
-

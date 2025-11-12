@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
-from uuid import UUID
+from collections.abc import Callable
 
 from application.dto.user_dto import (
     LoginResponseDTO,
@@ -63,63 +62,57 @@ class RequestOTPUseCase:
                 status_code=400,
             )
 
-        # Create OTP
+        # Create OTP (no need for purpose - simplified flow)
         otp = OTPService.create_otp(
             otp_repository=self.otp_repository,
             user_id=user.id if user else None,
             email=dto.email,
             phone_number=dto.phone_number,
-            purpose="login" if user else "signup",
             otp_type=dto.otp_type,
         )
 
         # Send OTP asynchronously via Celery
-        purpose = "login" if user else "signup"
         if dto.otp_type == "email" and dto.email:
-            from tasks.otp_tasks import send_otp_email_task
             from kombu.exceptions import OperationalError
+
+            from tasks.otp_tasks import send_otp_email_task
 
             try:
                 # Send email in background
                 send_otp_email_task.delay(
                     email=dto.email,
                     otp_code=otp.otp_code,
-                    purpose=purpose,
                 )
-                logger.info(
-                    f"OTP email task queued for {dto.email} (purpose: {purpose}, OTP ID: {otp.id})"
-                )
+                logger.info(f"OTP email task queued for {dto.email} (OTP ID: {otp.id})")
             except (OperationalError, ConnectionError) as celery_error:
                 # If Celery/Redis is unavailable, log error but don't fail the request
                 # The OTP is still created and can be verified
                 logger.error(
-                    f"Failed to queue OTP email task for {dto.email} (purpose: {purpose}, OTP ID: {otp.id}): {str(celery_error)}. "
+                    f"Failed to queue OTP email task for {dto.email} (OTP ID: {otp.id}): {str(celery_error)}. "
                     f"OTP created but email sending may be delayed. Please ensure Celery worker is running.",
                     exc_info=True,
-                    extra={"otp_id": str(otp.id), "email": dto.email}
+                    extra={"otp_id": str(otp.id), "email": dto.email},
                 )
         elif dto.otp_type == "sms" and dto.phone_number:
-            from tasks.otp_tasks import send_otp_sms_task
             from kombu.exceptions import OperationalError
+
+            from tasks.otp_tasks import send_otp_sms_task
 
             try:
                 # Send SMS in background
                 send_otp_sms_task.delay(
                     phone_number=dto.phone_number,
                     otp_code=otp.otp_code,
-                    purpose=purpose,
                 )
-                logger.info(
-                    f"OTP SMS task queued for {dto.phone_number} (purpose: {purpose}, OTP ID: {otp.id})"
-                )
+                logger.info(f"OTP SMS task queued for {dto.phone_number} (OTP ID: {otp.id})")
             except (OperationalError, ConnectionError) as celery_error:
                 # If Celery/Redis is unavailable, log error but don't fail the request
                 # The OTP is still created and can be verified
                 logger.error(
-                    f"Failed to queue OTP SMS task for {dto.phone_number} (purpose: {purpose}, OTP ID: {otp.id}): {str(celery_error)}. "
+                    f"Failed to queue OTP SMS task for {dto.phone_number} (OTP ID: {otp.id}): {str(celery_error)}. "
                     f"OTP created but SMS sending may be delayed. Please ensure Celery worker is running.",
                     exc_info=True,
-                    extra={"otp_id": str(otp.id), "phone_number": dto.phone_number}
+                    extra={"otp_id": str(otp.id), "phone_number": dto.phone_number},
                 )
 
         return {
@@ -147,14 +140,14 @@ class VerifyOTPUseCase:
         self.device_repository = device_repository
 
     def execute(
-        self, 
-        dto: OTPVerifyDTO, 
-        generate_tokens_func: Callable, 
-        device_id: Optional[str] = None, 
-        device_name: Optional[str] = None,
-        device_type: Optional[str] = None,
-        ip_address: Optional[str] = None, 
-        user_agent: Optional[str] = None
+        self,
+        dto: OTPVerifyDTO,
+        generate_tokens_func: Callable,
+        device_id: str | None = None,
+        device_name: str | None = None,
+        device_type: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> LoginResponseDTO:
         """
         Execute OTP verification and return tokens.
@@ -200,7 +193,7 @@ class VerifyOTPUseCase:
         if not is_valid:
             # Check specific reasons for invalidity
             from django.utils import timezone
-            
+
             logger.warning(
                 f"OTP verification failed - OTP ID: {otp.id}, "
                 f"identifier: {identifier}, "
@@ -208,7 +201,7 @@ class VerifyOTPUseCase:
                 f"expired: {otp.expires_at <= timezone.now()}, "
                 f"attempts: {otp.attempts}/{otp.max_attempts}"
             )
-            
+
             if otp.verified:
                 logger.warning(
                     f"OTP already used - OTP ID: {otp.id}, identifier: {identifier}, "
@@ -219,7 +212,7 @@ class VerifyOTPUseCase:
                     code="OTP_ALREADY_USED",
                     status_code=400,
                 )
-            
+
             if otp.expires_at <= timezone.now():
                 logger.warning(
                     f"OTP expired - OTP ID: {otp.id}, identifier: {identifier}, "
@@ -230,7 +223,7 @@ class VerifyOTPUseCase:
                     code="OTP_EXPIRED",
                     status_code=400,
                 )
-            
+
             if otp.attempts >= otp.max_attempts:
                 logger.warning(
                     f"OTP max attempts exceeded - OTP ID: {otp.id}, identifier: {identifier}, "
@@ -241,7 +234,7 @@ class VerifyOTPUseCase:
                     code="OTP_MAX_ATTEMPTS_EXCEEDED",
                     status_code=400,
                 )
-            
+
             # If we get here, the code is incorrect
             remaining_attempts = otp.max_attempts - otp.attempts
             logger.warning(
@@ -258,7 +251,7 @@ class VerifyOTPUseCase:
         # Log successful verification
         logger.info(
             f"OTP verified successfully - OTP ID: {otp.id}, identifier: {identifier}, "
-            f"purpose: {otp.purpose}, user_id: {otp.user_id}"
+            f"user_id: {otp.user_id}"
         )
 
         # Get user if exists
@@ -282,23 +275,15 @@ class VerifyOTPUseCase:
                 status_code=404,
             )
 
-        # Activate user if it's a signup OTP
-        if otp.purpose == "signup" and not user.is_active:
-            logger.info(f"Activating user account after signup OTP verification - user_id: {user.id}")
-            user.is_active = True
-            user = self.user_repository.update(user)
-
-        # Check if user is active (for login OTP)
-        if otp.purpose == "login" and not user.is_active:
-            logger.warning(
-                f"Login attempt with inactive account - user_id: {user.id}, "
+        # Verify email/phone if not already verified
+        # If user verifies OTP, it means they have access to their email
+        if not user.email_verified:
+            logger.info(
+                f"Verifying email/phone after OTP verification - user_id: {user.id}, "
                 f"identifier: {identifier}, account_created_at: {user.created_at}"
             )
-            raise BaseAPIException(
-                detail="Your account is not active. Please verify your email/phone with the OTP sent during signup to activate your account.",
-                code="ACCOUNT_INACTIVE",
-                status_code=403,
-            )
+            user.email_verified = True
+            user = self.user_repository.update(user)
 
         # Start session
         session = self.user_domain_service.start_session(
@@ -311,9 +296,11 @@ class VerifyOTPUseCase:
         # Register or update device
         if device_id:
             from uuid import uuid4
+
             from django.utils import timezone
+
             from domain.users.entities import Device
-            
+
             device = self.device_repository.get_by_device_id(device_id)
             if device:
                 # Update existing device
@@ -348,7 +335,7 @@ class VerifyOTPUseCase:
         tokens = generate_tokens_func(user)
 
         # Create refresh token
-        refresh_token_entity = self.user_domain_service.create_refresh_token(
+        self.user_domain_service.create_refresh_token(
             user_id=user.id,
             token=tokens["refresh"],
             device_id=device_id,
@@ -357,13 +344,13 @@ class VerifyOTPUseCase:
 
         # Update last login
         from django.utils import timezone
+
         user.last_login = timezone.now()
         user = self.user_repository.update(user)
 
         logger.info(
             f"OTP verification completed successfully - user_id: {user.id}, "
-            f"identifier: {identifier}, purpose: {otp.purpose}, "
-            f"session_id: {session.id}, device_id: {device_id}"
+            f"identifier: {identifier}, session_id: {session.id}, device_id: {device_id}"
         )
 
         return LoginResponseDTO(
@@ -376,6 +363,7 @@ class VerifyOTPUseCase:
                 phone_number=user.phone_number,
                 role=user.role.value if isinstance(user.role, UserRole) else user.role,
                 is_active=user.is_active,
+                email_verified=user.email_verified,
                 is_staff=user.is_staff,
                 is_superuser=user.is_superuser,
                 last_login=user.last_login,
@@ -386,4 +374,3 @@ class VerifyOTPUseCase:
             ),
             expires_in=3600,  # 1 hour
         )
-

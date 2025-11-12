@@ -1,10 +1,8 @@
 """Middleware for Swagger/ReDoc authentication."""
 
 import base64
-from typing import Any
 
 from django.conf import settings
-from django.contrib.auth import authenticate
 from django.http import HttpRequest, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 
@@ -24,7 +22,9 @@ class DocumentationAuthMiddleware(MiddlewareMixin):
             HttpResponse if authentication fails, None if authenticated
         """
         # Only protect documentation endpoints
-        if not (request.path.startswith("/api/v1/docs/") or request.path.startswith("/api/v1/redoc/")):
+        if not (
+            request.path.startswith("/api/v1/docs/") or request.path.startswith("/api/v1/redoc/")
+        ):
             return None
 
         # Check if authentication is required
@@ -68,4 +68,3 @@ class DocumentationAuthMiddleware(MiddlewareMixin):
         )
         response["WWW-Authenticate"] = 'Basic realm="Documentation"'
         return response
-

@@ -1,7 +1,6 @@
 """Sales repository implementations."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from domain.sales.entities import (
@@ -20,8 +19,14 @@ from domain.sales.repositories import (
 )
 from infrastructure.persistence.models.sales_models import (
     Invoice as InvoiceModel,
+)
+from infrastructure.persistence.models.sales_models import (
     InvoiceLine as InvoiceLineModel,
+)
+from infrastructure.persistence.models.sales_models import (
     Order as OrderModel,
+)
+from infrastructure.persistence.models.sales_models import (
     OrderItem as OrderItemModel,
 )
 
@@ -29,7 +34,7 @@ from infrastructure.persistence.models.sales_models import (
 class InvoiceRepositoryImpl(InvoiceRepository):
     """Django implementation of InvoiceRepository."""
 
-    def get_by_id(self, invoice_id: UUID) -> Optional[Invoice]:
+    def get_by_id(self, invoice_id: UUID) -> Invoice | None:
         """Get invoice by ID."""
         try:
             invoice_model = InvoiceModel.objects.select_related(
@@ -39,9 +44,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         except InvoiceModel.DoesNotExist:
             return None
 
-    def get_by_number(
-        self, business_id: UUID, number: int
-    ) -> Optional[Invoice]:
+    def get_by_number(self, business_id: UUID, number: int) -> Invoice | None:
         """Get invoice by number."""
         try:
             invoice_model = InvoiceModel.objects.select_related(
@@ -54,15 +57,15 @@ class InvoiceRepositoryImpl(InvoiceRepository):
     def get_by_business(
         self,
         business_id: UUID,
-        status: Optional[InvoiceStatus] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        status: InvoiceStatus | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[Invoice]:
         """Get invoices for a business with optional filters."""
-        query = InvoiceModel.objects.filter(
-            business_id=business_id
-        ).select_related("customer", "cashier")
+        query = InvoiceModel.objects.filter(business_id=business_id).select_related(
+            "customer", "cashier"
+        )
 
         if status:
             query = query.filter(status=status.value)
@@ -118,9 +121,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
     def get_next_invoice_number(self, business_id: UUID) -> int:
         """Get next invoice number for a business."""
         last_invoice = (
-            InvoiceModel.objects.filter(business_id=business_id)
-            .order_by("-number")
-            .first()
+            InvoiceModel.objects.filter(business_id=business_id).order_by("-number").first()
         )
         if last_invoice:
             return last_invoice.number + 1
@@ -155,9 +156,7 @@ class InvoiceLineRepositoryImpl(InvoiceLineRepository):
 
     def get_by_invoice(self, invoice_id: UUID) -> list[InvoiceLine]:
         """Get all lines for an invoice."""
-        lines = InvoiceLineModel.objects.filter(
-            invoice_id=invoice_id
-        ).select_related("product")
+        lines = InvoiceLineModel.objects.filter(invoice_id=invoice_id).select_related("product")
         return [self._to_entity(line) for line in lines]
 
     def create(self, line: InvoiceLine) -> InvoiceLine:
@@ -195,19 +194,15 @@ class InvoiceLineRepositoryImpl(InvoiceLineRepository):
 class OrderRepositoryImpl(OrderRepository):
     """Django implementation of OrderRepository."""
 
-    def get_by_id(self, order_id: UUID) -> Optional[Order]:
+    def get_by_id(self, order_id: UUID) -> Order | None:
         """Get order by ID."""
         try:
-            order_model = OrderModel.objects.select_related(
-                "business", "customer"
-            ).get(id=order_id)
+            order_model = OrderModel.objects.select_related("business", "customer").get(id=order_id)
             return self._to_entity(order_model)
         except OrderModel.DoesNotExist:
             return None
 
-    def get_by_customer(
-        self, customer_id: UUID, limit: int = 100
-    ) -> list[Order]:
+    def get_by_customer(self, customer_id: UUID, limit: int = 100) -> list[Order]:
         """Get orders for a customer."""
         orders = (
             OrderModel.objects.filter(customer_id=customer_id)
@@ -219,13 +214,11 @@ class OrderRepositoryImpl(OrderRepository):
     def get_by_business(
         self,
         business_id: UUID,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 100,
     ) -> list[Order]:
         """Get orders for a business."""
-        query = OrderModel.objects.filter(
-            business_id=business_id
-        ).select_related("customer")
+        query = OrderModel.objects.filter(business_id=business_id).select_related("customer")
 
         if status:
             query = query.filter(status=status)
@@ -255,9 +248,7 @@ class OrderRepositoryImpl(OrderRepository):
         order_model = OrderModel.objects.get(id=order.id)
         order_model.status = order.status
         order_model.total = order.total
-        order_model.payment_method = (
-            order.payment_method.value if order.payment_method else None
-        )
+        order_model.payment_method = order.payment_method.value if order.payment_method else None
         order_model.shipping_address = order.shipping_address
         order_model.notes = order.notes
         order_model.delivered_at = order.delivered_at
@@ -273,9 +264,9 @@ class OrderRepositoryImpl(OrderRepository):
             order_number=order_model.order_number,
             status=order_model.status,
             total=order_model.total,
-            payment_method=PaymentMethod(order_model.payment_method)
-            if order_model.payment_method
-            else None,
+            payment_method=(
+                PaymentMethod(order_model.payment_method) if order_model.payment_method else None
+            ),
             shipping_address=order_model.shipping_address,
             notes=order_model.notes,
             created_at=order_model.created_at,
@@ -289,9 +280,7 @@ class OrderItemRepositoryImpl(OrderItemRepository):
 
     def get_by_order(self, order_id: UUID) -> list[OrderItem]:
         """Get all items for an order."""
-        items = OrderItemModel.objects.filter(
-            order_id=order_id
-        ).select_related("product")
+        items = OrderItemModel.objects.filter(order_id=order_id).select_related("product")
         return [self._to_entity(item) for item in items]
 
     def create(self, item: OrderItem) -> OrderItem:
@@ -318,4 +307,3 @@ class OrderItemRepositoryImpl(OrderItemRepository):
             line_total=item_model.line_total,
             created_at=item_model.created_at,
         )
-

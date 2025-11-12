@@ -1,7 +1,6 @@
 """Inventory domain services."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 from domain.inventory.entities import Product, StockMovement, StockMovementType
@@ -29,7 +28,7 @@ class InventoryDomainService:
         product_id: UUID,
         quantity: int,
         user_id: UUID,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> StockMovement:
         """Record a stock entry."""
         movement = StockMovement(
@@ -59,7 +58,7 @@ class InventoryDomainService:
         product_id: UUID,
         quantity: int,
         user_id: UUID,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> StockMovement:
         """Record a stock exit."""
         product = self.product_repository.get_by_id(product_id)
@@ -88,13 +87,9 @@ class InventoryDomainService:
 
         return movement
 
-    def check_expired_products(
-        self, business_id: UUID
-    ) -> list[Product]:
+    def check_expired_products(self, business_id: UUID) -> list[Product]:
         """Check and mark expired products."""
-        products = self.product_repository.get_by_business(
-            business_id, expired_only=False
-        )
+        products = self.product_repository.get_by_business(business_id, expired_only=False)
         expired_products = []
 
         for product in products:
@@ -106,12 +101,7 @@ class InventoryDomainService:
 
         return expired_products
 
-    def get_low_stock_products(
-        self, business_id: UUID
-    ) -> list[Product]:
+    def get_low_stock_products(self, business_id: UUID) -> list[Product]:
         """Get products with low stock."""
-        products = self.product_repository.get_by_business(
-            business_id, low_stock_only=True
-        )
+        products = self.product_repository.get_by_business(business_id, low_stock_only=True)
         return [p for p in products if p.is_low_stock()]
-

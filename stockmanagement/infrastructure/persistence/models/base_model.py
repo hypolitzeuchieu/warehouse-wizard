@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
-
 from datetime import timedelta
+from typing import Any
 
 from django.db import models
 from django.utils import timezone
@@ -26,7 +25,7 @@ class BaseModelManager(models.Manager):
 
     def recent(self, days: int = 30):
         """Return objects created in the last N days."""
-        
+
         cutoff_date = timezone.now() - timedelta(days=days)
         return self.get_queryset().filter(created_at__gte=cutoff_date)
 
@@ -64,4 +63,3 @@ class BaseModel(models.Model):
     def __str__(self) -> str:
         """Default string representation."""
         return f"{self.__class__.__name__} {self.id}"
-

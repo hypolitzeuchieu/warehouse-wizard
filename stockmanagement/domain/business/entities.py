@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 
@@ -14,16 +13,16 @@ class Business:
     name: str
     unique_name: str  # Unique identifier for QR code
     owner_id: UUID
-    description: Optional[str]
-    address: Optional[str]
-    phone_number: Optional[str]
-    email: Optional[str]
-    qr_code_url: Optional[str]
-    logo_url: Optional[str]
+    description: str | None
+    address: str | None
+    phone_number: str | None
+    email: str | None
+    qr_code_url: str | None
+    logo_url: str | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    settings: Optional[dict] = None
+    settings: dict | None = None
 
     def __post_init__(self) -> None:
         """Validate business data."""
@@ -43,7 +42,7 @@ class BusinessMember:
     role: str  # manager, cashier, stock_keeper, delivery
     is_active: bool
     joined_at: datetime
-    left_at: Optional[datetime]
+    left_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -54,4 +53,3 @@ class BusinessMember:
     def is_active_member(self) -> bool:
         """Check if member is currently active."""
         return self.is_active and self.left_at is None
-

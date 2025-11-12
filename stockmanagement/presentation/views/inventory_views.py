@@ -14,10 +14,6 @@ from application.use_cases.inventory_use_cases import (
     GetLowStockProductsUseCase,
     RecordStockMovementUseCase,
 )
-from domain.inventory.repositories import (
-    CategoryRepository,
-    ProductRepository,
-)
 from domain.inventory.services import InventoryDomainService
 from infrastructure.persistence.repositories import (
     CategoryRepositoryImpl,
@@ -64,7 +60,9 @@ def create_product_view(request: Request, business_id: UUID) -> Response:
                 "barcode": product_dto.barcode,
                 "barcode_image_url": product_dto.barcode_image_url,
                 "category_id": str(product_dto.category_id),
-                "subcategory_id": str(product_dto.subcategory_id) if product_dto.subcategory_id else None,
+                "subcategory_id": (
+                    str(product_dto.subcategory_id) if product_dto.subcategory_id else None
+                ),
                 "purchase_price": str(product_dto.purchase_price),
                 "unit_price": str(product_dto.unit_price),
                 "current_price": str(product_dto.current_price),
@@ -72,7 +70,9 @@ def create_product_view(request: Request, business_id: UUID) -> Response:
                 "quantity": product_dto.quantity,
                 "min_quantity": product_dto.min_quantity,
                 "is_low_stock": product_dto.is_low_stock,
-                "expiry_date": product_dto.expiry_date.isoformat() if product_dto.expiry_date else None,
+                "expiry_date": (
+                    product_dto.expiry_date.isoformat() if product_dto.expiry_date else None
+                ),
                 "is_expired": product_dto.is_expired,
                 "on_promotion": product_dto.on_promotion,
                 "created_at": product_dto.created_at.isoformat(),
@@ -86,9 +86,7 @@ def create_product_view(request: Request, business_id: UUID) -> Response:
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def record_stock_movement_view(
-    request: Request, business_id: UUID
-) -> Response:
+def record_stock_movement_view(request: Request, business_id: UUID) -> Response:
     """Record stock movement endpoint."""
     serializer = StockMovementCreateSerializer(data=request.data)
     if not serializer.is_valid():
@@ -134,9 +132,7 @@ def record_stock_movement_view(
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def get_low_stock_products_view(
-    request: Request, business_id: UUID
-) -> Response:
+def get_low_stock_products_view(request: Request, business_id: UUID) -> Response:
     """Get low stock products endpoint."""
     try:
         inventory_domain_service = InventoryDomainService(
@@ -169,9 +165,7 @@ def get_low_stock_products_view(
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def get_expired_products_view(
-    request: Request, business_id: UUID
-) -> Response:
+def get_expired_products_view(request: Request, business_id: UUID) -> Response:
     """Get expired products endpoint."""
     try:
         inventory_domain_service = InventoryDomainService(
@@ -199,4 +193,3 @@ def get_expired_products_view(
         )
     except Exception as e:
         return ResponseMixin.from_exception(e)
-

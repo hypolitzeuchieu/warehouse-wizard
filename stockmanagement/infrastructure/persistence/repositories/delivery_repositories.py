@@ -1,6 +1,5 @@
 """Delivery repository implementations."""
 
-from typing import Optional
 from uuid import UUID
 
 from domain.delivery.entities import Delivery, DeliveryStatus
@@ -13,7 +12,7 @@ from infrastructure.persistence.models.delivery_models import (
 class DeliveryRepositoryImpl(DeliveryRepository):
     """Django implementation of DeliveryRepository."""
 
-    def get_by_id(self, delivery_id: UUID) -> Optional[Delivery]:
+    def get_by_id(self, delivery_id: UUID) -> Delivery | None:
         """Get delivery by ID."""
         try:
             delivery_model = DeliveryModel.objects.select_related(
@@ -23,7 +22,7 @@ class DeliveryRepositoryImpl(DeliveryRepository):
         except DeliveryModel.DoesNotExist:
             return None
 
-    def get_by_order(self, order_id: UUID) -> Optional[Delivery]:
+    def get_by_order(self, order_id: UUID) -> Delivery | None:
         """Get delivery for an order."""
         try:
             delivery_model = DeliveryModel.objects.select_related(
@@ -34,12 +33,12 @@ class DeliveryRepositoryImpl(DeliveryRepository):
             return None
 
     def get_by_delivery_person(
-        self, delivery_person_id: UUID, status: Optional[DeliveryStatus] = None
+        self, delivery_person_id: UUID, status: DeliveryStatus | None = None
     ) -> list[Delivery]:
         """Get deliveries assigned to a delivery person."""
-        query = DeliveryModel.objects.filter(
-            delivery_person_id=delivery_person_id
-        ).select_related("business", "order", "customer")
+        query = DeliveryModel.objects.filter(delivery_person_id=delivery_person_id).select_related(
+            "business", "order", "customer"
+        )
 
         if status:
             query = query.filter(status=status.value)
@@ -48,12 +47,12 @@ class DeliveryRepositoryImpl(DeliveryRepository):
         return [self._to_entity(delivery) for delivery in deliveries]
 
     def get_by_business(
-        self, business_id: UUID, status: Optional[DeliveryStatus] = None
+        self, business_id: UUID, status: DeliveryStatus | None = None
     ) -> list[Delivery]:
         """Get deliveries for a business."""
-        query = DeliveryModel.objects.filter(
-            business_id=business_id
-        ).select_related("order", "delivery_person", "customer")
+        query = DeliveryModel.objects.filter(business_id=business_id).select_related(
+            "order", "delivery_person", "customer"
+        )
 
         if status:
             query = query.filter(status=status.value)
@@ -106,4 +105,3 @@ class DeliveryRepositoryImpl(DeliveryRepository):
             created_at=delivery_model.created_at,
             updated_at=delivery_model.updated_at,
         )
-

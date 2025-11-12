@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -12,14 +11,13 @@ class SMSService:
     """Service for sending SMS messages."""
 
     @staticmethod
-    def send_otp_sms(phone_number: str, otp_code: str, purpose: str = "verification") -> bool:
+    def send_otp_sms(phone_number: str, otp_code: str) -> bool:
         """
         Send OTP via SMS.
 
         Args:
             phone_number: Recipient phone number
             otp_code: OTP code to send
-            purpose: Purpose of OTP (signup, login, etc.)
 
         Returns:
             True if SMS sent successfully, False otherwise
@@ -27,8 +25,6 @@ class SMSService:
         try:
             # TODO: Integrate with SMS provider (Twilio, AWS SNS, etc.)
             # For now, log the OTP (in production, this should send actual SMS)
-            message = f"Your RetailPulse verification code is: {otp_code}. Valid for 10 minutes."
-            
             logger.info(f"OTP SMS would be sent to {phone_number}: {otp_code}")
             # In production, uncomment and configure:
             # from twilio.rest import Client
@@ -38,7 +34,7 @@ class SMSService:
             #     from_=settings.TWILIO_PHONE_NUMBER,
             #     to=phone_number
             # )
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to send OTP SMS to {phone_number}: {str(e)}")
@@ -57,9 +53,7 @@ class SMSService:
             True if SMS sent successfully, False otherwise
         """
         try:
-            # TODO: Integrate with SMS provider (Twilio, AWS SNS, etc.)
-            message = f"Your RetailPulse password reset code is: {code}. Valid for 10 minutes."
-            
+            # Integrate with SMS provider (Twilio, AWS SNS, etc.)
             logger.info(f"Password reset SMS would be sent to {phone_number}: {code}")
             # In production, uncomment and configure:
             # from twilio.rest import Client
@@ -69,9 +63,8 @@ class SMSService:
             #     from_=settings.TWILIO_PHONE_NUMBER,
             #     to=phone_number
             # )
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to send password reset SMS to {phone_number}: {str(e)}")
             return False
-

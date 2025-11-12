@@ -1,10 +1,7 @@
 """Inventory repository implementations."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
-
-from django.db import models
 
 from domain.inventory.entities import (
     Category,
@@ -21,8 +18,14 @@ from domain.inventory.repositories import (
 )
 from infrastructure.persistence.models.inventory_models import (
     Category as CategoryModel,
+)
+from infrastructure.persistence.models.inventory_models import (
     Product as ProductModel,
+)
+from infrastructure.persistence.models.inventory_models import (
     StockMovement as StockMovementModel,
+)
+from infrastructure.persistence.models.inventory_models import (
     SubCategory as SubCategoryModel,
 )
 
@@ -30,21 +33,19 @@ from infrastructure.persistence.models.inventory_models import (
 class CategoryRepositoryImpl(CategoryRepository):
     """Django implementation of CategoryRepository."""
 
-    def get_by_id(self, category_id: UUID) -> Optional[Category]:
+    def get_by_id(self, category_id: UUID) -> Category | None:
         """Get category by ID."""
         try:
-            category_model = CategoryModel.objects.select_related(
-                "business"
-            ).get(id=category_id)
+            category_model = CategoryModel.objects.select_related("business").get(id=category_id)
             return self._to_entity(category_model)
         except CategoryModel.DoesNotExist:
             return None
 
     def get_by_business(self, business_id: UUID) -> list[Category]:
         """Get all categories for a business."""
-        categories = CategoryModel.objects.filter(
-            business_id=business_id
-        ).select_related("business")
+        categories = CategoryModel.objects.filter(business_id=business_id).select_related(
+            "business"
+        )
         return [self._to_entity(category) for category in categories]
 
     def create(self, category: Category) -> Category:
@@ -87,21 +88,21 @@ class CategoryRepositoryImpl(CategoryRepository):
 class SubCategoryRepositoryImpl(SubCategoryRepository):
     """Django implementation of SubCategoryRepository."""
 
-    def get_by_id(self, subcategory_id: UUID) -> Optional[SubCategory]:
+    def get_by_id(self, subcategory_id: UUID) -> SubCategory | None:
         """Get subcategory by ID."""
         try:
-            subcategory_model = SubCategoryModel.objects.select_related(
-                "category", "business"
-            ).get(id=subcategory_id)
+            subcategory_model = SubCategoryModel.objects.select_related("category", "business").get(
+                id=subcategory_id
+            )
             return self._to_entity(subcategory_model)
         except SubCategoryModel.DoesNotExist:
             return None
 
     def get_by_category(self, category_id: UUID) -> list[SubCategory]:
         """Get all subcategories for a category."""
-        subcategories = SubCategoryModel.objects.filter(
-            category_id=category_id
-        ).select_related("category")
+        subcategories = SubCategoryModel.objects.filter(category_id=category_id).select_related(
+            "category"
+        )
         return [self._to_entity(sub) for sub in subcategories]
 
     def create(self, subcategory: SubCategory) -> SubCategory:
@@ -146,7 +147,7 @@ class SubCategoryRepositoryImpl(SubCategoryRepository):
 class ProductRepositoryImpl(ProductRepository):
     """Django implementation of ProductRepository."""
 
-    def get_by_id(self, product_id: UUID) -> Optional[Product]:
+    def get_by_id(self, product_id: UUID) -> Product | None:
         """Get product by ID."""
         try:
             product_model = ProductModel.objects.select_related(
@@ -156,14 +157,12 @@ class ProductRepositoryImpl(ProductRepository):
         except ProductModel.DoesNotExist:
             return None
 
-    def get_by_barcode(
-        self, barcode: str, business_id: UUID
-    ) -> Optional[Product]:
+    def get_by_barcode(self, barcode: str, business_id: UUID) -> Product | None:
         """Get product by barcode."""
         try:
-            product_model = ProductModel.objects.select_related(
-                "business", "category"
-            ).get(barcode=barcode, business_id=business_id)
+            product_model = ProductModel.objects.select_related("business", "category").get(
+                barcode=barcode, business_id=business_id
+            )
             return self._to_entity(product_model)
         except ProductModel.DoesNotExist:
             return None
@@ -171,7 +170,7 @@ class ProductRepositoryImpl(ProductRepository):
     def get_by_business(
         self,
         business_id: UUID,
-        category_id: Optional[UUID] = None,
+        category_id: UUID | None = None,
         low_stock_only: bool = False,
         expired_only: bool = False,
     ) -> list[Product]:
@@ -186,12 +185,11 @@ class ProductRepositoryImpl(ProductRepository):
         if low_stock_only:
             # Filter products where quantity <= min_quantity
             from django.db.models import F
+
             query = query.filter(quantity__lte=F("min_quantity"))
 
         if expired_only:
-            query = query.filter(
-                expiry_date__lt=datetime.utcnow(), is_expired=True
-            )
+            query = query.filter(expiry_date__lt=datetime.utcnow(), is_expired=True)
 
         products = query.prefetch_related("stock_movements")
         return [self._to_entity(product) for product in products]
@@ -285,7 +283,7 @@ class ProductRepositoryImpl(ProductRepository):
 class StockMovementRepositoryImpl(StockMovementRepository):
     """Django implementation of StockMovementRepository."""
 
-    def get_by_id(self, movement_id: UUID) -> Optional[StockMovement]:
+    def get_by_id(self, movement_id: UUID) -> StockMovement | None:
         """Get stock movement by ID."""
         try:
             movement_model = StockMovementModel.objects.select_related(
@@ -295,9 +293,7 @@ class StockMovementRepositoryImpl(StockMovementRepository):
         except StockMovementModel.DoesNotExist:
             return None
 
-    def get_by_product(
-        self, product_id: UUID, limit: int = 100
-    ) -> list[StockMovement]:
+    def get_by_product(self, product_id: UUID, limit: int = 100) -> list[StockMovement]:
         """Get stock movements for a product."""
         movements = (
             StockMovementModel.objects.filter(product_id=product_id)
@@ -309,13 +305,13 @@ class StockMovementRepositoryImpl(StockMovementRepository):
     def get_by_business(
         self,
         business_id: UUID,
-        movement_type: Optional[StockMovementType] = None,
+        movement_type: StockMovementType | None = None,
         limit: int = 100,
     ) -> list[StockMovement]:
         """Get stock movements for a business."""
-        query = StockMovementModel.objects.filter(
-            business_id=business_id
-        ).select_related("product", "user")
+        query = StockMovementModel.objects.filter(business_id=business_id).select_related(
+            "product", "user"
+        )
 
         if movement_type:
             query = query.filter(movement_type=movement_type.value)
@@ -350,4 +346,3 @@ class StockMovementRepositoryImpl(StockMovementRepository):
             created_at=movement_model.created_at,
             updated_at=movement_model.updated_at,
         )
-

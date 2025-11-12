@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -136,29 +136,22 @@ class APIResponseMixin:
             Response with formatted validation errors
         """
         formatted_errors = self.format_validation_errors(serializer.errors)
-        
-        # Create a meaningful message from validation errors
-        # Combine first error messages from each field into a readable message
+
         error_messages = []
         for field, error_msg in formatted_errors.items():
             if error_msg:
-                # Use the error message directly (it's already user-friendly)
-                # Only add field name if the error message doesn't already mention it
                 error_text = str(error_msg)
                 if field.lower() not in error_text.lower():
-                    field_name = field.replace('_', ' ').title()
+                    field_name = field.replace("_", " ").title()
                     error_messages.append(f"{field_name}: {error_text}")
                 else:
                     error_messages.append(error_text)
-        
-        # Use combined error messages if available, otherwise use default message
-        # Join with ". " for better readability
+
         meaningful_message = ". ".join(error_messages) if error_messages else message
-        
-        # Log validation errors for debugging
+
         logger.warning(
             f"Validation error: {meaningful_message}",
-            extra={"errors": formatted_errors, "raw_errors": serializer.errors}
+            extra={"errors": formatted_errors, "raw_errors": serializer.errors},
         )
 
         return self.error(
@@ -174,7 +167,7 @@ class APIResponseMixin:
         queryset: Any,
         serializer_class: Any,
         message: str = "Data retrieved successfully",
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> Response:
         """
         Return a paginated response.
@@ -200,9 +193,7 @@ class APIResponseMixin:
         page = paginator.paginate_queryset(queryset, request)
 
         if page is not None:
-            serializer = serializer_class(
-                page, many=True, context=context or {"request": request}
-            )
+            serializer = serializer_class(page, many=True, context=context or {"request": request})
             paginated_data = paginator.get_paginated_response(serializer.data)
 
             response_data: dict[str, Any] = {
@@ -215,18 +206,14 @@ class APIResponseMixin:
                     "next": paginated_data.data.get("next"),
                     "previous": paginated_data.data.get("previous"),
                     "current_page": paginator.page.number if paginator.page else 1,
-                    "total_pages": paginator.page.paginator.num_pages
-                    if paginator.page
-                    else 0,
+                    "total_pages": paginator.page.paginator.num_pages if paginator.page else 0,
                     "page_size": page_size,
                 },
             }
             return Response(response_data, status=status.HTTP_200_OK)
 
         # If no pagination needed, return all data
-        serializer = serializer_class(
-            queryset, many=True, context=context or {"request": request}
-        )
+        serializer = serializer_class(queryset, many=True, context=context or {"request": request})
         return self.success(
             message=message,
             data=serializer.data,
@@ -256,7 +243,7 @@ class APIResponseMixin:
                         "error_code": exc.code,
                         "status_code": exc.status_code,
                         "details": exc.details,
-                    }
+                    },
                 )
             else:
                 # Business logic errors: log without traceback, just structured info
@@ -266,7 +253,7 @@ class APIResponseMixin:
                         "error_code": exc.code,
                         "status_code": exc.status_code,
                         "details": exc.details,
-                    }
+                    },
                 )
             return self.error(
                 message=exc.detail,
@@ -278,10 +265,7 @@ class APIResponseMixin:
         # Handle DRF ValidationError
         if isinstance(exc, ValidationError):
             formatted_errors = self.format_validation_errors(exc.detail)
-            logger.warning(
-                f"ValidationError: {str(exc)}",
-                extra={"errors": formatted_errors}
-            )
+            logger.warning(f"ValidationError: {str(exc)}", extra={"errors": formatted_errors})
             return self.error(
                 message="Validation error",
                 errors=formatted_errors,
@@ -290,13 +274,9 @@ class APIResponseMixin:
             )
 
         # Handle other exceptions
-        logger.exception(
-            f"Unhandled exception: {type(exc).__name__}",
-            exc_info=exc
-        )
+        logger.exception(f"Unhandled exception: {type(exc).__name__}", exc_info=exc)
         return self.error(
             message="An internal server error occurred",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="INTERNAL_ERROR",
         )
-

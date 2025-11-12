@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
-from typing import Optional
 from urllib.parse import urlencode
 
 import requests
@@ -21,7 +19,7 @@ class GoogleOAuthService:
     GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
     @staticmethod
-    def generate_auth_url() -> dict:
+    def generate_auth_url() -> str:
         """
         Generate Google OAuth authorization URL.
         Note: Purpose (signup/login) is auto-detected based on whether user exists.
@@ -29,8 +27,6 @@ class GoogleOAuthService:
         Returns:
             Dictionary with auth_url
         """
-        if not GoogleOAuthService.is_configured():
-            raise ValueError("Google OAuth is not configured")
 
         params = {
             "client_id": settings.GOOGLE_CLIENT_ID,
@@ -43,13 +39,10 @@ class GoogleOAuthService:
 
         auth_url = f"{GoogleOAuthService.GOOGLE_AUTH_URL}?{urlencode(params)}"
 
-        return {
-            "auth_url": auth_url,
-            "expires_in": 300,  # 5 minutes
-        }
+        return auth_url
 
     @staticmethod
-    def exchange_code_for_token(code: str) -> Optional[dict]:
+    def exchange_code_for_token(code: str) -> dict | None:
         """
         Exchange authorization code for access token.
 
@@ -59,10 +52,6 @@ class GoogleOAuthService:
         Returns:
             Dictionary with access_token, refresh_token, and user info, or None if invalid
         """
-        if not GoogleOAuthService.is_configured():
-            logger.error("Google OAuth is not configured")
-            return None
-
         try:
             # Clean and validate code
             code = code.strip()
@@ -121,10 +110,9 @@ class GoogleOAuthService:
                 "name": user_info.get("name"),
                 "given_name": user_info.get("given_name"),
                 "family_name": user_info.get("family_name"),
-                "picture": user_info.get("picture"),  # Avatar URL
-                "sub": user_info.get("id"),  # Google user ID
+                "picture": user_info.get("picture"),
+                "sub": user_info.get("id"),
                 "verified_email": user_info.get("verified_email", False),
-                # Purpose is auto-detected based on whether user exists
             }
         except requests.RequestException as e:
             logger.error(f"Request error during token exchange: {str(e)}", exc_info=True)
@@ -143,5 +131,3 @@ class GoogleOAuthService:
                 hasattr(settings, "GOOGLE_REDIRECT_URI") and settings.GOOGLE_REDIRECT_URI,
             ]
         )
-
-

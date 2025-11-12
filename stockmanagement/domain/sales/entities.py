@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 
@@ -35,8 +34,8 @@ class Invoice:
     id: UUID
     business_id: UUID
     number: int
-    customer_name: Optional[str]
-    customer_id: Optional[UUID]
+    customer_name: str | None
+    customer_id: UUID | None
     cashier_id: UUID
     status: InvoiceStatus
     total: Decimal
@@ -45,11 +44,11 @@ class Invoice:
     advance_paid: Decimal
     remaining_amount: Decimal
     payment_method: PaymentMethod
-    due_date: Optional[datetime]
+    due_date: datetime | None
     is_credit_settled: bool
     created_at: datetime
     updated_at: datetime
-    reason: Optional[str] = None
+    reason: str | None = None
 
     def calculate_total(self) -> Decimal:
         """Calculate total amount."""
@@ -90,12 +89,12 @@ class Order:
     order_number: str
     status: str  # pending, confirmed, processing, shipped, delivered, cancelled
     total: Decimal
-    payment_method: Optional[PaymentMethod]
-    shipping_address: Optional[str]
-    notes: Optional[str]
+    payment_method: PaymentMethod | None
+    shipping_address: str | None
+    notes: str | None
     created_at: datetime
     updated_at: datetime
-    delivered_at: Optional[datetime] = None
+    delivered_at: datetime | None = None
 
 
 @dataclass
@@ -109,4 +108,3 @@ class OrderItem:
     unit_price: Decimal
     line_total: Decimal
     created_at: datetime
-

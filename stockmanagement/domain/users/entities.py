@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 from uuid import UUID
 
 from django.utils import timezone
@@ -37,19 +36,21 @@ class User:
     """User entity."""
 
     id: UUID
-    email: Optional[str]
+    email: str | None
     name: str
-    phone_number: Optional[str]
+    phone_number: str | None
     role: UserRole
     is_active: bool
+    email_verified: bool
     is_staff: bool
     is_superuser: bool
-    last_login: Optional[datetime]
-    address: Optional[str]
-    avatar_url: Optional[str]
+    last_login: datetime | None
+    address: str | None
+    avatar_url: str | None
     created_at: datetime
     updated_at: datetime
     auth_method: AuthMethod = AuthMethod.EMAIL_PASSWORD
+    google_id: str | None = None
 
     def can_manage_managers(self) -> bool:
         """Check if user can manage managers."""
@@ -62,16 +63,16 @@ class Session:
 
     id: UUID
     user_id: UUID
-    device_id: Optional[str]
+    device_id: str | None
     start_time: datetime
-    end_time: Optional[datetime]
-    ip_address: Optional[str]
-    user_agent: Optional[str]
+    end_time: datetime | None
+    ip_address: str | None
+    user_agent: str | None
     created_at: datetime
     updated_at: datetime
 
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Calculate session duration in seconds."""
         if self.end_time:
             return (self.end_time - self.start_time).total_seconds()
@@ -90,21 +91,18 @@ class RefreshToken:
     id: UUID
     user_id: UUID
     token: str
-    device_id: Optional[str]
-    ip_address: Optional[str]
+    device_id: str | None
+    ip_address: str | None
     expires_at: datetime
     revoked: bool
-    revoked_at: Optional[datetime]
+    revoked_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
     def is_valid(self) -> bool:
         """Check if refresh token is valid."""
 
-        return (
-            not self.revoked
-            and self.expires_at > timezone.now()
-        )
+        return not self.revoked and self.expires_at > timezone.now()
 
 
 @dataclass
@@ -114,11 +112,11 @@ class Device:
     id: UUID
     user_id: UUID
     device_id: str
-    device_name: Optional[str]
-    device_type: Optional[str]
-    ip_address: Optional[str]
-    user_agent: Optional[str]
-    last_used_at: Optional[datetime]
+    device_name: str | None
+    device_type: str | None
+    ip_address: str | None
+    user_agent: str | None
+    last_used_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -128,15 +126,14 @@ class OTP:
     """OTP entity for one-time password verification."""
 
     id: UUID
-    user_id: Optional[UUID]
-    email: Optional[str]
-    phone_number: Optional[str]
+    user_id: UUID | None
+    email: str | None
+    phone_number: str | None
     otp_code: str
     otp_type: str
-    purpose: str
     expires_at: datetime
     verified: bool
-    verified_at: Optional[datetime]
+    verified_at: datetime | None
     attempts: int
     max_attempts: int
     created_at: datetime

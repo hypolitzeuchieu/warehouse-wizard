@@ -1,6 +1,5 @@
 """Tests for sales (POS) endpoints."""
 
-import json
 from uuid import uuid4
 
 import pytest
@@ -57,16 +56,12 @@ def business_with_product(api_client):
         "name": "Test Supermarket",
         "unique_name": f"test-market-{uuid4().hex[:8]}",
     }
-    business_response = api_client.post(
-        business_url, data=business_data, format="json"
-    )
+    business_response = api_client.post(business_url, data=business_data, format="json")
     business_id = business_response.data["data"]["id"]
     business = Business.objects.get(id=business_id)
 
     # Create category and product
-    category = Category.objects.create(
-        business=business, name="Food", description="Food items"
-    )
+    category = Category.objects.create(business=business, name="Food", description="Food items")
     product = Product.objects.create(
         business=business,
         category=category,
@@ -84,9 +79,7 @@ def business_with_product(api_client):
 class TestInvoiceEndpoints:
     """Test invoice (POS) endpoints."""
 
-    def test_create_invoice_success(
-        self, api_client, business_with_product
-    ):
+    def test_create_invoice_success(self, api_client, business_with_product):
         """Test successful invoice creation."""
         user, business, product = business_with_product
 
@@ -119,9 +112,7 @@ class TestInvoiceEndpoints:
         product.refresh_from_db()
         assert product.quantity == 98  # 100 - 2
 
-    def test_create_invoice_insufficient_stock(
-        self, api_client, business_with_product
-    ):
+    def test_create_invoice_insufficient_stock(self, api_client, business_with_product):
         """Test invoice creation with insufficient stock."""
         user, business, product = business_with_product
 
@@ -162,9 +153,7 @@ class TestInvoiceEndpoints:
             ],
             "payment_method": "cash",
         }
-        create_response = api_client.post(
-            create_url, data=invoice_data, format="json"
-        )
+        create_response = api_client.post(create_url, data=invoice_data, format="json")
         invoice_id = create_response.data["data"]["id"]
 
         # Get invoice
@@ -175,4 +164,3 @@ class TestInvoiceEndpoints:
         assert response.data["status"] is True
         assert response.data["data"]["id"] == invoice_id
         assert len(response.data["data"]["lines"]) == 1
-
