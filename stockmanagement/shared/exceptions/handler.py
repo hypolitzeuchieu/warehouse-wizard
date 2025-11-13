@@ -66,11 +66,32 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
             elif isinstance(exc.details, dict):
                 details = exc.details
 
+        # Special handling for refresh token expiration
+        user_message = exc.detail
+        if exc.code == "INVALID_REFRESH_TOKEN":
+            error_detail_lower = exc.detail.lower()
+            if "expired" in error_detail_lower:
+                user_message = (
+                    "Your refresh token has expired. " "Please login again to get new tokens."
+                )
+                logger.info(
+                    "Refresh token expired - user needs to login again",
+                    extra={"context": context},
+                )
+            elif "blacklisted" in error_detail_lower:
+                user_message = (
+                    "Your refresh token has been revoked (logged out). " "Please login again."
+                )
+                logger.info(
+                    "Refresh token blacklisted - user needs to login again",
+                    extra={"context": context},
+                )
+
         response_data: dict[str, Any] = {
             "success": False,
             "error": {
                 "code": exc.code,
-                "message": exc.detail,
+                "message": user_message,
                 "details": details,
             },
             "status_code": exc.status_code,

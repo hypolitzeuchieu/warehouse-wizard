@@ -178,12 +178,15 @@ class JWTBlacklistService:
             )
 
     @staticmethod
-    def blacklist_refresh_token(refresh_token_string: str, user_id: UUID) -> None:
-        """Blacklist a refresh token.
+    def blacklist_refresh_token(
+        refresh_token_string: str, user_id: UUID, blacklist_access_token: bool = True
+    ) -> None:
+        """Blacklist a refresh token and optionally its associated access token.
 
         Args:
             refresh_token_string: The refresh token string
             user_id: User ID associated with the token
+            blacklist_access_token: If True, also blacklist all access tokens for this user
         """
         try:
             refresh_token = RefreshToken(refresh_token_string)
@@ -192,6 +195,13 @@ class JWTBlacklistService:
             if not refresh_jti:
                 logger.warning("Refresh token has no JTI, cannot blacklist")
                 return
+
+            if blacklist_access_token:
+                count = JWTBlacklistService.blacklist_all_user_access_tokens(user_id)
+                logger.info(
+                    f"Blacklisted {count} access token(s) for user {user_id} "
+                    f"when blacklisting refresh token"
+                )
 
             # Extract expiration and creation times from refresh token
             refresh_exp_timestamp = refresh_token.get("exp")
@@ -285,4 +295,6 @@ class JWTBlacklistService:
             logger.info(f"Blacklisted {count} access token(s) for user {user_id} during refresh")
 
         # Then blacklist the refresh token
-        JWTBlacklistService.blacklist_refresh_token(refresh_token_string, user_id)
+        JWTBlacklistService.blacklist_refresh_token(
+            refresh_token_string, user_id, blacklist_access_token=False
+        )

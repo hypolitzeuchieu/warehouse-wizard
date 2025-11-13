@@ -13,7 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken
 
 from application.dto.user_dto import OTPRequestDTO
 from application.use_cases.google_oauth_use_case import (
@@ -766,50 +766,27 @@ def logout_view(request: Request) -> Response:
             refresh_tokens = refresh_token_repo.get_by_user_and_device(request.user.id, None)
 
         # Blacklist all refresh tokens JWT in simplejwt blacklist system
+        # This will also blacklist associated access tokens automatically
+        from shared.services.jwt_blacklist_service import JWTBlacklistService
+
         for refresh_token_entity in refresh_tokens:
             if refresh_token_entity.token and not refresh_token_entity.revoked:
                 try:
-                    # Decode the refresh token JWT to get jti
-                    refresh_token_jwt = RefreshToken(refresh_token_entity.token)
-                    jti = refresh_token_jwt.get("jti")
-
-                    if jti:
-                        try:
-                            # Try to find existing OutstandingToken by jti
-                            outstanding_token = OutstandingToken.objects.get(jti=jti)
-                        except OutstandingToken.DoesNotExist:
-                            # Create OutstandingToken for this refresh token
-                            exp_timestamp = refresh_token_jwt.get("exp")
-                            iat_timestamp = refresh_token_jwt.get("iat")
-                            expires_at = (
-                                datetime.fromtimestamp(exp_timestamp, tz=UTC)
-                                if exp_timestamp
-                                else timezone.now() + timezone.timedelta(days=30)
-                            )
-                            created_at = (
-                                datetime.fromtimestamp(iat_timestamp, tz=UTC)
-                                if iat_timestamp
-                                else timezone.now()
-                            )
-
-                            outstanding_token = OutstandingToken.objects.create(
-                                jti=jti,
-                                user=request.user,
-                                token=refresh_token_entity.token,
-                                created_at=created_at,
-                                expires_at=expires_at,
-                            )
-                            logger.info(f"Created OutstandingToken for refresh token (jti: {jti})")
-
-                        # Blacklist the refresh token
-                        BlacklistedToken.objects.get_or_create(token=outstanding_token)
-                        logger.info(
-                            f"Refresh token blacklisted for user {request.user.id} (jti: {jti})"
-                        )
+                    # Use JWTBlacklistService to blacklist refresh token
+                    # This will also blacklist all access tokens for this user
+                    JWTBlacklistService.blacklist_refresh_token(
+                        refresh_token_string=refresh_token_entity.token,
+                        user_id=request.user.id,
+                        blacklist_access_token=True,
+                    )
+                    logger.info(
+                        f"Refresh token and associated access tokens blacklisted "
+                        f"for user {request.user.id}"
+                    )
                 except Exception as refresh_token_error:
                     logger.warning(
-                        f"Failed to blacklist refresh token {refresh_token_entity.id}: {str(refresh_token_error)}. "
-                        f"Continuing with logout anyway.",
+                        f"Failed to blacklist refresh token {refresh_token_entity.id}: "
+                        f"{str(refresh_token_error)}. Continuing with logout anyway.",
                         exc_info=True,
                     )
 
