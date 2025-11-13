@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from django.urls import include
-from django.urls import path
+from django.urls import include, path
 from drf_yasg import openapi
 from drf_yasg.generators import OpenAPISchemaGenerator
 from drf_yasg.views import get_schema_view
@@ -26,12 +25,12 @@ class CustomSchemaGenerator(OpenAPISchemaGenerator):
 
 schema_view = get_schema_view(
     openapi.Info(
-        title='Stock Management',
-        default_version='v1',
-        description='Documentation of API',
+        title="RetailPulse API",
+        default_version="v1",
+        description="RetailPulse - Modern Supermarket Management Platform API Documentation",
         # terms_of_service='https://www.google.com/policies/terms/',
-        contact=openapi.Contact(email='hypolitdu13@gmail.com'),
-        license=openapi.License(name='All right reserved'),
+        contact=openapi.Contact(email="hypolitdu13@gmail.com"),
+        license=openapi.License(name="All right reserved"),
     ),
     public=True,
     permission_classes=[AllowAny],
@@ -40,15 +39,11 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-    path('v1/', include('apps.authentication.urls')),
-    path('v1/', include('apps.stock.urls')),
-    path('v1/', include('apps.reports.urls')),
-    path('v1/', include('apps.notifications.urls')),
-    path('v1/', include('apps.dashboard.urls')),
+    path("v1/", include("presentation.api.urls")),
     path(
-        'v1/docs/',
-        schema_view.with_ui('swagger', cache_timeout=0),
-        name='schema-swagger-ui',
+        "v1/docs/",
+        schema_view.with_ui("swagger", cache_timeout=0),
+        name="schema-swagger-ui",
     ),
-    path('v1/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    path("v1/redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
 ]

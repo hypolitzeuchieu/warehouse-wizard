@@ -4,14 +4,13 @@ import logging
 from decimal import Decimal
 from uuid import UUID
 
-from apps.reports.models import Expense
-from apps.reports.models import Treasure
+from django.db import transaction
+from django.db.models import Count, Sum
+from django.utils import timezone
+
+from apps.reports.models import Expense, Treasure
 from apps.reports.service.entities import ServiceResponse
 from apps.reports.service.generateReport import GenerateReportService
-from django.db import transaction
-from django.db.models import Count
-from django.db.models import Sum
-from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -25,26 +24,19 @@ class ExpenseService:
                 treasure = TreasureService.get_treasure()
                 if treasure.balance < Decimal(amount):
                     return ServiceResponse(
-                        success=False,
-                        error='Insufficient balance to perform this expense'
+                        success=False, error="Insufficient balance to perform this expense"
                     )
 
                 expense = Expense.objects.create(
-                    amount=amount,
-                    expense_type=expense_type,
-                    reason=reason,
-                    created_by=created_by
+                    amount=amount, expense_type=expense_type, reason=reason, created_by=created_by
                 )
 
                 TreasureService.update_balance(
                     amount=Decimal(amount),
-                    operation_type='expense',
-                    details={
-                        'expense_id': str(expense.id),
-                        'reason': reason
-                    }
+                    operation_type="expense",
+                    details={"expense_id": str(expense.id), "reason": reason},
                 )
-                logger.info(f'Expense successfully created: {expense}')
+                logger.info(f"Expense successfully created: {expense}")
                 return ServiceResponse(success=True, data=expense)
 
         except Exception as e:
@@ -54,29 +46,25 @@ class ExpenseService:
     @staticmethod
     def get_expenses_summary(start_date=None, end_date=None):
         try:
-            start_date, end_date = GenerateReportService.get_date_range(
-                start_date, end_date
+            start_date, end_date = GenerateReportService.get_date_range(start_date, end_date)
+
+            expenses = (
+                Expense.objects.filter(created_at__range=(start_date, end_date))
+                .values("expense_type")
+                .annotate(total=Sum("amount"), count=Count("id"))
+                .order_by("-total")
             )
 
-            expenses = Expense.objects.filter(
-                created_at__range=(start_date, end_date)
-            ).values('expense_type').annotate(
-                total=Sum('amount'),
-                count=Count('id')
-            ).order_by('-total')
-
-            return ServiceResponse(success=True, data={
-                'total': sum(e['total'] for e in expenses),
-                'categories': list(expenses)
-            })
+            return ServiceResponse(
+                success=True,
+                data={"total": sum(e["total"] for e in expenses), "categories": list(expenses)},
+            )
         except Exception as e:
             logger.error(f"Error getting expenses summary: {str(e)}")
             return ServiceResponse(success=False, error=str(e))
 
     @staticmethod
-    def update_expense(
-            expense_id, new_amount, expense_type, reason, updated_by
-    ) -> ServiceResponse:
+    def update_expense(expense_id, new_amount, expense_type, reason, updated_by) -> ServiceResponse:
         try:
             with transaction.atomic():
                 expense = Expense.objects.select_for_update().get(id=expense_id)
@@ -87,24 +75,24 @@ class ExpenseService:
                     if diff > 0:
                         TreasureService.update_balance(
                             amount=diff,
-                            operation_type='expense',
+                            operation_type="expense",
                             details={
-                                'expense_id': str(expense.id),
-                                'reason': f"Expense update - increase: {reason}",
-                                'old_amount': float(old_amount),
-                                'new_amount': float(new_amount)
-                            }
+                                "expense_id": str(expense.id),
+                                "reason": f"Expense update - increase: {reason}",
+                                "old_amount": float(old_amount),
+                                "new_amount": float(new_amount),
+                            },
                         )
                     else:
                         TreasureService.update_balance(
                             amount=abs(diff),
-                            operation_type='expense_adjustment',
+                            operation_type="expense_adjustment",
                             details={
-                                'expense_id': str(expense.id),
-                                'reason': f"Expense update - decrease: {reason}",
-                                'old_amount': float(old_amount),
-                                'new_amount': float(new_amount)
-                            }
+                                "expense_id": str(expense.id),
+                                "reason": f"Expense update - decrease: {reason}",
+                                "old_amount": float(old_amount),
+                                "new_amount": float(new_amount),
+                            },
                         )
                 expense.amount = new_amount
                 expense.updated_by = updated_by
@@ -117,7 +105,7 @@ class ExpenseService:
 
         except Expense.DoesNotExist:
             logger.error(f"Expense with ID {expense_id} not found.")
-            return ServiceResponse(success=False, error='Expense not found')
+            return ServiceResponse(success=False, error="Expense not found")
         except ValueError as ve:
             return ServiceResponse(success=False, error=str(ve))
         except Exception as e:
@@ -127,7 +115,7 @@ class ExpenseService:
 
 class TreasureService:
 
-    DEFAULT_TREASURE_ID = UUID('00000000-0000-0000-0000-000000000001')
+    DEFAULT_TREASURE_ID = UUID("00000000-0000-0000-0000-000000000001")
 
     @staticmethod
     def get_treasure():
@@ -135,13 +123,13 @@ class TreasureService:
         treasure, _ = Treasure.objects.select_for_update().get_or_create(
             id=TreasureService.DEFAULT_TREASURE_ID,
             defaults={
-                'balance': Decimal('0.00'),
-                'total_sales': Decimal('0.00'),
-                'total_expenses': Decimal('0.00'),
-                'total_credit': Decimal('0.00'),
-                'outstanding_debt': Decimal('0.00'),
-                'history': []
-            }
+                "balance": Decimal("0.00"),
+                "total_sales": Decimal("0.00"),
+                "total_expenses": Decimal("0.00"),
+                "total_credit": Decimal("0.00"),
+                "outstanding_debt": Decimal("0.00"),
+                "history": [],
+            },
         )
         return treasure
 
@@ -154,16 +142,16 @@ class TreasureService:
             treasure = TreasureService.get_treasure()
 
             history_entry = {
-                'timestamp': timezone.now().isoformat(),
-                'operation': operation_type,
-                'amount': float(amount),
-                'details': details,
-                'previous_balance': float(treasure.balance),
-                'previous_expenses': float(treasure.total_expenses),
-                'previous_outstanding': float(treasure.outstanding_debt)
+                "timestamp": timezone.now().isoformat(),
+                "operation": operation_type,
+                "amount": float(amount),
+                "details": details,
+                "previous_balance": float(treasure.balance),
+                "previous_expenses": float(treasure.total_expenses),
+                "previous_outstanding": float(treasure.outstanding_debt),
             }
 
-            if operation_type == 'expense':
+            if operation_type == "expense":
                 if amount > treasure.balance:
                     raise ValueError(
                         f"Insufficient balance for expense: {amount} > {treasure.balance}"
@@ -172,31 +160,33 @@ class TreasureService:
                 treasure.balance -= amount
                 treasure.total_expenses += amount
 
-            elif operation_type == 'expense_revert':
+            elif operation_type == "expense_revert":
                 treasure.balance += amount
                 treasure.total_expenses -= amount
 
-            elif operation_type == 'sale':
+            elif operation_type == "sale":
                 treasure.balance += amount
                 treasure.total_sales += amount
 
-            elif operation_type == 'credit_sale':
+            elif operation_type == "credit_sale":
                 treasure.total_credit += amount
                 treasure.outstanding_debt += amount
 
-            elif operation_type == 'credit_payment':
+            elif operation_type == "credit_payment":
                 treasure.balance += amount
                 treasure.outstanding_debt -= amount
 
-            elif operation_type == 'expense_adjustment':
+            elif operation_type == "expense_adjustment":
                 treasure.balance += amount
                 treasure.total_expenses -= amount
 
-            history_entry.update({
-                'new_balance': float(treasure.balance),
-                'new_expenses': float(treasure.total_expenses),
-                'new_outstanding': float(treasure.outstanding_debt)
-            })
+            history_entry.update(
+                {
+                    "new_balance": float(treasure.balance),
+                    "new_expenses": float(treasure.total_expenses),
+                    "new_outstanding": float(treasure.outstanding_debt),
+                }
+            )
 
             treasure.history.append(history_entry)
             if len(treasure.history) > 100:

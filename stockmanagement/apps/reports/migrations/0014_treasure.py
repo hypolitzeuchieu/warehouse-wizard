@@ -3,22 +3,21 @@ from __future__ import annotations
 
 import uuid
 
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('reports', '0013_rename_user_expense_created_by_expense_updated_at_and_more'),
+        ("reports", "0013_rename_user_expense_created_by_expense_updated_at_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Treasure',
+            name="Treasure",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -27,31 +26,31 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    'balance',
+                    "balance",
                     models.DecimalField(decimal_places=3, default=0.0, max_digits=15),
                 ),
                 (
-                    'total_sales',
+                    "total_sales",
                     models.DecimalField(decimal_places=3, default=0.0, max_digits=15),
                 ),
                 (
-                    'total_expenses',
+                    "total_expenses",
                     models.DecimalField(decimal_places=3, default=0.0, max_digits=15),
                 ),
                 (
-                    'total_credit',
+                    "total_credit",
                     models.DecimalField(decimal_places=3, default=0.0, max_digits=15),
                 ),
                 (
-                    'outstanding_debt',
+                    "outstanding_debt",
                     models.DecimalField(decimal_places=3, default=0.0, max_digits=15),
                 ),
-                ('last_updated', models.DateTimeField(auto_now=True)),
-                ('history', models.JSONField(default=list)),
+                ("last_updated", models.DateTimeField(auto_now=True)),
+                ("history", models.JSONField(default=list)),
             ],
             options={
-                'verbose_name': 'Treasure',
-                'verbose_name_plural': 'Treasures',
+                "verbose_name": "Treasure",
+                "verbose_name_plural": "Treasures",
             },
         ),
     ]

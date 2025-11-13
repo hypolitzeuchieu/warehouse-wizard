@@ -5,23 +5,22 @@ import uuid
 
 import django.db.models.deletion
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('reports', '0010_invoice_updated_at'),
+        ("reports", "0010_invoice_updated_at"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Expense',
+            name="Expense",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -29,40 +28,40 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('amount', models.DecimalField(decimal_places=3, max_digits=15)),
+                ("amount", models.DecimalField(decimal_places=3, max_digits=15)),
                 (
-                    'expense_type',
+                    "expense_type",
                     models.CharField(
                         choices=[
-                            ('REPLENISHMENT', 'Replenishment'),
-                            ('MISCELLANEOUS', 'Miscellaneous'),
-                            ('ELECTRICITY', 'Electricity Bill'),
-                            ('WATER', 'Water Bill'),
-                            ('SALARY', 'Salary'),
-                            ('EXTRA', 'Extra'),
-                            ('MAINTENANCE', 'Maintenance'),
-                            ('TAX', 'Tax'),
-                            ('RENT', 'Rent'),
+                            ("REPLENISHMENT", "Replenishment"),
+                            ("MISCELLANEOUS", "Miscellaneous"),
+                            ("ELECTRICITY", "Electricity Bill"),
+                            ("WATER", "Water Bill"),
+                            ("SALARY", "Salary"),
+                            ("EXTRA", "Extra"),
+                            ("MAINTENANCE", "Maintenance"),
+                            ("TAX", "Tax"),
+                            ("RENT", "Rent"),
                         ],
                         max_length=20,
                     ),
                 ),
-                ('reason', models.TextField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("reason", models.TextField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'user',
+                    "user",
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
-                        related_name='expenses',
+                        related_name="expenses",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Expense',
-                'verbose_name_plural': 'Expenses',
-                'ordering': ['-created_at'],
+                "verbose_name": "Expense",
+                "verbose_name_plural": "Expenses",
+                "ordering": ["-created_at"],
             },
         ),
     ]

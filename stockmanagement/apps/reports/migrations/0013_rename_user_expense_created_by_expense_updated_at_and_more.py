@@ -3,35 +3,34 @@ from __future__ import annotations
 
 import django.db.models.deletion
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('reports', '0012_alter_expense_amount'),
+        ("reports", "0012_alter_expense_amount"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='expense',
-            old_name='user',
-            new_name='created_by',
+            model_name="expense",
+            old_name="user",
+            new_name="created_by",
         ),
         migrations.AddField(
-            model_name='expense',
-            name='updated_at',
+            model_name="expense",
+            name="updated_at",
             field=models.DateTimeField(auto_now=True),
         ),
         migrations.AddField(
-            model_name='expense',
-            name='updated_by',
+            model_name="expense",
+            name="updated_by",
             field=models.ForeignKey(
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='updated_expenses',
+                related_name="updated_expenses",
                 to=settings.AUTH_USER_MODEL,
             ),
         ),

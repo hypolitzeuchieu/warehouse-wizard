@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from apps.authentication.models import User
 from django.core.exceptions import ValidationError
+
+from apps.authentication.models import User
 
 
 class UserService:
 
     @staticmethod
     def manager_role(manager):
-        if manager.role != 'manager':
-            raise ValidationError('Only managers can manage users.')
+        if manager.role != "manager":
+            raise ValidationError("Only managers can manage users.")
 
     @staticmethod
     def create_users(manager, username, password, role, **extra_fields):
@@ -25,10 +26,7 @@ class UserService:
         UserService.manager_role(manager)
 
         user = User.objects.create_user(
-            username=username,
-            password=password,
-            role=role,
-            **extra_fields
+            username=username, password=password, role=role, **extra_fields
         )
         return user
 

@@ -1,0 +1,154 @@
+[project]
+name = "retailpulse"
+version = "1.0.0"
+description = "RetailPulse - Modern Supermarket Management Platform"
+requires-python = ">=3.11"
+dependencies = [
+    "Django>=5.1.5",
+    "djangorestframework>=3.15.2",
+    "djangorestframework-simplejwt>=5.4.0",
+    "django-cors-headers>=4.7.0",
+    "drf-yasg>=1.21.8",
+    "psycopg2-binary>=2.9.10",
+    "redis>=5.2.1",
+    "celery>=5.4.0",
+    "python-decouple>=3.8",
+    "python-dotenv>=1.0.1",
+    "dj-database-url>=2.3.0",
+    "Pillow>=11.1.0",
+    "python-barcode>=0.15.1",
+    "qrcode>=8.0",
+    "boto3>=1.36.22",
+    "django-storages>=1.14.5",
+    "whitenoise>=6.9.0",
+    "gunicorn>=23.0.0",
+    "PyJWT>=2.10.1",
+    "requests>=2.31.0",
+    "google-auth>=2.23.0",
+    "google-auth-oauthlib>=1.1.0",
+    "django-redis>=5.4.0",
+    "colorlog>=6.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.9",
+    "black>=24.1.1",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+    "pytest>=8.0.0",
+    "pytest-django>=4.8.0",
+    "pytest-cov>=4.1.0",
+    "ipython>=8.20.0",
+    "django-debug-toolbar>=4.3.0",
+]
+
+# UV-specific dependency groups
+# Using the new dependency-groups format (replaces deprecated tool.uv.dev-dependencies)
+[dependency-groups]
+dev = [
+    "ruff>=0.1.9",
+    "black>=24.1.1",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+    "pytest>=8.0.0",
+    "pytest-django>=4.8.0",
+    "pytest-cov>=4.1.0",
+    "ipython>=8.20.0",
+    "django-debug-toolbar>=4.3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Configure hatchling for Django project
+# This is a Django application, not a distributable Python package
+# We create a minimal package structure for hatchling
+[tool.hatch.build.targets.wheel]
+packages = ["retailpulse"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"mixins/exception_handler.py" = ["UP038"]  # isinstance with tuple is required, not X | Y
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "django.*",
+    "rest_framework.*",
+    "drf_yasg.*",
+    "celery.*",
+    "boto3.*",
+    "PIL.*",
+    "requests.*",
+    "dateutil.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "apps.reports.service.generateReport",
+    "apps.notifications.service",
+    "application.use_cases.sales_use_cases",
+    "apps.dashboard.service",
+    "presentation.views.business_views",
+    "scripts.test_api",
+    "infrastructure.external.google_oauth",
+]
+ignore_errors = true
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = ["migrations", ".venv", "venv"]

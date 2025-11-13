@@ -5,8 +5,7 @@ import uuid
 
 import django.db.models.deletion
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -19,10 +18,10 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Category',
+            name="Category",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -30,16 +29,16 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('name', models.CharField(max_length=50, unique=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("name", models.CharField(max_length=50, unique=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
         ),
         migrations.CreateModel(
-            name='Product',
+            name="Product",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -47,49 +46,47 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('name', models.CharField(max_length=100, unique=True)),
-                ('description', models.TextField(blank=True, null=True)),
+                ("name", models.CharField(max_length=100, unique=True)),
+                ("description", models.TextField(blank=True, null=True)),
                 (
-                    'purchase_price',
+                    "purchase_price",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
-                ('unit_price', models.DecimalField(decimal_places=2, max_digits=10)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("unit_price", models.DecimalField(decimal_places=2, max_digits=10)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'image',
-                    models.ImageField(blank=True, null=True, upload_to='products/'),
+                    "image",
+                    models.ImageField(blank=True, null=True, upload_to="products/"),
                 ),
-                ('quantity', models.PositiveIntegerField(default=0)),
-                ('min_quantity', models.PositiveIntegerField(default=10)),
-                ('expiry_date', models.DateTimeField(blank=True, null=True)),
-                ('is_expired', models.BooleanField(default=False)),
-                ('on_promotion', models.BooleanField(default=False)),
-                ('promotion_start_date', models.DateTimeField(blank=True, null=True)),
-                ('promotion_end_date', models.DateTimeField(blank=True, null=True)),
+                ("quantity", models.PositiveIntegerField(default=0)),
+                ("min_quantity", models.PositiveIntegerField(default=10)),
+                ("expiry_date", models.DateTimeField(blank=True, null=True)),
+                ("is_expired", models.BooleanField(default=False)),
+                ("on_promotion", models.BooleanField(default=False)),
+                ("promotion_start_date", models.DateTimeField(blank=True, null=True)),
+                ("promotion_end_date", models.DateTimeField(blank=True, null=True)),
                 (
-                    'promo_price',
-                    models.DecimalField(
-                        blank=True, decimal_places=2, max_digits=10, null=True
-                    ),
+                    "promo_price",
+                    models.DecimalField(blank=True, decimal_places=2, max_digits=10, null=True),
                 ),
                 (
-                    'category',
+                    "category",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='products',
-                        to='stock.category',
+                        related_name="products",
+                        to="stock.category",
                     ),
                 ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='SubCategory',
+            name="SubCategory",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -97,24 +94,24 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('name', models.CharField(max_length=100, unique=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("name", models.CharField(max_length=100, unique=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'category',
+                    "category",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='subcategories',
-                        to='stock.category',
+                        related_name="subcategories",
+                        to="stock.category",
                     ),
                 ),
             ],
         ),
         migrations.CreateModel(
-            name='StockMovement',
+            name="StockMovement",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -123,58 +120,58 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    'movement_type',
+                    "movement_type",
                     models.CharField(
                         choices=[
-                            ('ENTRY', 'Entry'),
-                            ('EXIT', 'Exit'),
-                            ('ADJUSTMENT', 'Adjustment'),
+                            ("ENTRY", "Entry"),
+                            ("EXIT", "Exit"),
+                            ("ADJUSTMENT", "Adjustment"),
                         ],
                         max_length=20,
                     ),
                 ),
-                ('quantity', models.IntegerField()),
-                ('reason', models.TextField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now=True)),
-                ('updated_at', models.DateTimeField(auto_now_add=True)),
+                ("quantity", models.IntegerField()),
+                ("reason", models.TextField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now=True)),
+                ("updated_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'category',
+                    "category",
                     models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE, to='stock.category'
+                        on_delete=django.db.models.deletion.CASCADE, to="stock.category"
                     ),
                 ),
                 (
-                    'product',
+                    "product",
                     models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE, to='stock.product'
+                        on_delete=django.db.models.deletion.CASCADE, to="stock.product"
                     ),
                 ),
                 (
-                    'user',
+                    "user",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
                 (
-                    'subcategory',
+                    "subcategory",
                     models.ForeignKey(
                         blank=True,
                         null=True,
                         on_delete=django.db.models.deletion.CASCADE,
-                        to='stock.subcategory',
+                        to="stock.subcategory",
                     ),
                 ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='Stock',
+            name="Stock",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -182,48 +179,48 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
                 (
-                    'category',
+                    "category",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='stocks',
-                        to='stock.category',
+                        related_name="stocks",
+                        to="stock.category",
                     ),
                 ),
                 (
-                    'product',
+                    "product",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='stocks',
-                        to='stock.product',
+                        related_name="stocks",
+                        to="stock.product",
                     ),
                 ),
                 (
-                    'subcategory',
+                    "subcategory",
                     models.ForeignKey(
                         blank=True,
                         null=True,
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='stocks',
-                        to='stock.subcategory',
+                        related_name="stocks",
+                        to="stock.subcategory",
                     ),
                 ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
         migrations.AddField(
-            model_name='product',
-            name='subcategory',
+            model_name="product",
+            name="subcategory",
             field=models.ForeignKey(
                 blank=True,
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='products',
-                to='stock.subcategory',
+                related_name="products",
+                to="stock.subcategory",
             ),
         ),
     ]

@@ -2,28 +2,28 @@ from __future__ import annotations
 
 import logging
 
-from apps.authentication.models import User
-from apps.authentication.permissions import IsManagerPermission
-from apps.authentication.serializers import AssignRoleSerializer
-from apps.authentication.serializers import LoginSerializer
-from apps.authentication.serializers import PasswordResetConfirmSerializer
-from apps.authentication.serializers import PasswordResetRequestSerializer
-from apps.authentication.serializers import UserSerializer
-from apps.authentication.serializers import UserUpdateSerializer
-from apps.authentication.service import UserService
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import permissions
-from rest_framework import status
-from rest_framework import viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.authentication.models import User
+from apps.authentication.permissions import IsManagerPermission
+from apps.authentication.serializers import (
+    AssignRoleSerializer,
+    LoginSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    UserSerializer,
+    UserUpdateSerializer,
+)
+from apps.authentication.service import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,8 @@ class UserCreateView(APIView):
 
     @swagger_auto_schema(
         request_body=UserSerializer,
-        operation_description='Create new user',
-        responses={
-            201: UserSerializer,
-            400: 'Bad request',
-            500: 'Internal server error'
-        },
+        operation_description="Create new user",
+        responses={201: UserSerializer, 400: "Bad request", 500: "Internal server error"},
     )
     def post(self, request):
         try:
@@ -53,16 +49,16 @@ class UserCreateView(APIView):
 
                 return Response(
                     {
-                        'message': 'User created successfully',
-                        'user': user_data,
-                        'access': access_token,
-                        'refresh': refresh_token,
+                        "message": "User created successfully",
+                        "user": user_data,
+                        "access": access_token,
+                        "refresh": refresh_token,
                     },
-                    status=status.HTTP_201_CREATED
+                    status=status.HTTP_201_CREATED,
                 )
-            return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LoginView(APIView):
@@ -70,17 +66,13 @@ class LoginView(APIView):
 
     @swagger_auto_schema(
         request_body=LoginSerializer,
-        operation_description='Login the User',
-        responses={
-            200: LoginSerializer,
-            400: 'Bad request',
-            500: 'Internal server error'
-        },
+        operation_description="Login the User",
+        responses={200: LoginSerializer, 400: "Bad request", 500: "Internal server error"},
     )
     def post(self, request):
         try:
-            username = request.data.get('username')
-            password = request.data.get('password')
+            username = request.data.get("username")
+            password = request.data.get("password")
 
             user = authenticate(username=username, password=password)
             if user is not None:
@@ -90,19 +82,22 @@ class LoginView(APIView):
 
                 user_data = UserSerializer(user).data
 
-                return Response({
-                    'message': 'Login successful',
-                    'user': user_data,
-                    'access': access_token,
-                    'refresh': refresh_token,
-                }, status=status.HTTP_200_OK)
+                return Response(
+                    {
+                        "message": "Login successful",
+                        "user": user_data,
+                        "access": access_token,
+                        "refresh": refresh_token,
+                    },
+                    status=status.HTTP_200_OK,
+                )
             else:
                 return Response(
-                    {'error': 'Invalid username or password'},
+                    {"error": "Invalid username or password"},
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LogoutView(APIView):
@@ -113,25 +108,25 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        raw = request.headers.get('X-Refresh-Token')
-        print('raw:', raw)
+        raw = request.headers.get("X-Refresh-Token")
+        print("raw:", raw)
         if not raw or not isinstance(raw, str):
-            logger.error('No refresh token found in request headers')
+            logger.error("No refresh token found in request headers")
             return Response(
-                {'error': 'Refresh token is required'}, status=status.HTTP_400_BAD_REQUEST
+                {"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
             refresh_token = RefreshToken(raw)
             refresh_token.blacklist()
-            logger.info('User logged out successfully.')
+            logger.info("User logged out successfully.")
             return Response(
-                {'message': 'Logout successful'},
+                {"message": "Logout successful"},
                 status=status.HTTP_205_RESET_CONTENT,
             )
         except Exception as e:
             logger.error(f"Logout failed: {str(e)}")
-            return Response({'error': {str(e)}}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": {str(e)}}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class RefreshTokenView(APIView):
@@ -143,48 +138,47 @@ class RefreshTokenView(APIView):
 
     @swagger_auto_schema(
         responses={
-            200: 'Access token refreshed successfully.',
-            400: 'Bad request. Refresh token is required.',
-            401: 'Invalid or expired refresh token.'
+            200: "Access token refreshed successfully.",
+            400: "Bad request. Refresh token is required.",
+            401: "Invalid or expired refresh token.",
         },
-        operation_description='Refresh the access token using a valid refresh token.'
+        operation_description="Refresh the access token using a valid refresh token.",
     )
     def post(self, request):
-        raw = request.headers.get('X-Refresh-Token')
-        print('raw:', raw)
+        raw = request.headers.get("X-Refresh-Token")
+        print("raw:", raw)
         if not raw or not isinstance(raw, str):
-            logger.error('No refresh token found in request headers')
+            logger.error("No refresh token found in request headers")
             return Response(
-                {'error': 'Refresh token is required'}, status=status.HTTP_400_BAD_REQUEST
+                {"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
             old_refresh = RefreshToken(raw)
             old_refresh.blacklist()
-            logger.info('Old refresh token blacklisted successfully.')
-            user_id = old_refresh.payload.get('user_id')
+            logger.info("Old refresh token blacklisted successfully.")
+            user_id = old_refresh.payload.get("user_id")
             if not user_id:
-                raise TokenError('Token missing user_id claim')
+                raise TokenError("Token missing user_id claim")
 
             user = User.objects.get(pk=user_id)
             new_refresh = RefreshToken.for_user(user)
             data = {
-                'access_token': str(new_refresh.access_token),
-                'refresh_token': str(new_refresh),
+                "access_token": str(new_refresh.access_token),
+                "refresh_token": str(new_refresh),
             }
-            logger.info('Tokens refreshed successfully')
+            logger.info("Tokens refreshed successfully")
             return Response(data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Failed to refresh token: {str(e)}")
             return Response(
-                {'error': f'Invalid or expired refresh token: {str(e)}'},
-                status=status.HTTP_401_UNAUTHORIZED
+                {"error": f"Invalid or expired refresh token: {str(e)}"},
+                status=status.HTTP_401_UNAUTHORIZED,
             )
         except User.DoesNotExist:
             return Response(
-                {'error': 'User not found for this token'},
-                status=status.HTTP_401_UNAUTHORIZED
+                {"error": "User not found for this token"}, status=status.HTTP_401_UNAUTHORIZED
             )
 
 
@@ -197,20 +191,20 @@ class UserManagementViewSet(viewsets.ViewSet):
 
     @swagger_auto_schema(
         responses={200: UserSerializer(many=True)},
-        operation_description='Retrieve a list of all users. Accessible only to managers.',
+        operation_description="Retrieve a list of all users. Accessible only to managers.",
     )
     def list(self, request):
-        """ Retrieve all users. """
+        """Retrieve all users."""
         users = User.objects.all()
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 
     @swagger_auto_schema(
         responses={200: UserSerializer()},
-        operation_description='Retrieve a specific user by ID.',
+        operation_description="Retrieve a specific user by ID.",
     )
     def retrieve(self, request, pk=None):
-        """ Retrieve a user by ID. """
+        """Retrieve a user by ID."""
         user = get_object_or_404(User, pk=pk)
         serializer = UserSerializer(user)
         return Response(serializer.data)
@@ -218,10 +212,10 @@ class UserManagementViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         request_body=UserSerializer,
         responses={201: UserSerializer()},
-        operation_description='Create a new user (only managers).',
+        operation_description="Create a new user (only managers).",
     )
     def create(self, request):
-        """ Create a new user. """
+        """Create a new user."""
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
             user = UserService().create_users(request.user, **serializer.validated_data)
@@ -231,10 +225,10 @@ class UserManagementViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
         request_body=UserSerializer,
         responses={200: UserSerializer()},
-        operation_description='Update an existing user (only managers).',
+        operation_description="Update an existing user (only managers).",
     )
     def update(self, request, pk=None):
-        """ Update an existing user. """
+        """Update an existing user."""
         user = get_object_or_404(User, pk=pk)
         serializer = UserSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
@@ -245,58 +239,50 @@ class UserManagementViewSet(viewsets.ViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
-        responses={204: 'User successfully deleted'},
-        operation_description='Delete an existing user (only managers).',
+        responses={204: "User successfully deleted"},
+        operation_description="Delete an existing user (only managers).",
     )
     def destroy(self, request, pk=None):
-        """ Delete a user. """
+        """Delete a user."""
         try:
             user = User.objects.get(pk=pk)
             manager = request.user
             UserService().delete_user(manager, user.id)
             return Response(
-                {'message': 'User successfully deleted'},
-                status=status.HTTP_204_NO_CONTENT
+                {"message": "User successfully deleted"}, status=status.HTTP_204_NO_CONTENT
             )
         except User.DoesNotExist:
-            return Response(
-                {'error': 'User not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
-            return Response(
-                {'error': {str(e)}}, status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({"error": {str(e)}}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @swagger_auto_schema(
         request_body=AssignRoleSerializer,
         responses={
-            200: 'Role successfully assigned',
-            400: 'Invalid role or user not found',
+            200: "Role successfully assigned",
+            400: "Invalid role or user not found",
         },
-        operation_description='Assign a role to a user (only managers).',
+        operation_description="Assign a role to a user (only managers).",
     )
-    @action(methods=['post'], detail=False, url_path='assign-role')
+    @action(methods=["post"], detail=False, url_path="assign-role")
     def assign_role(self, request):
-        """ Assign a role to a user. """
+        """Assign a role to a user."""
         try:
             serializer = AssignRoleSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
-                role = serializer.validated_data['role']
-                user_id = serializer.validated_data['user_id']
+                role = serializer.validated_data["role"]
+                user_id = serializer.validated_data["user_id"]
                 manager = request.user
                 UserService.assign_role(manager, user_id, role)
                 return Response(
-                    {'message': f"Role '{role}' has been assigned to {manager.username}."},
-                    status=status.HTTP_200_OK
+                    {"message": f"Role '{role}' has been assigned to {manager.username}."},
+                    status=status.HTTP_200_OK,
                 )
 
-            return Response(
-                {'error': 'Invalid Data'}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Invalid Data"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({'error': {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserUpdateView(APIView):
@@ -305,8 +291,8 @@ class UserUpdateView(APIView):
     @swagger_auto_schema(
         request_body=UserUpdateSerializer,
         responses={
-            200: 'User updated successfully.',
-            400: 'Bad request.',
+            200: "User updated successfully.",
+            400: "Bad request.",
         },
     )
     def patch(self, request):
@@ -315,30 +301,23 @@ class UserUpdateView(APIView):
 
         if serializer.is_valid():
             serializer.save()
-            return Response(
-                {'message': 'User updated successfully.'}, status=status.HTTP_200_OK
-            )
+            return Response({"message": "User updated successfully."}, status=status.HTTP_200_OK)
         else:
-            return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UserInfoView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(
-        responses={
-            200: UserSerializer,
-            400: 'Bad request'
-        }
-    )
+    @swagger_auto_schema(responses={200: UserSerializer, 400: "Bad request"})
     def get(self, request):
         try:
             user = request.user
             user_serializer = UserSerializer(user)
             return Response(user_serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.error(f'Error in get user info:{str(e)}')
-            return Response({'error': {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error in get user info:{str(e)}")
+            return Response({"error": {str(e)}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class PasswordResetRequestView(APIView):
@@ -346,20 +325,19 @@ class PasswordResetRequestView(APIView):
 
     @swagger_auto_schema(
         request_body=PasswordResetRequestSerializer,
-        responses={200: 'Password reset link sent successfully.'},
+        responses={200: "Password reset link sent successfully."},
     )
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
 
         if serializer.is_valid():
             serializer.save(request)
-            logger.info('Password reset link sent successfully.')
+            logger.info("Password reset link sent successfully.")
             return Response(
-                {'message': 'Password reset link sent successfully.'},
-                status=status.HTTP_200_OK
+                {"message": "Password reset link sent successfully."}, status=status.HTTP_200_OK
             )
-        logger.error(f'Error in password reset link:{serializer.errors}')
-        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Error in password reset link:{serializer.errors}")
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PasswordResetConfirmView(APIView):
@@ -367,17 +345,14 @@ class PasswordResetConfirmView(APIView):
 
     @swagger_auto_schema(
         request_body=PasswordResetConfirmSerializer,
-        responses={200: 'Password reset successfully.'},
+        responses={200: "Password reset successfully."},
     )
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
 
         if serializer.is_valid():
             serializer.save()
-            logger.info('Password reset successfully.')
-            return Response(
-                {'message': 'Password reset successfully.'},
-                status=status.HTTP_200_OK
-            )
-        logger.error(f'Error in password reset confirmation: {serializer.errors}')
-        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            logger.info("Password reset successfully.")
+            return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
+        logger.error(f"Error in password reset confirmation: {serializer.errors}")
+        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)

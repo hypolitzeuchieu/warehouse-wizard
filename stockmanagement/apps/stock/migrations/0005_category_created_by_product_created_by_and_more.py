@@ -3,65 +3,64 @@ from __future__ import annotations
 
 import django.db.models.deletion
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('stock', '0004_category_updated_at_product_updated_at_and_more'),
+        ("stock", "0004_category_updated_at_product_updated_at_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='category',
-            name='created_by',
+            model_name="category",
+            name="created_by",
             field=models.ForeignKey(
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='created_categories',
+                related_name="created_categories",
                 to=settings.AUTH_USER_MODEL,
             ),
         ),
         migrations.AddField(
-            model_name='product',
-            name='created_by',
+            model_name="product",
+            name="created_by",
             field=models.ForeignKey(
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='created_products',
+                related_name="created_products",
                 to=settings.AUTH_USER_MODEL,
             ),
         ),
         migrations.AddField(
-            model_name='stock',
-            name='created_by',
+            model_name="stock",
+            name="created_by",
             field=models.ForeignKey(
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='created_stock',
+                related_name="created_stock",
                 to=settings.AUTH_USER_MODEL,
             ),
         ),
         migrations.AddField(
-            model_name='stockmovement',
-            name='created_by',
+            model_name="stockmovement",
+            name="created_by",
             field=models.ForeignKey(
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='created_movement',
+                related_name="created_movement",
                 to=settings.AUTH_USER_MODEL,
             ),
         ),
         migrations.AddField(
-            model_name='subcategory',
-            name='created_by',
+            model_name="subcategory",
+            name="created_by",
             field=models.ForeignKey(
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
-                related_name='created_subcategories',
+                related_name="created_subcategories",
                 to=settings.AUTH_USER_MODEL,
             ),
         ),

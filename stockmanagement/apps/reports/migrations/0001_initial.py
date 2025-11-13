@@ -6,8 +6,7 @@ import uuid
 import django.db.models.deletion
 import django.utils.timezone
 from django.conf import settings
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -15,16 +14,16 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('stock', '0001_initial'),
+        ("stock", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='InventoryReport',
+            name="InventoryReport",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -32,32 +31,32 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('created_at', models.DateField(auto_now_add=True)),
-                ('total_products', models.PositiveIntegerField(default=0)),
-                ('expired_products', models.PositiveIntegerField(default=0)),
-                ('low_stock_products', models.PositiveIntegerField(default=0)),
-                ('date_range', models.CharField(default=None, max_length=255)),
+                ("created_at", models.DateField(auto_now_add=True)),
+                ("total_products", models.PositiveIntegerField(default=0)),
+                ("expired_products", models.PositiveIntegerField(default=0)),
+                ("low_stock_products", models.PositiveIntegerField(default=0)),
+                ("date_range", models.CharField(default=None, max_length=255)),
                 (
-                    'generated_by',
+                    "generated_by",
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
-                        related_name='inventory_reports',
+                        related_name="inventory_reports",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Inventory Report',
-                'verbose_name_plural': 'Inventory Reports',
-                'ordering': ['-created_at'],
+                "verbose_name": "Inventory Report",
+                "verbose_name_plural": "Inventory Reports",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='Invoice',
+            name="Invoice",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -65,67 +64,67 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('number', models.PositiveIntegerField(editable=False, unique=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("number", models.PositiveIntegerField(editable=False, unique=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'client_name',
+                    "client_name",
                     models.CharField(blank=True, max_length=100, null=True),
                 ),
                 (
-                    'status',
+                    "status",
                     models.CharField(
                         choices=[
-                            ('COMPLETED', 'Completed'),
-                            ('CANCELLED', 'Cancelled'),
-                            ('CREDIT', 'Credit'),
+                            ("COMPLETED", "Completed"),
+                            ("CANCELLED", "Cancelled"),
+                            ("CREDIT", "Credit"),
                         ],
                         max_length=20,
                     ),
                 ),
                 (
-                    'total',
+                    "total",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
                 (
-                    'tax',
+                    "tax",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=5),
                 ),
-                ('reason', models.TextField(blank=True, null=True)),
+                ("reason", models.TextField(blank=True, null=True)),
                 (
-                    'refund_amount',
+                    "refund_amount",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
                 (
-                    'advance_paid',
+                    "advance_paid",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
                 (
-                    '_remaining_amount',
+                    "_remaining_amount",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
-                ('due_date', models.DateField(blank=True, null=True)),
-                ('is_credit_settled', models.BooleanField(default=False)),
+                ("due_date", models.DateField(blank=True, null=True)),
+                ("is_credit_settled", models.BooleanField(default=False)),
                 (
-                    'cashier',
+                    "cashier",
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
-                        related_name='invoices',
+                        related_name="invoices",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Invoice',
-                'verbose_name_plural': 'Invoices',
-                'ordering': ['-created_at'],
+                "verbose_name": "Invoice",
+                "verbose_name_plural": "Invoices",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='InvoiceArchive',
+            name="InvoiceArchive",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -133,68 +132,68 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('number', models.PositiveIntegerField(editable=False, unique=True)),
-                ('invoice_id', models.CharField(blank=True, max_length=255, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("number", models.PositiveIntegerField(editable=False, unique=True)),
+                ("invoice_id", models.CharField(blank=True, max_length=255, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'client_name',
+                    "client_name",
                     models.CharField(blank=True, max_length=100, null=True),
                 ),
                 (
-                    'status',
+                    "status",
                     models.CharField(
                         choices=[
-                            ('COMPLETED', 'Completed'),
-                            ('CANCELLED', 'Cancelled'),
-                            ('CREDIT', 'Credit'),
+                            ("COMPLETED", "Completed"),
+                            ("CANCELLED", "Cancelled"),
+                            ("CREDIT", "Credit"),
                         ],
                         max_length=20,
                     ),
                 ),
                 (
-                    'total',
+                    "total",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
                 (
-                    'tax',
+                    "tax",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=5),
                 ),
-                ('reason', models.TextField(blank=True, null=True)),
+                ("reason", models.TextField(blank=True, null=True)),
                 (
-                    'refund_amount',
+                    "refund_amount",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
                 (
-                    'advance_paid',
+                    "advance_paid",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
                 (
-                    '_remaining_amount',
+                    "_remaining_amount",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
-                ('due_date', models.DateField(blank=True, null=True)),
-                ('is_credit_settled', models.BooleanField(default=False)),
+                ("due_date", models.DateField(blank=True, null=True)),
+                ("is_credit_settled", models.BooleanField(default=False)),
                 (
-                    'cashier',
+                    "cashier",
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
-                        related_name='archived_invoices',
+                        related_name="archived_invoices",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Archived Invoice',
-                'verbose_name_plural': 'Archived Invoices',
-                'ordering': ['-created_at'],
+                "verbose_name": "Archived Invoice",
+                "verbose_name_plural": "Archived Invoices",
+                "ordering": ["-created_at"],
             },
         ),
         migrations.CreateModel(
-            name='InvoiceArchiveLine',
+            name="InvoiceArchiveLine",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -202,40 +201,40 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('quantity', models.PositiveIntegerField()),
-                ('unit_price', models.DecimalField(decimal_places=2, max_digits=10)),
+                ("quantity", models.PositiveIntegerField()),
+                ("unit_price", models.DecimalField(decimal_places=2, max_digits=10)),
                 (
-                    'discount',
+                    "discount",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=5),
                 ),
-                ('line_total', models.DecimalField(decimal_places=2, max_digits=10)),
+                ("line_total", models.DecimalField(decimal_places=2, max_digits=10)),
                 (
-                    'invoice',
+                    "invoice",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='lines',
-                        to='reports.invoicearchive',
+                        related_name="lines",
+                        to="reports.invoicearchive",
                     ),
                 ),
                 (
-                    'product',
+                    "product",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='archived_invoice_lines',
-                        to='stock.product',
+                        related_name="archived_invoice_lines",
+                        to="stock.product",
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Archived Invoice Line',
-                'verbose_name_plural': 'Archived Invoice Lines',
+                "verbose_name": "Archived Invoice Line",
+                "verbose_name_plural": "Archived Invoice Lines",
             },
         ),
         migrations.CreateModel(
-            name='InvoiceLine',
+            name="InvoiceLine",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -243,40 +242,40 @@ class Migration(migrations.Migration):
                         serialize=False,
                     ),
                 ),
-                ('quantity', models.PositiveIntegerField()),
-                ('unit_price', models.DecimalField(decimal_places=2, max_digits=10)),
+                ("quantity", models.PositiveIntegerField()),
+                ("unit_price", models.DecimalField(decimal_places=2, max_digits=10)),
                 (
-                    'discount',
+                    "discount",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=5),
                 ),
-                ('line_total', models.DecimalField(decimal_places=2, max_digits=10)),
+                ("line_total", models.DecimalField(decimal_places=2, max_digits=10)),
                 (
-                    'invoice',
+                    "invoice",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='lines',
-                        to='reports.invoice',
+                        related_name="lines",
+                        to="reports.invoice",
                     ),
                 ),
                 (
-                    'product',
+                    "product",
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name='invoice_lines',
-                        to='stock.product',
+                        related_name="invoice_lines",
+                        to="stock.product",
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Invoice Line',
-                'verbose_name_plural': 'Invoice Lines',
+                "verbose_name": "Invoice Line",
+                "verbose_name_plural": "Invoice Lines",
             },
         ),
         migrations.CreateModel(
-            name='Report',
+            name="Report",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -285,43 +284,43 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    'type',
+                    "type",
                     models.CharField(
                         choices=[
-                            ('inventory', 'Inventory'),
-                            ('sales', 'Sales'),
-                            ('returns', 'Returns'),
-                            ('expired', 'Expired Products'),
+                            ("inventory", "Inventory"),
+                            ("sales", "Sales"),
+                            ("returns", "Returns"),
+                            ("expired", "Expired Products"),
                         ],
                         max_length=20,
                     ),
                 ),
-                ('generated_at', models.DateTimeField(auto_now_add=True)),
+                ("generated_at", models.DateTimeField(auto_now_add=True)),
                 (
-                    'file_path',
-                    models.FileField(blank=True, null=True, upload_to='reports/'),
+                    "file_path",
+                    models.FileField(blank=True, null=True, upload_to="reports/"),
                 ),
-                ('description', models.TextField(blank=True, null=True)),
+                ("description", models.TextField(blank=True, null=True)),
                 (
-                    'generated_by',
+                    "generated_by",
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
-                        related_name='reports',
+                        related_name="reports",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Report',
-                'verbose_name_plural': 'Reports',
+                "verbose_name": "Report",
+                "verbose_name_plural": "Reports",
             },
         ),
         migrations.CreateModel(
-            name='SalesReport',
+            name="SalesReport",
             fields=[
                 (
-                    'id',
+                    "id",
                     models.UUIDField(
                         default=uuid.uuid4,
                         editable=False,
@@ -330,28 +329,28 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    'date',
+                    "date",
                     models.DateField(default=django.utils.timezone.now, unique=True),
                 ),
                 (
-                    'total_sales',
+                    "total_sales",
                     models.DecimalField(decimal_places=2, default=0.0, max_digits=10),
                 ),
-                ('total_invoices', models.PositiveIntegerField(default=0)),
+                ("total_invoices", models.PositiveIntegerField(default=0)),
                 (
-                    'generated_by',
+                    "generated_by",
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
-                        related_name='sales_reports',
+                        related_name="sales_reports",
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
             ],
             options={
-                'verbose_name': 'Sales Report',
-                'verbose_name_plural': 'Sales Reports',
-                'ordering': ['-date'],
+                "verbose_name": "Sales Report",
+                "verbose_name_plural": "Sales Reports",
+                "ordering": ["-date"],
             },
         ),
     ]

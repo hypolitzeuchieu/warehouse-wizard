@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from apps.authentication.models import User
 from django.db import models
+
+from apps.authentication.models import User
 
 
 class Category(models.Model):
@@ -13,20 +14,20 @@ class Category(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, related_name='created_categories', null=True
+        User, on_delete=models.SET_NULL, related_name="created_categories", null=True
     )
     updated_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, related_name='updated_categories', null=True
+        User, on_delete=models.SET_NULL, related_name="updated_categories", null=True
     )
 
     def __str__(self):
         return self.name
 
     class Meta:
-        ordering = ['name']
-        verbose_name = 'Category'
-        verbose_name_plural = 'Categories'
-        db_table = 'categories'
+        ordering = ["name"]
+        verbose_name = "Category"
+        verbose_name_plural = "Categories"
+        db_table = "categories"
 
 
 class SubCategory(models.Model):
@@ -36,24 +37,22 @@ class SubCategory(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    category = models.ForeignKey(
-        Category, on_delete=models.CASCADE, related_name='subcategories'
-    )
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="subcategories")
     created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, related_name='created_subcategories', null=True
+        User, on_delete=models.SET_NULL, related_name="created_subcategories", null=True
     )
     updated_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, related_name='updated_subcategories', null=True
+        User, on_delete=models.SET_NULL, related_name="updated_subcategories", null=True
     )
 
     def __str__(self):
         return f"{self.category.name} - {self.name}"
 
     class Meta:
-        ordering = ['name']
-        verbose_name = 'SubCategory'
-        verbose_name_plural = 'SubCategories'
-        db_table = 'subcategories'
+        ordering = ["name"]
+        verbose_name = "SubCategory"
+        verbose_name_plural = "SubCategories"
+        db_table = "subcategories"
 
 
 class Product(models.Model):
@@ -75,32 +74,28 @@ class Product(models.Model):
     on_promotion = models.BooleanField(default=False)
     promotion_start_date = models.DateTimeField(blank=True, null=True)
     promotion_end_date = models.DateTimeField(blank=True, null=True)
-    promo_price = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True
-    )
+    promo_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    category = models.ForeignKey(
-        Category, on_delete=models.CASCADE, related_name='products'
-    )
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products")
     subcategory = models.ForeignKey(
         SubCategory,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='products',
+        related_name="products",
     )
     created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, related_name='created_products', null=True
+        User, on_delete=models.SET_NULL, related_name="created_products", null=True
     )
     updated_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, related_name='updated_products', null=True
+        User, on_delete=models.SET_NULL, related_name="updated_products", null=True
     )
 
     class Meta:
-        ordering = ['name']
-        verbose_name = 'Product'
-        verbose_name_plural = 'Products'
-        db_table = 'products'
+        ordering = ["name"]
+        verbose_name = "Product"
+        verbose_name_plural = "Products"
+        db_table = "products"
 
     def __str__(self):
         return f"{self.name} ({self.category.name})"
@@ -116,25 +111,21 @@ class Stock(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    category = models.ForeignKey(
-        Category, on_delete=models.CASCADE, related_name='stocks'
-    )
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="stocks")
     subcategory = models.ForeignKey(
         SubCategory,
         on_delete=models.CASCADE,
-        related_name='stocks',
+        related_name="stocks",
         null=True,
         blank=True,
     )
-    product = models.ForeignKey(
-        Product, on_delete=models.CASCADE, related_name='stocks'
-    )
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="stocks")
 
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Stock'
-        verbose_name_plural = 'Stocks'
-        db_table = 'stocks'
+        ordering = ["-created_at"]
+        verbose_name = "Stock"
+        verbose_name_plural = "Stocks"
+        db_table = "stocks"
 
     def __str__(self):
         return f"{self.quantity} units in {self.category.name}"
@@ -144,9 +135,9 @@ class StockMovement(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     MOVEMENT_TYPES = [
-        ('ENTRY', 'Entry'),
-        ('EXIT', 'Exit'),
-        ('ADJUSTMENT', 'Adjustment'),
+        ("ENTRY", "Entry"),
+        ("EXIT", "Exit"),
+        ("ADJUSTMENT", "Adjustment"),
     ]
     movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES)
     quantity = models.IntegerField()
@@ -157,15 +148,13 @@ class StockMovement(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    subcategory = models.ForeignKey(
-        SubCategory, on_delete=models.CASCADE, null=True, blank=True
-    )
+    subcategory = models.ForeignKey(SubCategory, on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Stock Movement'
-        verbose_name_plural = 'Stock Movements'
-        db_table = 'stock_movements'
+        ordering = ["-created_at"]
+        verbose_name = "Stock Movement"
+        verbose_name_plural = "Stock Movements"
+        db_table = "stock_movements"
 
     def __str__(self):
         return f"{self.movement_type} - {self.product.name} ({self.quantity})"

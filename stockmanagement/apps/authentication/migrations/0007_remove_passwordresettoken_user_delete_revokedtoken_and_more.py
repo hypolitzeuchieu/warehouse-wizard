@@ -2,33 +2,30 @@
 from __future__ import annotations
 
 import django.utils.timezone
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('authentication', '0006_passwordresettoken'),
+        ("authentication", "0006_passwordresettoken"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='passwordresettoken',
-            name='user',
+            model_name="passwordresettoken",
+            name="user",
         ),
         migrations.DeleteModel(
-            name='RevokedToken',
+            name="RevokedToken",
         ),
         migrations.AddField(
-            model_name='user',
-            name='last_password_reset',
-            field=models.DateTimeField(
-                auto_now_add=True, default=django.utils.timezone.now
-            ),
+            model_name="user",
+            name="last_password_reset",
+            field=models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now),
             preserve_default=False,
         ),
         migrations.DeleteModel(
-            name='PasswordResetToken',
+            name="PasswordResetToken",
         ),
     ]

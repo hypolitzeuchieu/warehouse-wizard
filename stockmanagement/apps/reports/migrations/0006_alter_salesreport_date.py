@@ -2,20 +2,19 @@
 from __future__ import annotations
 
 import django.utils.timezone
-from django.db import migrations
-from django.db import models
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('reports', '0005_remove_inventoryreport_date_range_and_more'),
+        ("reports", "0005_remove_inventoryreport_date_range_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='salesreport',
-            name='date',
+            model_name="salesreport",
+            name="date",
             field=models.DateField(default=django.utils.timezone.now),
         ),
     ]
