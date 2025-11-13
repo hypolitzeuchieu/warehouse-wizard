@@ -52,7 +52,6 @@ from presentation.serializers.user_serializers import (
     RefreshTokenSerializer,
     ResetPasswordSerializer,
     UserCreateSerializer,
-    UserResponseSerializer,
 )
 from shared.rate_limiting.decorators import rate_limit
 from shared.utils.jwt import generate_tokens
@@ -106,34 +105,116 @@ def signup_view(request: Request) -> Response:
         logger.info(f"User created successfully - ID: {user_dto.id}, email: {user_dto.email}")
 
         # Send OTP automatically on signup
+        otp_sent = False
+        expires_in_minutes = None
+        otp_type = None
+        otp_destination = None
+
+        otp_use_case = RequestOTPUseCase(
+            otp_repository=OTPRepositoryImpl(),
+            user_repository=UserRepositoryImpl(),
+        )
+
         if user_dto.email:
+            # Send OTP via email
             try:
                 logger.debug(f"Sending OTP to email: {user_dto.email}")
-                otp_use_case = RequestOTPUseCase(
-                    otp_repository=OTPRepositoryImpl(),
-                    user_repository=UserRepositoryImpl(),
-                )
                 otp_request_dto = OTPRequestDTO(
                     email=user_dto.email,
                     otp_type="email",
                 )
                 otp_result = otp_use_case.execute(otp_request_dto)
+                otp_sent = True
+                otp_type = "email"
+                otp_destination = user_dto.email
+                expires_in_minutes = otp_result.get("expires_in_minutes", 10)
                 logger.info(
                     f"OTP sent successfully to {user_dto.email} - "
-                    f"expires in {otp_result.get('expires_in_minutes')} minutes"
+                    f"expires in {expires_in_minutes} minutes"
                 )
             except Exception as otp_error:
                 logger.error(
-                    f"Failed to send OTP on signup for user {user_dto.id} ({user_dto.email}): {str(otp_error)}",
+                    f"Failed to send OTP on signup for user {user_dto.id} "
+                    f"({user_dto.email}): {str(otp_error)}",
                     exc_info=True,
                     extra={"user_id": str(user_dto.id), "email": user_dto.email},
                 )
+        elif user_dto.phone_number:
+            # Send OTP via SMS if email is not provided
+            try:
+                logger.debug(f"Sending OTP to phone: {user_dto.phone_number}")
+                otp_request_dto = OTPRequestDTO(
+                    phone_number=user_dto.phone_number,
+                    otp_type="sms",
+                )
+                otp_result = otp_use_case.execute(otp_request_dto)
+                otp_sent = True
+                otp_type = "sms"
+                otp_destination = user_dto.phone_number
+                expires_in_minutes = otp_result.get("expires_in_minutes", 10)
+                logger.info(
+                    f"OTP sent successfully to {user_dto.phone_number} - "
+                    f"expires in {expires_in_minutes} minutes"
+                )
+            except Exception as otp_error:
+                logger.error(
+                    f"Failed to send OTP on signup for user {user_dto.id} "
+                    f"({user_dto.phone_number}): {str(otp_error)}",
+                    exc_info=True,
+                    extra={
+                        "user_id": str(user_dto.id),
+                        "phone_number": user_dto.phone_number,
+                    },
+                )
 
-        return helper.success(
-            message="User created successfully. Please verify OTP to activate your account.",
-            data={"user": UserResponseSerializer.from_dto(user_dto)},
-            status_code=status.HTTP_201_CREATED,
-        )
+        # Return success message indicating OTP was sent
+        if otp_sent:
+            if otp_type == "email":
+                message = (
+                    f"Account created successfully. "
+                    f"An OTP has been sent to your email ({otp_destination}). "
+                    f"Please check your inbox and verify your account. "
+                    f"The OTP will expire in {expires_in_minutes} minutes."
+                )
+                data = {
+                    "expires_in_minutes": expires_in_minutes,
+                    "email": otp_destination,
+                }
+            else:  # SMS
+                message = (
+                    f"Account created successfully. "
+                    f"An OTP has been sent to your phone number ({otp_destination}). "
+                    f"Please check your messages and verify your account. "
+                    f"The OTP will expire in {expires_in_minutes} minutes."
+                )
+                data = {
+                    "expires_in_minutes": expires_in_minutes,
+                    "phone_number": otp_destination,
+                }
+
+            return helper.success(
+                message=message,
+                data=data,
+                status_code=status.HTTP_201_CREATED,
+            )
+        else:
+            # Fallback if OTP sending failed
+            message = (
+                "Account created successfully, but we encountered an issue "
+                "sending the OTP. Please request a new OTP using the "
+                "request OTP endpoint."
+            )
+            fallback_data = {}
+            if user_dto.email:
+                fallback_data["email"] = user_dto.email
+            if user_dto.phone_number:
+                fallback_data["phone_number"] = user_dto.phone_number
+
+            return helper.success(
+                message=message,
+                data=fallback_data,
+                status_code=status.HTTP_201_CREATED,
+            )
     except Exception as e:
         return helper.handle_exception(e)
 
