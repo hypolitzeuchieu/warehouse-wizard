@@ -80,15 +80,44 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
     # Handle InvalidToken (JWT blacklist) - expected behavior, no need for traceback
     if isinstance(exc, InvalidToken):
         error_detail = str(exc)
-        if "blacklisted" in error_detail.lower():
+        error_detail_lower = error_detail.lower()
+
+        # Determine user-friendly message based on error type
+        if "blacklisted" in error_detail_lower:
             # Token blacklisted - this is expected behavior after logout
+            user_message = "Token has been blacklisted (logged out)"
             logger.info(
                 f"Token blacklisted attempt - {error_detail}",
                 extra={"context": context},
             )
+        elif "wrong type" in error_detail_lower or "token_not_valid" in error_detail_lower:
+            # Token has wrong type (e.g., using refresh token as access token)
+            user_message = (
+                "Invalid token type. Please use an access token for this request. "
+                "If you're using a refresh token, use the /auth/refresh-token/ endpoint instead."
+            )
+            logger.info(
+                f"Wrong token type used - {error_detail}",
+                extra={"context": context},
+            )
+        elif "expired" in error_detail_lower:
+            # Token expired
+            user_message = "Token has expired. Please refresh your token or login again."
+            logger.info(
+                f"Expired token attempt - {error_detail}",
+                extra={"context": context},
+            )
+        elif "not valid" in error_detail_lower:
+            # Generic invalid token
+            user_message = "Invalid token. Please check your token and try again."
+            logger.info(
+                f"Invalid token attempt - {error_detail}",
+                extra={"context": context},
+            )
         else:
-            # Other InvalidToken errors - log as warning without traceback
-            logger.warning(
+            # Other InvalidToken errors - use original message but log as info
+            user_message = "Invalid token. Please check your token and try again."
+            logger.info(
                 f"Invalid token: {error_detail}",
                 extra={"context": context},
             )
@@ -97,12 +126,8 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
             "success": False,
             "error": {
                 "code": "TOKEN_INVALID",
-                "message": (
-                    error_detail
-                    if "blacklisted" not in error_detail.lower()
-                    else "Token has been blacklisted (logged out)"
-                ),
-                "details": {"detail": error_detail},
+                "message": user_message,
+                "details": {},
             },
             "status_code": status.HTTP_401_UNAUTHORIZED,
         }
@@ -201,16 +226,72 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
     if response is not None:
         # Convert DRF response to our standardized format
         detail = response.data.get("detail", "An error occurred")
+        errors = (
+            response.data if isinstance(response.data, dict) else {"detail": str(response.data)}
+        )
+
+        # Check if this is a token error that needs special handling
+        error_str = str(detail).lower()
+        error_messages = errors.get("messages", [])
+
+        # Detect token-related errors from DRF response
+        if (
+            "token" in error_str
+            or "token_not_valid" in str(errors).lower()
+            or "wrong type" in error_str
+            or any("token" in str(msg).lower() for msg in error_messages if isinstance(msg, dict))
+        ):
+            # Extract token error message
+            if isinstance(error_messages, list) and error_messages:
+                # Try to extract message from messages array
+                for msg in error_messages:
+                    if isinstance(msg, dict):
+                        msg_text = str(msg.get("message", "")).lower()
+                        if "wrong type" in msg_text:
+                            user_message = (
+                                "Invalid token type. Please use an access token for this request. "
+                                "If you're using a refresh token, use the /auth/refresh-token/ "
+                                "endpoint instead."
+                            )
+                            logger.info(
+                                f"Wrong token type used - {detail}",
+                                extra={"context": context},
+                            )
+                            api_error_response = {
+                                "success": False,
+                                "error": {
+                                    "code": "TOKEN_INVALID",
+                                    "message": user_message,
+                                    "details": {},
+                                },
+                                "status_code": status.HTTP_401_UNAUTHORIZED,
+                            }
+                            return Response(api_error_response, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Generic token error
+            user_message = "Invalid token. Please check your token and try again."
+            logger.info(
+                f"Token error from DRF handler - {detail}",
+                extra={"context": context},
+            )
+            api_error_response = {
+                "success": False,
+                "error": {
+                    "code": "TOKEN_INVALID",
+                    "message": user_message,
+                    "details": {},
+                },
+                "status_code": status.HTTP_401_UNAUTHORIZED,
+            }
+            return Response(api_error_response, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Handle other DRF errors
         if isinstance(detail, list):
             detail = detail[0] if detail else "An error occurred"
         elif isinstance(detail, dict):
             detail = str(detail)
 
-        errors = (
-            response.data if isinstance(response.data, dict) else {"detail": str(response.data)}
-        )
-
-        api_error_response: dict[str, Any] = {
+        api_error_response = {
             "success": False,
             "error": {
                 "code": "API_ERROR",

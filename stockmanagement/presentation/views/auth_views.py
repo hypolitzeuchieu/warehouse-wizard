@@ -302,13 +302,31 @@ def login_view(request: Request) -> Response:
             user_repository=UserRepositoryImpl(),
         )
 
-        # Determine OTP type based on available info
-        otp_type = "email" if user.email else "sms"
-        otp_request_dto = OTPRequestDTO(
-            email=user.email if user.email else None,
-            phone_number=user.phone_number if not user.email else None,
-            otp_type=otp_type,
-        )
+        # Determine OTP type based on the identifier used for login
+        # If user logged in with email, send OTP via email
+        # If user logged in with phone, send OTP via SMS
+        if dto.email:
+            # User logged in with email, send OTP via email
+            otp_type = "email"
+            otp_request_dto = OTPRequestDTO(
+                email=user.email,
+                otp_type=otp_type,
+            )
+        elif dto.phone_number:
+            # User logged in with phone, send OTP via SMS
+            otp_type = "sms"
+            otp_request_dto = OTPRequestDTO(
+                phone_number=user.phone_number,
+                otp_type=otp_type,
+            )
+        else:
+            # Fallback: use email if available, otherwise SMS
+            otp_type = "email" if user.email else "sms"
+            otp_request_dto = OTPRequestDTO(
+                email=user.email if user.email else None,
+                phone_number=user.phone_number if not user.email else None,
+                otp_type=otp_type,
+            )
 
         result = otp_use_case.execute(otp_request_dto)
         logger.info(

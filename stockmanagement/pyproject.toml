@@ -44,10 +44,9 @@ dev = [
 ]
 
 # UV-specific dependency groups
-# Note: tool.uv.dev-dependencies is deprecated but still works
-# The new format dependency-groups will be used in future UV versions
-[tool.uv]
-dev-dependencies = [
+# Using the new dependency-groups format (replaces deprecated tool.uv.dev-dependencies)
+[dependency-groups]
+dev = [
     "ruff>=0.1.9",
     "black>=24.1.1",
     "mypy>=1.8.0",

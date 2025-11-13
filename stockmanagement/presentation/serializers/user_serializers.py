@@ -321,29 +321,32 @@ class OTPRequestSerializer(serializers.Serializer):
 class OTPVerifySerializer(serializers.Serializer):
     """Serializer for OTP verification - returns tokens after verification."""
 
-    email = serializers.EmailField(required=False)
-    phone_number = serializers.CharField(max_length=30, required=False)
-    otp = serializers.CharField(required=True, max_length=6)
-    otp_type = serializers.ChoiceField(choices=["email", "sms"], default="email", required=False)
+    otp = serializers.CharField(required=True, max_length=6, min_length=6)
     device_id = serializers.CharField(max_length=255, required=False, allow_blank=True)
     device_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
     device_type = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
-    def validate(self, attrs):
-        """Validate that either email or phone_number is provided."""
-        if not attrs.get("email") and not attrs.get("phone_number"):
-            raise serializers.ValidationError(
-                "Either email or phone_number must be provided"
-            ) from None
-        return attrs
+    def validate_otp(self, value):
+        """Validate OTP code format."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("OTP code cannot be empty") from None
+
+        if not value.isdigit():
+            raise serializers.ValidationError("OTP code must contain only digits") from None
+        return value.strip()
 
     def to_dto(self) -> OTPVerifyDTO:
         """Convert to DTO."""
+        # Determine if OTP was sent via email or SMS based on validated data
+        otp_type = self.validated_data.get("otp_type")
+        # Fallback: if not provided, default to "email" for backward compatibility
+        if otp_type not in ("email", "sms"):
+            otp_type = "email"
         return OTPVerifyDTO(
             otp=self.validated_data["otp"],
-            email=self.validated_data.get("email"),
-            phone_number=self.validated_data.get("phone_number"),
-            otp_type=self.validated_data.get("otp_type", "email"),
+            email=None,  # Not needed - OTP contains user info
+            phone_number=None,  # Not needed - OTP contains user info
+            otp_type=otp_type,
         )
 
 

@@ -168,27 +168,31 @@ class VerifyOTPUseCase:
             BaseAPIException: If OTP is invalid or expired
         """
         # Log OTP verification attempt
-        identifier = dto.email or dto.phone_number or "Unknown"
         logger.info(
-            f"OTP verification attempt - identifier: {identifier}, "
+            f"OTP verification attempt - "
             f"code: {'*' * (len(dto.otp) - 2) + dto.otp[-2:] if len(dto.otp) > 2 else '**'}"
         )
 
-        # Verify OTP
+        # Verify OTP - only code is needed, OTP contains user info
         is_valid, otp = OTPService.verify_otp(
             otp_repository=self.otp_repository,
             code=dto.otp,
-            email=dto.email,
-            phone_number=dto.phone_number,
+            email=None,  # Not needed - OTP contains user info
+            phone_number=None,  # Not needed - OTP contains user info
         )
 
         if not otp:
-            logger.warning(f"OTP not found - identifier: {identifier}")
+            logger.warning(
+                f"OTP not found - code: {'*' * (len(dto.otp) - 2) + dto.otp[-2:] if len(dto.otp) > 2 else '**'}"
+            )
             raise BaseAPIException(
                 detail="OTP not found. Please request a new OTP code.",
                 code="OTP_NOT_FOUND",
                 status_code=400,
             )
+
+        # Get identifier from OTP (email or phone_number)
+        identifier = otp.email or otp.phone_number or "Unknown"
 
         if not is_valid:
             # Check specific reasons for invalidity

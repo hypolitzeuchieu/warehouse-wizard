@@ -1,11 +1,9 @@
 """User use cases."""
 
-from datetime import UTC
 from uuid import UUID, uuid4
 
 from django.utils import timezone
 from rest_framework_simplejwt.exceptions import InvalidToken
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken as JWTRefreshToken
 
 from application.dto.user_dto import (
@@ -27,6 +25,7 @@ from domain.users.repositories import (
 )
 from domain.users.services import UserDomainService
 from shared.exceptions.base import BaseAPIException
+from shared.services.jwt_blacklist_service import JWTBlacklistService
 
 
 class CreateUserUseCase:
@@ -246,18 +245,12 @@ class RefreshTokenUseCase:
             jti = refresh_token_jwt.get("jti")
 
             if jti:
-                try:
-                    outstanding_token = OutstandingToken.objects.get(jti=jti)
-                    if BlacklistedToken.objects.filter(token=outstanding_token).exists():
-                        raise BaseAPIException(
-                            detail="Refresh token has been blacklisted (logged out)",
-                            code="REFRESH_TOKEN_BLACKLISTED",
-                            status_code=401,
-                        )
-                except OutstandingToken.DoesNotExist:
-                    # Token not in outstanding tokens, might be a new token
-                    # This is OK, continue with validation
-                    pass
+                if JWTBlacklistService.is_token_blacklisted(jti):
+                    raise BaseAPIException(
+                        detail="Refresh token has been blacklisted (logged out)",
+                        code="REFRESH_TOKEN_BLACKLISTED",
+                        status_code=401,
+                    )
         except InvalidToken as e:
             # Invalid JWT token format or expired
             # JWTRefreshToken automatically checks expiration (exp claim)
@@ -292,55 +285,20 @@ class RefreshTokenUseCase:
                 status_code=404,
             )
 
-        # Blacklist and revoke old refresh token
-        # First blacklist the JWT token in simplejwt blacklist system
+        # Blacklist and revoke old refresh token AND its associated access token
+        # This ensures that when a refresh token is used, both the refresh token
+        # and its associated access token become invalid immediately
         try:
-            old_refresh_token_jwt = JWTRefreshToken(dto.refresh_token)
-            old_jti = old_refresh_token_jwt.get("jti")
-
-            if old_jti:
-                try:
-                    outstanding_token = OutstandingToken.objects.get(jti=old_jti)
-                    BlacklistedToken.objects.get_or_create(token=outstanding_token)
-                except OutstandingToken.DoesNotExist:
-                    # Create OutstandingToken for this refresh token before blacklisting
-                    from datetime import datetime
-
-                    from django.utils import timezone
-
-                    exp_timestamp = old_refresh_token_jwt.get("exp")
-                    iat_timestamp = old_refresh_token_jwt.get("iat")
-                    expires_at = (
-                        datetime.fromtimestamp(exp_timestamp, tz=UTC)
-                        if exp_timestamp
-                        else timezone.now() + timezone.timedelta(days=30)
-                    )
-                    created_at = (
-                        datetime.fromtimestamp(iat_timestamp, tz=UTC)
-                        if iat_timestamp
-                        else timezone.now()
-                    )
-
-                    # Get user model for OutstandingToken
-                    from django.contrib.auth import get_user_model
-
-                    UserModel = get_user_model()
-                    user_model = UserModel.objects.get(id=refresh_token.user_id)
-
-                    outstanding_token = OutstandingToken.objects.create(
-                        jti=old_jti,
-                        user=user_model,
-                        token=dto.refresh_token,
-                        created_at=created_at,
-                        expires_at=expires_at,
-                    )
-                    BlacklistedToken.objects.get_or_create(token=outstanding_token)
+            JWTBlacklistService.blacklist_tokens_from_refresh_token(
+                refresh_token_string=dto.refresh_token,
+                user_id=refresh_token.user_id,
+            )
         except Exception as e:
             # Log error but continue with revocation
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.warning(f"Failed to blacklist old refresh token: {e}", exc_info=True)
+            logger.warning(f"Failed to blacklist old refresh/access tokens: {e}", exc_info=True)
 
         # Revoke old refresh token in our database
         self.user_domain_service.revoke_refresh_token(refresh_token.id)
