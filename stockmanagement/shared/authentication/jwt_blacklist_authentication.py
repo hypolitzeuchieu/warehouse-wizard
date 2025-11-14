@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 
+from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
@@ -50,20 +51,13 @@ class JWTAuthenticationWithBlacklist(JWTAuthentication):
                 # Check if token is in blacklist
                 outstanding_token = OutstandingToken.objects.get(jti=jti)
                 if BlacklistedToken.objects.filter(token=outstanding_token).exists():
-                    # This is expected behavior after logout - log at INFO level, not WARNING
                     user_id = validated_token.get("user_id")
                     logger.info(
                         f"Blacklisted token rejected - jti: {jti[:16]}..., user_id: {user_id}"
                     )
-                    raise InvalidToken("Token has been blacklisted (logged out)")
+                    raise InvalidToken("Token has been expired or is blacklisted")
             except OutstandingToken.DoesNotExist:
-                # Token not in outstanding tokens - create it if needed for blacklisting
-                # This ensures we can blacklist tokens that were created before
-                # OutstandingToken tracking was enabled
                 try:
-                    from datetime import datetime
-
-                    from django.contrib.auth import get_user_model
 
                     User = get_user_model()
                     user_id = validated_token.get("user_id")
@@ -90,15 +84,10 @@ class JWTAuthenticationWithBlacklist(JWTAuthentication):
                         )
                         logger.debug(f"Created OutstandingToken for token (jti: {jti[:16]}...)")
                 except Exception as create_error:
-                    # If we can't create OutstandingToken, log but continue
-                    # This shouldn't block authentication
                     logger.debug(f"Could not create OutstandingToken for token: {create_error}")
             except InvalidToken:
-                # Re-raise InvalidToken (blacklisted)
                 raise
             except Exception as e:
-                # Log error but don't fail authentication for other errors
-                # Use warning level but without full traceback for expected errors
                 logger.warning(
                     f"Error checking token blacklist: {type(e).__name__}: {str(e)}",
                     extra={"jti": jti},

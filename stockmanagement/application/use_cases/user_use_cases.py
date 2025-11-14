@@ -26,8 +26,8 @@ from domain.users.repositories import (
     UserRepository,
 )
 from domain.users.services import UserDomainService
+from shared.authentication.jwt_blacklist_service import JWTBlacklistService
 from shared.exceptions.base import BaseAPIException
-from shared.services.jwt_blacklist_service import JWTBlacklistService
 
 logger = logging.getLogger(__name__)
 
