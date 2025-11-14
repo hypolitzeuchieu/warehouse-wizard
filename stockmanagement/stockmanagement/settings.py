@@ -62,7 +62,10 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
-    "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("RATE_LIMIT_ANON", "100/day"),
+        "user": os.getenv("RATE_LIMIT_USER", "1000/day"),
+    },
     "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "shared.exceptions.handler.custom_exception_handler",
 }
@@ -249,6 +252,44 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", None)
 # Password Reset Settings
 PASSWORD_RESET_EXPIRY_MINUTES = int(os.getenv("PASSWORD_RESET_EXPIRY_MINUTES", "10"))
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# Twilio SMS Settings
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", None)
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", None)
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", None)
+
+# Rate Limiting Settings (configurable via environment variables)
+RATE_LIMIT_SIGNUP_REQUESTS = int(os.getenv("RATE_LIMIT_SIGNUP_REQUESTS", "5"))
+RATE_LIMIT_SIGNUP_PERIOD = int(os.getenv("RATE_LIMIT_SIGNUP_PERIOD", "3600"))  # 1 hour
+
+RATE_LIMIT_LOGIN_REQUESTS = int(os.getenv("RATE_LIMIT_LOGIN_REQUESTS", "10"))
+RATE_LIMIT_LOGIN_PERIOD = int(os.getenv("RATE_LIMIT_LOGIN_PERIOD", "900"))  # 15 minutes
+
+RATE_LIMIT_VERIFY_OTP_REQUESTS = int(os.getenv("RATE_LIMIT_VERIFY_OTP_REQUESTS", "5"))
+RATE_LIMIT_VERIFY_OTP_PERIOD = int(os.getenv("RATE_LIMIT_VERIFY_OTP_PERIOD", "300"))  # 5 minutes
+
+RATE_LIMIT_REQUEST_OTP_REQUESTS = int(os.getenv("RATE_LIMIT_REQUEST_OTP_REQUESTS", "3"))
+RATE_LIMIT_REQUEST_OTP_PERIOD = int(os.getenv("RATE_LIMIT_REQUEST_OTP_PERIOD", "300"))  # 5 minutes
+
+RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS = int(os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS", "10"))
+RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD = int(
+    os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD", "60")
+)  # 1 minute
+
+RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS = int(os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS", "5"))
+RATE_LIMIT_GOOGLE_CALLBACK_PERIOD = int(
+    os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_PERIOD", "300")
+)  # 5 minutes
+
+RATE_LIMIT_FORGOT_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_FORGOT_PASSWORD_REQUESTS", "3"))
+RATE_LIMIT_FORGOT_PASSWORD_PERIOD = int(
+    os.getenv("RATE_LIMIT_FORGOT_PASSWORD_PERIOD", "300")
+)  # 5 minutes
+
+RATE_LIMIT_RESET_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_REQUESTS", "5"))
+RATE_LIMIT_RESET_PASSWORD_PERIOD = int(
+    os.getenv("RATE_LIMIT_RESET_PASSWORD_PERIOD", "300")
+)  # 5 minutes
 
 # Cache configuration for OAuth state and rate limiting
 CACHES = {

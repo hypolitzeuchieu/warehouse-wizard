@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from django.conf import settings
 from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
@@ -27,10 +28,10 @@ from application.use_cases.password_reset_use_cases import (
 )
 from application.use_cases.profile_use_cases import GetProfileUseCase, UpdateProfileUseCase
 from application.use_cases.user_use_cases import (
-    CreateUserUseCase,
     GetUserSessionsUseCase,
     LogoutUseCase,
     RefreshTokenUseCase,
+    SignupUseCase,
 )
 from domain.users.services import UserDomainService
 from infrastructure.external.google_oauth import GoogleOAuthService
@@ -53,7 +54,9 @@ from presentation.serializers.user_serializers import (
     ResetPasswordSerializer,
     UserCreateSerializer,
 )
-from shared.rate_limiting.decorators import rate_limit
+from shared.rate_limiting.decorators import get_client_ip, rate_limit
+from shared.services.jwt_blacklist_service import JWTBlacklistService
+from shared.utils.device import get_or_detect_device_type
 from shared.utils.jwt import generate_tokens
 from shared.views.functional_view_helper import FunctionalViewHelper
 
@@ -63,7 +66,7 @@ logger = logging.getLogger(__name__)
 @swagger_auto_schema(
     method="post",
     operation_summary="User Signup",
-    operation_description="Create a new user account. OTP will be sent automatically to verify the account.",
+    operation_description="Create a new user account and send OTP to verify the account.",
     request_body=UserCreateSerializer,
     responses={
         201: "User created successfully",
@@ -74,7 +77,10 @@ logger = logging.getLogger(__name__)
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=5, period_seconds=3600)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_SIGNUP_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_SIGNUP_PERIOD,
+)
 def signup_view(request: Request) -> Response:
     """User signup endpoint."""
     helper = FunctionalViewHelper(request)
@@ -100,121 +106,27 @@ def signup_view(request: Request) -> Response:
     try:
         dto = serializer.to_dto()
         logger.debug(f"Creating user with email: {dto.email}, role: {dto.role}")
-        use_case = CreateUserUseCase(user_repository=UserRepositoryImpl())
-        user_dto = use_case.execute(dto)
-        logger.info(f"User created successfully - ID: {user_dto.id}, email: {user_dto.email}")
 
-        # Send OTP automatically on signup
-        otp_sent = False
-        expires_in_minutes = None
-        otp_type = None
-        otp_destination = None
-
-        otp_use_case = RequestOTPUseCase(
-            otp_repository=OTPRepositoryImpl(),
+        use_case = SignupUseCase(
             user_repository=UserRepositoryImpl(),
+            otp_repository=OTPRepositoryImpl(),
         )
+        signup_response = use_case.execute(dto)
 
-        if user_dto.email:
-            # Send OTP via email
-            try:
-                logger.debug(f"Sending OTP to email: {user_dto.email}")
-                otp_request_dto = OTPRequestDTO(
-                    email=user_dto.email,
-                    otp_type="email",
-                )
-                otp_result = otp_use_case.execute(otp_request_dto)
-                otp_sent = True
-                otp_type = "email"
-                otp_destination = user_dto.email
-                expires_in_minutes = otp_result.get("expires_in_minutes", 10)
-                logger.info(
-                    f"OTP sent successfully to {user_dto.email} - "
-                    f"expires in {expires_in_minutes} minutes"
-                )
-            except Exception as otp_error:
-                logger.error(
-                    f"Failed to send OTP on signup for user {user_dto.id} "
-                    f"({user_dto.email}): {str(otp_error)}",
-                    exc_info=True,
-                    extra={"user_id": str(user_dto.id), "email": user_dto.email},
-                )
-        elif user_dto.phone_number:
-            # Send OTP via SMS if email is not provided
-            try:
-                logger.debug(f"Sending OTP to phone: {user_dto.phone_number}")
-                otp_request_dto = OTPRequestDTO(
-                    phone_number=user_dto.phone_number,
-                    otp_type="sms",
-                )
-                otp_result = otp_use_case.execute(otp_request_dto)
-                otp_sent = True
-                otp_type = "sms"
-                otp_destination = user_dto.phone_number
-                expires_in_minutes = otp_result.get("expires_in_minutes", 10)
-                logger.info(
-                    f"OTP sent successfully to {user_dto.phone_number} - "
-                    f"expires in {expires_in_minutes} minutes"
-                )
-            except Exception as otp_error:
-                logger.error(
-                    f"Failed to send OTP on signup for user {user_dto.id} "
-                    f"({user_dto.phone_number}): {str(otp_error)}",
-                    exc_info=True,
-                    extra={
-                        "user_id": str(user_dto.id),
-                        "phone_number": user_dto.phone_number,
-                    },
-                )
+        # Build response data
+        response_data: dict[str, Any] = {
+            "expires_in_minutes": signup_response.expires_in_minutes,
+        }
+        if signup_response.email:
+            response_data["email"] = signup_response.email
+        if signup_response.phone_number:
+            response_data["phone_number"] = signup_response.phone_number
 
-        # Return success message indicating OTP was sent
-        if otp_sent:
-            if otp_type == "email":
-                message = (
-                    f"Account created successfully. "
-                    f"An OTP has been sent to your email ({otp_destination}). "
-                    f"Please check your inbox and verify your account. "
-                    f"The OTP will expire in {expires_in_minutes} minutes."
-                )
-                data = {
-                    "expires_in_minutes": expires_in_minutes,
-                    "email": otp_destination,
-                }
-            else:  # SMS
-                message = (
-                    f"Account created successfully. "
-                    f"An OTP has been sent to your phone number ({otp_destination}). "
-                    f"Please check your messages and verify your account. "
-                    f"The OTP will expire in {expires_in_minutes} minutes."
-                )
-                data = {
-                    "expires_in_minutes": expires_in_minutes,
-                    "phone_number": otp_destination,
-                }
-
-            return helper.success(
-                message=message,
-                data=data,
-                status_code=status.HTTP_201_CREATED,
-            )
-        else:
-            # Fallback if OTP sending failed
-            message = (
-                "Account created successfully, but we encountered an issue "
-                "sending the OTP. Please request a new OTP using the "
-                "request OTP endpoint."
-            )
-            fallback_data = {}
-            if user_dto.email:
-                fallback_data["email"] = user_dto.email
-            if user_dto.phone_number:
-                fallback_data["phone_number"] = user_dto.phone_number
-
-            return helper.success(
-                message=message,
-                data=fallback_data,
-                status_code=status.HTTP_201_CREATED,
-            )
+        return helper.success(
+            message=signup_response.message,
+            data=response_data,
+            status_code=status.HTTP_201_CREATED,
+        )
     except Exception as e:
         return helper.handle_exception(e)
 
@@ -231,13 +143,15 @@ def signup_view(request: Request) -> Response:
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=10, period_seconds=900)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_LOGIN_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_LOGIN_PERIOD,
+)
 def login_view(request: Request) -> Response:
     """User login endpoint - verifies credentials and sends OTP."""
     helper = FunctionalViewHelper(request)
     serializer = LoginSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your credentials.",
@@ -303,29 +217,21 @@ def login_view(request: Request) -> Response:
         )
 
         # Determine OTP type based on the identifier used for login
-        # If user logged in with email, send OTP via email
-        # If user logged in with phone, send OTP via SMS
         if dto.email:
-            # User logged in with email, send OTP via email
             otp_type = "email"
             otp_request_dto = OTPRequestDTO(
                 email=user.email,
-                otp_type=otp_type,
             )
         elif dto.phone_number:
-            # User logged in with phone, send OTP via SMS
             otp_type = "sms"
             otp_request_dto = OTPRequestDTO(
                 phone_number=user.phone_number,
-                otp_type=otp_type,
             )
         else:
-            # Fallback: use email if available, otherwise SMS
             otp_type = "email" if user.email else "sms"
             otp_request_dto = OTPRequestDTO(
                 email=user.email if user.email else None,
                 phone_number=user.phone_number if not user.email else None,
-                otp_type=otp_type,
             )
 
         result = otp_use_case.execute(otp_request_dto)
@@ -355,13 +261,15 @@ def login_view(request: Request) -> Response:
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=5, period_seconds=300)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_VERIFY_OTP_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_VERIFY_OTP_PERIOD,
+)
 def verify_otp_view(request: Request) -> Response:
     """OTP verification endpoint - returns tokens after verification."""
     helper = FunctionalViewHelper(request)
     serializer = OTPVerifySerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your OTP code.",
@@ -372,10 +280,6 @@ def verify_otp_view(request: Request) -> Response:
 
     try:
         dto = serializer.to_dto()
-
-        # Get device info from request
-        from shared.rate_limiting.decorators import get_client_ip
-        from shared.utils.device import get_or_detect_device_type
 
         device_id = serializer.validated_data.get("device_id")
         device_name = serializer.validated_data.get("device_name")
@@ -442,13 +346,15 @@ def verify_otp_view(request: Request) -> Response:
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=3, period_seconds=300)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_REQUEST_OTP_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_REQUEST_OTP_PERIOD,
+)
 def request_otp_view(request: Request) -> Response:
     """Request OTP endpoint."""
     helper = FunctionalViewHelper(request)
     serializer = OTPRequestSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your OTP request.",
@@ -488,7 +394,10 @@ def request_otp_view(request: Request) -> Response:
 )
 @api_view(["GET"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=10, period_seconds=60)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD,
+)
 def google_auth_url_view(request: Request) -> Response:
     """Generate Google OAuth authorization URL endpoint."""
     helper = FunctionalViewHelper(request)
@@ -535,13 +444,15 @@ def google_auth_url_view(request: Request) -> Response:
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=5, period_seconds=300)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_GOOGLE_CALLBACK_PERIOD,
+)
 def google_callback_view(request: Request) -> Response:
     """Google OAuth callback endpoint - exchanges code for tokens."""
     helper = FunctionalViewHelper(request)
     serializer = GoogleOAuthCodeSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your Google OAuth code.",
@@ -609,7 +520,6 @@ def refresh_token_view(request: Request) -> Response:
     helper = FunctionalViewHelper(request)
     serializer = RefreshTokenSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your refresh token.",
@@ -654,29 +564,9 @@ def refresh_token_view(request: Request) -> Response:
 @swagger_auto_schema(
     method="post",
     operation_summary="Logout",
-    operation_description="Logout user from current device or all devices. Use logout_all_devices=true to logout from all devices, or provide device_id to logout from a specific device.",
-    request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={
-            "device_id": openapi.Schema(
-                type=openapi.TYPE_STRING,
-                description="Optional: Device ID to logout from a specific device",
-                example="device-123",
-            ),
-            "logout_all_devices": openapi.Schema(
-                type=openapi.TYPE_BOOLEAN,
-                description="Set to true to logout from all devices",
-                default=False,
-                example=True,
-            ),
-        },
-        required=[],
-    ),
-    responses={
-        200: openapi.Response(description="Logout successful"),
-        400: openapi.Response(description="Validation error"),
-        401: openapi.Response(description="Unauthorized"),
-    },
+    operation_description="Logout user from current device or all devices.",
+    request_body=LogoutSerializer,
+    responses={200: "Logout successful", 400: "Validation error", 401: "Unauthorized"},
     tags=["Authentication"],
 )
 @api_view(["POST"])
@@ -686,7 +576,6 @@ def logout_view(request: Request) -> Response:
     helper = FunctionalViewHelper(request)
     serializer = LogoutSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your logout request.",
@@ -754,26 +643,28 @@ def logout_view(request: Request) -> Response:
         # Get refresh tokens to blacklist before revoking them
         refresh_token_repo = RefreshTokenRepositoryImpl()
         if dto.logout_all_devices:
-            # Get all active refresh tokens for this user
+            # Get all active refresh tokens for this user (logout from all devices)
             refresh_tokens = refresh_token_repo.get_by_user_and_device(request.user.id, None)
+            logger.info(
+                f"Logout all devices - blacklisting all refresh tokens for user {request.user.id}"
+            )
         elif dto.device_id:
             # Get refresh tokens for specific device
             refresh_tokens = refresh_token_repo.get_by_user_and_device(
                 request.user.id, dto.device_id
             )
+            logger.info(
+                f"Logout device {dto.device_id} - blacklisting refresh tokens for user {request.user.id}"
+            )
         else:
-            # Get all active refresh tokens (for current session logout)
-            refresh_tokens = refresh_token_repo.get_by_user_and_device(request.user.id, None)
-
-        # Blacklist all refresh tokens JWT in simplejwt blacklist system
-        # This will also blacklist associated access tokens automatically
-        from shared.services.jwt_blacklist_service import JWTBlacklistService
+            refresh_tokens = []
+            logger.info(
+                f"Logout current session - access token already blacklisted for user {request.user.id}"
+            )
 
         for refresh_token_entity in refresh_tokens:
             if refresh_token_entity.token and not refresh_token_entity.revoked:
                 try:
-                    # Use JWTBlacklistService to blacklist refresh token
-                    # This will also blacklist all access tokens for this user
                     JWTBlacklistService.blacklist_refresh_token(
                         refresh_token_string=refresh_token_entity.token,
                         user_id=request.user.id,
@@ -797,8 +688,6 @@ def logout_view(request: Request) -> Response:
             user_id=request.user.id,
         )
         use_case.execute(dto)
-
-        # Determine logout message based on action
         if dto.logout_all_devices:
             logout_message = "Logout successful. All devices have been logged out."
         elif dto.device_id:
@@ -819,21 +708,20 @@ def logout_view(request: Request) -> Response:
     operation_summary="Forgot Password",
     operation_description="Request password reset link (email) or code (SMS).",
     request_body=ForgotPasswordSerializer,
-    responses={
-        200: openapi.Response(description="Password reset email/SMS sent successfully"),
-        400: openapi.Response(description="Validation error"),
-    },
+    responses={200: "Password reset email/SMS sent successfully", 400: "Validation error"},
     tags=["Authentication"],
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=3, period_seconds=300)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_FORGOT_PASSWORD_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_FORGOT_PASSWORD_PERIOD,
+)
 def forgot_password_view(request: Request) -> Response:
     """Forgot password endpoint - sends reset link/code."""
     helper = FunctionalViewHelper(request)
     serializer = ForgotPasswordSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your email or phone number.",
@@ -863,23 +751,26 @@ def forgot_password_view(request: Request) -> Response:
 @swagger_auto_schema(
     method="post",
     operation_summary="Reset Password",
-    operation_description="Reset password using token (email) or code (SMS).",
+    operation_description=(
+        "Reset password using token (email) or code (SMS). "
+        "The reset type is determined automatically: token = email, code = SMS. "
+        "Email/phone_number are extracted from the token/code automatically."
+    ),
     request_body=ResetPasswordSerializer,
-    responses={
-        200: openapi.Response(description="Password reset successfully"),
-        400: openapi.Response(description="Invalid token/code or validation error"),
-    },
+    responses={200: "Password reset successfully", 400: "Invalid token/code or validation error"},
     tags=["Authentication"],
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@rate_limit(requests_per_period=5, period_seconds=300)
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_RESET_PASSWORD_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_RESET_PASSWORD_PERIOD,
+)
 def reset_password_view(request: Request) -> Response:
     """Reset password endpoint - validates token/code and changes password."""
     helper = FunctionalViewHelper(request)
     serializer = ResetPasswordSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your reset token/code and new password.",
@@ -952,7 +843,6 @@ def update_profile_view(request: Request) -> Response:
     helper = FunctionalViewHelper(request)
     serializer = ProfileUpdateSerializer(data=request.data)
 
-    # Check validation
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
         message="Validation failed. Please check your profile update data.",

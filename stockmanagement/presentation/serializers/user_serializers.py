@@ -1,8 +1,7 @@
-"""User serializers."""
-
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote
 
 from rest_framework import serializers
 
@@ -22,19 +21,117 @@ from application.dto.user_dto import (
     UserResponseDTO,
 )
 from domain.users.entities import UserRole
+from infrastructure.persistence.repositories import UserRepositoryImpl
 from shared.rate_limiting.decorators import get_client_ip
 from shared.utils.device import get_or_detect_device_type
+
+
+def validate_password_strength(value: str) -> str:
+    """
+    Validate password strength.
+
+    Args:
+        value: Password to validate
+
+    Returns:
+        Validated password
+
+    Raises:
+        serializers.ValidationError: If password doesn't meet requirements
+    """
+    if len(value) < 8:
+        raise serializers.ValidationError("Password must be at least 8 characters long") from None
+
+    if not re.search(r"[A-Z]", value):
+        raise serializers.ValidationError(
+            "Password must contain at least one uppercase letter"
+        ) from None
+
+    if not re.search(r"[a-z]", value):
+        raise serializers.ValidationError(
+            "Password must contain at least one lowercase letter"
+        ) from None
+
+    if not re.search(r"[0-9]", value):
+        raise serializers.ValidationError("Password must contain at least one number") from None
+
+    if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\':"\\|,.<>/?]', value):
+        raise serializers.ValidationError(
+            "Password must contain at least one special " "character (!@#$%^&*()_+-=[]{}|;:,.<>?)"
+        ) from None
+
+    return value
+
+
+def validate_phone_number_format(value: str, check_uniqueness: bool = False) -> str | None:
+    """
+    Validate phone number in E.164 format.
+
+    Args:
+        value: Phone number to validate
+        check_uniqueness: Whether to check if phone number already exists
+
+    Returns:
+        Cleaned phone number or None if empty
+
+    Raises:
+        serializers.ValidationError: If phone number is invalid or exists
+    """
+    if not value or not value.strip():
+        return value
+
+    # Remove spaces, dashes, and parentheses
+    cleaned = re.sub(r"[\s\-\(\)]", "", value.strip())
+
+    if not re.match(r"^\+[1-9]\d{4,14}$", cleaned):
+        raise serializers.ValidationError(
+            "Phone number must be in E.164 format "
+            "(e.g., +1234567890, +33612345678). "
+            "It must start with + followed by country code and number "
+            "(4-15 digits total)."
+        ) from None
+
+    if check_uniqueness:
+        existing_user = UserRepositoryImpl().get_by_phone_number(cleaned)
+        if existing_user:
+            raise serializers.ValidationError(
+                "A user with this phone number already exists. "
+                "Please use a different phone number or login."
+            ) from None
+
+    return cleaned
+
+
+def validate_email_or_phone_number(attrs: dict) -> None:
+    """
+    Validate that exactly one of email or phone_number is provided.
+
+    Args:
+        attrs: Dictionary of validated attributes
+
+    Raises:
+        serializers.ValidationError: If both or neither are provided
+    """
+    email = attrs.get("email")
+    phone_number = attrs.get("phone_number")
+
+    if not email and not phone_number:
+        raise serializers.ValidationError("Either email or phone_number must be provided") from None
+
+    if email and phone_number:
+        raise serializers.ValidationError(
+            "Provide either email or phone_number, not both"
+        ) from None
 
 
 class UserCreateSerializer(serializers.Serializer):
     """Serializer for user creation with strict validation."""
 
-    email = serializers.EmailField(required=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     name = serializers.CharField(
         max_length=150,
         required=False,
         allow_blank=True,
-        help_text="Optional: User's display name. If not provided, will be generated from email",
     )
     password = serializers.CharField(
         write_only=True,
@@ -68,12 +165,9 @@ class UserCreateSerializer(serializers.Serializer):
     def validate_email(self, value):
         """Validate email format and check for uniqueness."""
         if not value or not value.strip():
-            raise serializers.ValidationError("Email cannot be empty")
+            return None
 
         email = value.strip().lower()
-
-        # Check if email already exists in database
-        from infrastructure.persistence.repositories import UserRepositoryImpl
 
         existing_user = UserRepositoryImpl().get_by_email(email)
         if existing_user:
@@ -94,75 +188,15 @@ class UserCreateSerializer(serializers.Serializer):
         return value.strip() if value else None
 
     def validate_password(self, value):
-        import re
-
-        if len(value) < 8:
-            raise serializers.ValidationError(
-                "Password must be at least 8 characters long"
-            ) from None
-
-        # Check for at least one uppercase letter
-        if not re.search(r"[A-Z]", value):
-            raise serializers.ValidationError(
-                "Password must contain at least one uppercase letter"
-            ) from None
-
-        # Check for at least one lowercase letter
-        if not re.search(r"[a-z]", value):
-            raise serializers.ValidationError(
-                "Password must contain at least one lowercase letter"
-            ) from None
-
-        # Check for at least one number
-        if not re.search(r"[0-9]", value):
-            raise serializers.ValidationError("Password must contain at least one number") from None
-
-        # Check for at least one special character
-        if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\':"\\|,.<>/?]', value):
-            raise serializers.ValidationError(
-                "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)"
-            ) from None
-
-        return value
+        """Validate password strength."""
+        return validate_password_strength(value)
 
     def validate_phone_number(self, value):
-        """Validate phone number in E.164 format.
-
-        E.164 format: +[country code][number]
-        - Must start with +
-        - Country code: 1-3 digits
-        - Number: 4-15 digits total (including country code)
-        - Total length: max 15 digits after +
-        Example: +1234567890, +33612345678, +221701234567
-        """
-        if not value or not value.strip():
-            return value  # Optional field
-
-        # Remove spaces, dashes, and parentheses
-        cleaned = re.sub(r"[\s\-\(\)]", "", value.strip())
-
-        # E.164 format: + followed by 1-15 digits
-        # Must start with + and country code (1-3 digits), then subscriber number
-        if not re.match(r"^\+[1-9]\d{4,14}$", cleaned):
-            raise serializers.ValidationError(
-                "Phone number must be in E.164 format (e.g., +1234567890, +33612345678). "
-                "It must start with + followed by country code and number (4-15 digits total)."
-            ) from None
-
-        # Check if phone number already exists in database
-        from infrastructure.persistence.repositories import UserRepositoryImpl
-
-        existing_user = UserRepositoryImpl().get_by_phone_number(cleaned)
-        if existing_user:
-            raise serializers.ValidationError(
-                "A user with this phone number already exists. Please use a different phone number or login."
-            ) from None
-
-        return cleaned
+        """Validate phone number in E.164 format."""
+        return validate_phone_number_format(value, check_uniqueness=True)
 
     def validate(self, attrs):
         """Validate serializer data."""
-        # Validate password and confirm_password match
         password = attrs.get("password")
         confirm_password = attrs.get("confirm_password")
 
@@ -172,14 +206,7 @@ class UserCreateSerializer(serializers.Serializer):
                     {"confirm_password": "Passwords do not match"}
                 ) from None
 
-        # Ensure either email or phone_number is provided
-        email = attrs.get("email")
-        phone_number = attrs.get("phone_number")
-
-        if not email and not phone_number:
-            raise serializers.ValidationError(
-                "Either email or phone_number must be provided"
-            ) from None
+        validate_email_or_phone_number(attrs)
 
         # Role validation - users cannot signup as manager
         if attrs.get("role") == UserRole.MANAGER.value:
@@ -188,13 +215,17 @@ class UserCreateSerializer(serializers.Serializer):
 
     def to_dto(self) -> UserCreateDTO:
         """Convert to DTO."""
-        # Generate name from email if not provided
         name = self.validated_data.get("name")
         if not name:
             email = self.validated_data.get("email")
-            if not email:
-                raise serializers.ValidationError("Email is required to generate name") from None
-            name = email.split("@")[0]  # Use part before @ as name
+            if email:
+                name = email.split("@")[0]
+            else:
+                phone_number = self.validated_data.get("phone_number")
+                if phone_number:
+                    name = f"user_{phone_number[-4:]}"
+                else:
+                    name = "user"
 
         return UserCreateDTO(
             email=self.validated_data.get("email"),
@@ -222,14 +253,7 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         """Validate that either email or phone_number is provided."""
-        if not attrs.get("email") and not attrs.get("phone_number"):
-            raise serializers.ValidationError(
-                "Either email or phone_number must be provided"
-            ) from None
-        if attrs.get("email") and attrs.get("phone_number"):
-            raise serializers.ValidationError(
-                "Provide either email or phone_number, not both"
-            ) from None
+        validate_email_or_phone_number(attrs)
         if not attrs.get("password"):
             raise serializers.ValidationError("Password is required") from None
         return attrs
@@ -299,14 +323,10 @@ class OTPRequestSerializer(serializers.Serializer):
 
     email = serializers.EmailField(required=False)
     phone_number = serializers.CharField(max_length=30, required=False)
-    otp_type = serializers.ChoiceField(choices=["email", "sms"], default="email", required=False)
 
     def validate(self, attrs):
         """Validate that either email or phone_number is provided."""
-        if not attrs.get("email") and not attrs.get("phone_number"):
-            raise serializers.ValidationError(
-                "Either email or phone_number must be provided"
-            ) from None
+        validate_email_or_phone_number(attrs)
         return attrs
 
     def to_dto(self) -> OTPRequestDTO:
@@ -314,7 +334,6 @@ class OTPRequestSerializer(serializers.Serializer):
         return OTPRequestDTO(
             email=self.validated_data.get("email"),
             phone_number=self.validated_data.get("phone_number"),
-            otp_type=self.validated_data.get("otp_type", "email"),
         )
 
 
@@ -337,25 +356,16 @@ class OTPVerifySerializer(serializers.Serializer):
 
     def to_dto(self) -> OTPVerifyDTO:
         """Convert to DTO."""
-        # Determine if OTP was sent via email or SMS based on validated data
-        otp_type = self.validated_data.get("otp_type")
-        # Fallback: if not provided, default to "email" for backward compatibility
-        if otp_type not in ("email", "sms"):
-            otp_type = "email"
         return OTPVerifyDTO(
             otp=self.validated_data["otp"],
-            email=None,  # Not needed - OTP contains user info
-            phone_number=None,  # Not needed - OTP contains user info
-            otp_type=otp_type,
+            email=None,
+            phone_number=None,
+            otp_type="email",
         )
 
 
 class GoogleOAuthAuthURLSerializer(serializers.Serializer):
-    """Serializer for Google OAuth auth URL request.
-
-    Note: Purpose (signup/login) is auto-detected during callback based on whether user exists.
-    No parameters required - just call GET /api/v1/auth/google/auth-url/
-    """
+    """Serializer for Google OAuth auth URL request."""
 
     def to_dto(self) -> GoogleOAuthAuthURLDTO:
         """Convert to DTO."""
@@ -374,15 +384,12 @@ class GoogleOAuthCodeSerializer(serializers.Serializer):
         """Validate code is not empty and properly formatted."""
         if not value or not value.strip():
             raise serializers.ValidationError("Code cannot be empty")
-        # URL decode if needed (Google may send URL-encoded code)
         code = value.strip()
-        # Remove any URL encoding if present
-        from urllib.parse import unquote
 
         try:
             code = unquote(code)
         except Exception:
-            pass  # If unquote fails, use original code
+            pass
         return code
 
     def to_dto(self, request) -> GoogleOAuthCodeDTO:
@@ -432,7 +439,6 @@ class ForgotPasswordSerializer(serializers.Serializer):
     phone_number = serializers.CharField(
         max_length=30, required=False, help_text="Phone number in international format"
     )
-    reset_type = serializers.ChoiceField(choices=["email", "sms"], default="email", required=False)
 
     def validate_email(self, value):
         """Validate email format."""
@@ -441,126 +447,89 @@ class ForgotPasswordSerializer(serializers.Serializer):
         return value
 
     def validate_phone_number(self, value):
-        """Validate phone number in E.164 format.
-
-        E.164 format: +[country code][number]
-        - Must start with +
-        - Country code: 1-3 digits
-        - Number: 4-15 digits total (including country code)
-        - Total length: max 15 digits after +
-        Example: +1234567890, +33612345678, +221701234567
-        """
-        if not value or not value.strip():
-            return value  # Optional field
-
-        import re
-
-        # Remove spaces, dashes, and parentheses
-        cleaned = re.sub(r"[\s\-\(\)]", "", value.strip())
-
-        # E.164 format: + followed by 1-15 digits
-        # Must start with + and country code (1-3 digits), then subscriber number
-        if not re.match(r"^\+[1-9]\d{4,14}$", cleaned):
-            raise serializers.ValidationError(
-                "Phone number must be in E.164 format (e.g., +1234567890, +33612345678). "
-                "It must start with + followed by country code and number (4-15 digits total)."
-            ) from None
-
-        return cleaned
+        """Validate phone number in E.164 format."""
+        return validate_phone_number_format(value, check_uniqueness=False)
 
     def validate(self, attrs):
-        """Validate that either email or phone_number is provided based on reset_type."""
-        reset_type = attrs.get("reset_type", "email")
-
-        if reset_type == "email":
-            if not attrs.get("email"):
-                raise serializers.ValidationError(
-                    "Email is required for email-based password reset"
-                ) from None
-        else:  # SMS
-            if not attrs.get("phone_number"):
-                raise serializers.ValidationError(
-                    "Phone number is required for SMS-based password reset"
-                ) from None
-
+        """Validate that either email or phone_number is provided."""
+        validate_email_or_phone_number(attrs)
         return attrs
 
     def to_dto(self) -> ForgotPasswordDTO:
         """Convert to DTO."""
+        email = self.validated_data.get("email")
+        phone_number = self.validated_data.get("phone_number")
+        reset_type = "email" if email else "sms"
+
         return ForgotPasswordDTO(
-            email=self.validated_data.get("email"),
-            phone_number=self.validated_data.get("phone_number"),
-            reset_type=self.validated_data.get("reset_type", "email"),
+            email=email,
+            phone_number=phone_number,
+            reset_type=reset_type,
         )
 
 
 class ResetPasswordSerializer(serializers.Serializer):
     """Serializer for reset password request."""
 
-    token = serializers.CharField(max_length=255, required=False, allow_blank=True)
-    code = serializers.CharField(max_length=6, required=False, allow_blank=True)
-    email = serializers.EmailField(required=False)
-    phone_number = serializers.CharField(max_length=30, required=False)
-    new_password = serializers.CharField(write_only=True, min_length=8, required=True)
-    reset_type = serializers.ChoiceField(choices=["email", "sms"], default="email", required=False)
+    token = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, help_text="Token for email reset"
+    )
+    code = serializers.CharField(
+        max_length=6, required=False, allow_blank=True, help_text="Code for SMS reset"
+    )
+    new_password = serializers.CharField(
+        write_only=True, min_length=8, required=True, help_text="New password"
+    )
+    confirm_new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        required=True,
+        help_text="Confirm new password (must match new_password)",
+    )
 
     def validate_new_password(self, value):
         """Validate password strength."""
-        if len(value) < 8:
-            raise serializers.ValidationError(
-                "Password must be at least 8 characters long"
-            ) from None
-
-        # Check for at least one uppercase letter
-        if not re.search(r"[A-Z]", value):
-            raise serializers.ValidationError(
-                "Password must contain at least one uppercase letter"
-            ) from None
-
-        # Check for at least one lowercase letter
-        if not re.search(r"[a-z]", value):
-            raise serializers.ValidationError(
-                "Password must contain at least one lowercase letter"
-            ) from None
-
-        # Check for at least one number
-        if not re.search(r"[0-9]", value):
-            raise serializers.ValidationError("Password must contain at least one number") from None
-
-        # Check for at least one special character
-        if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\':"\\|,.<>/?]', value):
-            raise serializers.ValidationError(
-                "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)"
-            ) from None
-
-        return value
+        return validate_password_strength(value)
 
     def validate(self, attrs):
         """Validate reset password data."""
-        reset_type = attrs.get("reset_type", "email")
+        token = attrs.get("token", "").strip() if attrs.get("token") else ""
+        code = attrs.get("code", "").strip() if attrs.get("code") else ""
+        new_password = attrs.get("new_password")
+        confirm_new_password = attrs.get("confirm_new_password")
 
-        if reset_type == "email":
-            if not attrs.get("token") or not attrs.get("token").strip():
-                raise serializers.ValidationError("Token is required for email reset")
-        else:  # SMS
-            if not attrs.get("code") or not attrs.get("code").strip():
-                raise serializers.ValidationError("Code is required for SMS reset")
-            if not attrs.get("email") and not attrs.get("phone_number"):
+        if not token and not code:
+            raise serializers.ValidationError(
+                "Either token (for email reset) or code (for SMS reset) must be provided"
+            ) from None
+
+        if token and code:
+            raise serializers.ValidationError("Provide either token or code, not both") from None
+
+        # Validate password confirmation
+        if new_password and confirm_new_password:
+            if new_password != confirm_new_password:
                 raise serializers.ValidationError(
-                    "Either email or phone_number must be provided for SMS reset"
+                    {"confirm_new_password": "Passwords do not match"}
                 ) from None
 
         return attrs
 
     def to_dto(self) -> ResetPasswordDTO:
         """Convert to DTO."""
+        token = (
+            self.validated_data.get("token", "").strip()
+            if self.validated_data.get("token")
+            else None
+        )
+        code = (
+            self.validated_data.get("code", "").strip() if self.validated_data.get("code") else None
+        )
+
         return ResetPasswordDTO(
-            token=self.validated_data.get("token"),
-            code=self.validated_data.get("code"),
-            email=self.validated_data.get("email"),
-            phone_number=self.validated_data.get("phone_number"),
+            token=token if token else None,
+            code=code if code else None,
             new_password=self.validated_data["new_password"],
-            reset_type=self.validated_data.get("reset_type", "email"),
         )
 
 
@@ -596,31 +565,8 @@ class ProfileUpdateSerializer(serializers.Serializer):
         return value.strip() if value else None
 
     def validate_phone_number(self, value):
-        """Validate phone number in E.164 format.
-
-        E.164 format: +[country code][number]
-        - Must start with +
-        - Country code: 1-3 digits
-        - Number: 4-15 digits total (including country code)
-        - Total length: max 15 digits after +
-        Example: +1234567890
-        """
-        if not value or not value.strip():
-            if not value or not value.strip():
-                import re
-
-                # Remove spaces, dashes, and parentheses
-                cleaned = re.sub(r"[\s\-\(\)]", "", value.strip())
-                if not cleaned:
-                    return value  # Optional field
-        # Must start with + and number (4-15 digits)
-        if not re.match(r"^\+[1-9]\d{4,14}$", cleaned):
-            raise serializers.ValidationError(
-                "Phone number must be in E.164 format (e.g., +1234567890). "  # +[country code][number] is the format
-                "It must start with + followed by number (4-15 digits total).",
-            ) from None
-
-        return cleaned
+        """Validate phone number in E.164 format."""
+        return validate_phone_number_format(value, check_uniqueness=False)
 
     def to_dto(self) -> ProfileUpdateDTO:
         """Convert to DTO."""

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import wraps
+from typing import Any
 
+from django.http import JsonResponse
 from rest_framework.request import Request
-from rest_framework.response import Response
 
 from shared.rate_limiting.service import RateLimitingService
 from shared.response.mixin import ResponseMixin
@@ -33,7 +34,7 @@ def rate_limit(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(request: Request, *args, **kwargs) -> Response:
+        def wrapper(request: Request, *args, **kwargs) -> JsonResponse | Any:
             # Get rate limit key (default: IP address)
             if key_func:
                 key = key_func(request)
