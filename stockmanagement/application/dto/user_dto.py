@@ -20,6 +20,17 @@ class UserCreateDTO:
 
 
 @dataclass
+class SignupResponseDTO:
+    """DTO for signup response."""
+
+    message: str
+    expires_in_minutes: int
+    email: str | None = None
+    phone_number: str | None = None
+    otp_type: str | None = None
+
+
+@dataclass
 class UserUpdateDTO:
     """DTO for updating a user."""
 
@@ -105,7 +116,6 @@ class OTPRequestDTO:
 
     email: str | None = None
     phone_number: str | None = None
-    otp_type: str = "email"  # email or sms
 
 
 @dataclass
@@ -189,10 +199,7 @@ class ResetPasswordDTO:
 
     token: str | None = None
     code: str | None = None
-    email: str | None = None
-    phone_number: str | None = None
     new_password: str = ""
-    reset_type: str = "email"
 
 
 @dataclass

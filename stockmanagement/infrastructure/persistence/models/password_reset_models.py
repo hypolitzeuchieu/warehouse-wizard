@@ -16,7 +16,9 @@ class PasswordResetToken(BaseModel):
     )
     email = models.EmailField(null=True, blank=True, db_index=True)
     phone_number = models.CharField(max_length=30, null=True, blank=True, db_index=True)
-    token = models.CharField(max_length=255, unique=True, db_index=True)
+    token = models.CharField(
+        max_length=255, db_index=True, null=True, blank=True
+    )  # For email token
     code = models.CharField(max_length=6, null=True, blank=True)  # For SMS OTP
     reset_type = models.CharField(max_length=10, choices=[("email", "Email"), ("sms", "SMS")])
     expires_at = models.DateTimeField(db_index=True)
@@ -29,6 +31,7 @@ class PasswordResetToken(BaseModel):
         db_table = "password_reset_tokens"
         verbose_name = "Password Reset Token"
         verbose_name_plural = "Password Reset Tokens"
+        unique_together = ("email", "reset_type", "token"), ("phone_number", "reset_type", "code")
         indexes = [
             models.Index(fields=["token", "used"]),
             models.Index(fields=["code", "used"]),

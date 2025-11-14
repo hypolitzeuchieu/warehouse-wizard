@@ -161,31 +161,30 @@ class ResetPasswordUseCase:
         Raises:
             BaseAPIException: If token/code is invalid or expired
         """
-        # Find reset token
+
         reset_token = None
-        if dto.reset_type == "email" and dto.token:
+
+        if dto.token:
             try:
-                reset_token = PasswordResetTokenModel.objects.get(token=dto.token, used=False)
+                reset_token = PasswordResetTokenModel.objects.get(
+                    token=dto.token, used=False, reset_type="email"
+                )
             except PasswordResetTokenModel.DoesNotExist:
                 raise BaseAPIException(
                     detail="Invalid or expired reset token",
                     code="INVALID_RESET_TOKEN",
                     status_code=400,
                 ) from None
-        elif dto.reset_type == "sms" and dto.code:
-            query = PasswordResetTokenModel.objects.filter(
-                code=dto.code, used=False, reset_type="sms"
+        elif dto.code:
+            reset_token = (
+                PasswordResetTokenModel.objects.filter(code=dto.code, used=False, reset_type="sms")
+                .order_by("-created_at")
+                .first()
             )
-            if dto.email:
-                query = query.filter(email=dto.email)
-            if dto.phone_number:
-                query = query.filter(phone_number=dto.phone_number)
-
-            reset_token = query.order_by("-created_at").first()
 
         if not reset_token:
             raise BaseAPIException(
-                detail="Invalid or expired reset code",
+                detail="Invalid or expired reset code/token",
                 code="INVALID_RESET_CODE",
                 status_code=400,
             )

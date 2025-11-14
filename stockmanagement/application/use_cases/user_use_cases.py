@@ -1,5 +1,4 @@
-"""User use cases."""
-
+import logging
 from uuid import UUID, uuid4
 
 from django.utils import timezone
@@ -10,15 +9,18 @@ from application.dto.user_dto import (
     LoginDTO,
     LoginResponseDTO,
     LogoutDTO,
+    OTPRequestDTO,
     RefreshTokenDTO,
     RefreshTokenResponseDTO,
     SessionResponseDTO,
+    SignupResponseDTO,
     UserCreateDTO,
     UserResponseDTO,
 )
 from domain.users.entities import AuthMethod, Device, Session, User, UserRole
 from domain.users.repositories import (
     DeviceRepository,
+    OTPRepository,
     RefreshTokenRepository,
     SessionRepository,
     UserRepository,
@@ -26,6 +28,8 @@ from domain.users.repositories import (
 from domain.users.services import UserDomainService
 from shared.exceptions.base import BaseAPIException
 from shared.services.jwt_blacklist_service import JWTBlacklistService
+
+logger = logging.getLogger(__name__)
 
 
 class CreateUserUseCase:
@@ -53,7 +57,12 @@ class CreateUserUseCase:
 
         name = dto.name
         if not name:
-            name = dto.email.split("@")[0]
+            if dto.email:
+                name = dto.email.split("@")[0]
+            elif dto.phone_number:
+                name = f"user_{dto.phone_number[-4:]}"
+            else:
+                name = "user"
 
         # Create user entity
         user = User(
@@ -62,8 +71,8 @@ class CreateUserUseCase:
             name=name,
             phone_number=dto.phone_number,
             role=dto.role,
-            is_active=True,  # Account is active by default (can be disabled by admin)
-            email_verified=False,  # Email/phone not verified yet
+            is_active=True,
+            email_verified=False,
             is_staff=False,
             is_superuser=False,
             last_login=None,
@@ -97,6 +106,132 @@ class CreateUserUseCase:
         )
 
 
+class SignupUseCase:
+    """Use case for user signup with automatic OTP sending."""
+
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        otp_repository: OTPRepository,
+    ) -> None:
+        """Initialize use case."""
+        self.user_repository = user_repository
+        self.otp_repository = otp_repository
+
+        from application.use_cases.otp_use_cases import RequestOTPUseCase
+
+        self.otp_use_case = RequestOTPUseCase(
+            otp_repository=otp_repository,
+            user_repository=user_repository,
+        )
+
+    def execute(self, dto: UserCreateDTO) -> SignupResponseDTO:
+        """
+        Execute user signup with automatic OTP sending.
+
+        Priority: Email OTP if email is provided, otherwise SMS OTP.
+
+        Args:
+            dto: User creation DTO
+
+        Returns:
+            SignupResponseDTO with OTP delivery information
+
+        Raises:
+            BaseAPIException: If user creation fails or OTP sending fails
+        """
+
+        # Create user
+        create_user_use_case = CreateUserUseCase(user_repository=self.user_repository)
+        user_dto = create_user_use_case.execute(dto)
+
+        logger.info(
+            f"User created successfully - ID: {user_dto.id}, "
+            f"email: {user_dto.email}, phone: {user_dto.phone_number}"
+        )
+
+        otp_type = None
+        otp_destination = None
+        otp_sent = False
+        expires_in_minutes = None
+        if user_dto.email:
+            otp_type = "email"
+            otp_destination = user_dto.email
+            try:
+                logger.debug(f"Sending OTP to email: {user_dto.email}")
+                otp_request_dto = OTPRequestDTO(
+                    email=user_dto.email,
+                )
+                result = self.otp_use_case.execute(otp_request_dto)
+                otp_sent = True
+                expires_in_minutes = result.get("expires_in_minutes", 10)
+                logger.info(
+                    f"OTP sent successfully to {user_dto.email} - "
+                    f"expires in {expires_in_minutes} minutes"
+                )
+            except Exception as otp_error:
+                logger.error(
+                    f"Failed to send OTP on signup for user {user_dto.id} "
+                    f"({user_dto.email}): {str(otp_error)}",
+                    exc_info=True,
+                    extra={"user_id": str(user_dto.id), "email": user_dto.email},
+                )
+        elif user_dto.phone_number:
+            otp_type = "sms"
+            otp_destination = user_dto.phone_number
+            try:
+                logger.debug(f"Sending OTP to phone: {user_dto.phone_number}")
+                otp_request_dto = OTPRequestDTO(
+                    phone_number=user_dto.phone_number,
+                )
+                result = self.otp_use_case.execute(otp_request_dto)
+                otp_sent = True
+                expires_in_minutes = result.get("expires_in_minutes", 10)
+                logger.info(
+                    f"OTP sent successfully to {user_dto.phone_number} - "
+                    f"expires in {expires_in_minutes} minutes"
+                )
+            except Exception as otp_error:
+                logger.error(
+                    f"Failed to send OTP on signup for user {user_dto.id} "
+                    f"({user_dto.phone_number}): {str(otp_error)}",
+                    exc_info=True,
+                    extra={
+                        "user_id": str(user_dto.id),
+                        "phone_number": user_dto.phone_number,
+                    },
+                )
+
+        if otp_sent:
+            if otp_type == "email":
+                destination_description = f"your email ({otp_destination})"
+                check_instruction = "Please check your inbox and verify your account."
+            else:  # SMS
+                destination_description = f"your phone number ({otp_destination})"
+                check_instruction = "Please check your messages and verify your account."
+            message = (
+                f"Account created successfully. "
+                f"An OTP has been sent to {destination_description}. "
+                f"{check_instruction} "
+                f"The OTP will expire in {expires_in_minutes} minutes."
+            )
+        else:
+            # Fallback if OTP sending failed
+            message = (
+                "Account created successfully, but we encountered an issue "
+                "sending the OTP. Please request a new OTP using the "
+                "request OTP endpoint."
+            )
+
+        return SignupResponseDTO(
+            message=message,
+            expires_in_minutes=expires_in_minutes or 0,
+            email=user_dto.email if otp_type == "email" else None,
+            phone_number=user_dto.phone_number if otp_type == "sms" else None,
+            otp_type=otp_type,
+        )
+
+
 class LoginUseCase:
     """Use case for user login."""
 
@@ -115,7 +250,6 @@ class LoginUseCase:
 
     def execute(self, dto: LoginDTO, generate_tokens_func) -> LoginResponseDTO:
         """Execute login with email+password or phone+password."""
-        # Find user by email or phone_number
         user_model = None
         if dto.email:
             user_model = self.user_repository.get_by_email(dto.email)
@@ -129,7 +263,6 @@ class LoginUseCase:
                 status_code=401,
             )
 
-        # Verify password using repository
         if not self.user_repository.verify_password(user_model.id, dto.password):
             raise BaseAPIException(
                 detail="Invalid credentials",
@@ -137,7 +270,6 @@ class LoginUseCase:
                 status_code=401,
             )
 
-        # Check if account is active (not disabled by admin)
         if not user_model.is_active:
             raise BaseAPIException(
                 detail="Your account has been disabled. Please contact support.",
@@ -145,7 +277,6 @@ class LoginUseCase:
                 status_code=403,
             )
 
-        # Check if email is verified
         if not user_model.email_verified:
             raise BaseAPIException(
                 detail="Please verify your email/phone with OTP first.",
@@ -153,7 +284,6 @@ class LoginUseCase:
                 status_code=403,
             )
 
-        # Start session
         self.user_domain_service.start_session(
             user_id=user_model.id,
             device_id=dto.device_id,
@@ -161,7 +291,6 @@ class LoginUseCase:
             user_agent=dto.user_agent,
         )
 
-        # Register or update device
         if dto.device_id:
             device = self.device_repository.get_by_device_id(dto.device_id)
             if device:
@@ -182,10 +311,8 @@ class LoginUseCase:
                 )
                 self.device_repository.create(device)
 
-        # Generate tokens
         tokens = generate_tokens_func(user_model)
 
-        # Create refresh token
         self.user_domain_service.create_refresh_token(
             user_id=user_model.id,
             token=tokens["refresh"],
@@ -236,9 +363,6 @@ class RefreshTokenUseCase:
 
     def execute(self, dto: RefreshTokenDTO, generate_tokens_func) -> RefreshTokenResponseDTO:
         """Execute token refresh."""
-        # First, validate JWT token expiration and blacklist
-        # JWTRefreshToken automatically validates expiration (exp claim)
-        # If expired, it will raise InvalidToken
         try:
             refresh_token_jwt = JWTRefreshToken(dto.refresh_token)
 
@@ -252,21 +376,14 @@ class RefreshTokenUseCase:
                         status_code=401,
                     )
         except InvalidToken as e:
-            # Invalid JWT token format or expired
-            # JWTRefreshToken automatically checks expiration (exp claim)
             raise BaseAPIException(
                 detail=f"Invalid or expired refresh token: {str(e)}",
                 code="INVALID_REFRESH_TOKEN",
                 status_code=401,
             ) from e
         except Exception as e:
-            # Log error but continue with repository check
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(f"Error checking refresh token blacklist: {e}", exc_info=True)
 
-        # Get refresh token from repository
         refresh_token = self.refresh_token_repository.get_by_token(dto.refresh_token)
 
         if not refresh_token or not refresh_token.is_valid():
@@ -276,7 +393,6 @@ class RefreshTokenUseCase:
                 status_code=401,
             )
 
-        # Get user
         user = self.user_repository.get_by_id(refresh_token.user_id)
         if not user or not user.is_active:
             raise BaseAPIException(
@@ -285,28 +401,18 @@ class RefreshTokenUseCase:
                 status_code=404,
             )
 
-        # Blacklist and revoke old refresh token AND its associated access token
-        # This ensures that when a refresh token is used, both the refresh token
-        # and its associated access token become invalid immediately
         try:
             JWTBlacklistService.blacklist_tokens_from_refresh_token(
                 refresh_token_string=dto.refresh_token,
                 user_id=refresh_token.user_id,
             )
         except Exception as e:
-            # Log error but continue with revocation
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(f"Failed to blacklist old refresh/access tokens: {e}", exc_info=True)
 
-        # Revoke old refresh token in our database
         self.user_domain_service.revoke_refresh_token(refresh_token.id)
 
-        # Generate new tokens
         tokens = generate_tokens_func(user)
 
-        # Create new refresh token (rotation)
         self.user_domain_service.create_refresh_token(
             user_id=user.id,
             token=tokens["refresh"],
@@ -339,7 +445,6 @@ class LogoutUseCase:
 
     def execute(self, dto: LogoutDTO) -> None:
         """Execute logout."""
-        # End active sessions
         if dto.logout_all_devices:
             self.user_domain_service.end_user_sessions(self.user_id)
             self.user_domain_service.revoke_all_user_tokens(self.user_id)
@@ -347,7 +452,6 @@ class LogoutUseCase:
             self.user_domain_service.end_user_sessions(self.user_id, dto.device_id)
             self.user_domain_service.revoke_user_device_tokens(self.user_id, dto.device_id)
         else:
-            # End current session (would need to track current session)
             active_sessions = self.session_repository.get_active_sessions_by_user(self.user_id)
             for session in active_sessions:
                 self.user_domain_service.end_session(session.id)
@@ -363,7 +467,6 @@ class GetUserSessionsUseCase:
 
     def execute(self, limit: int = 100, offset: int = 0) -> list[SessionResponseDTO]:
         """Execute getting sessions."""
-        # Use the new method that includes device information
         if hasattr(self.session_repository, "get_user_sessions_with_devices"):
             sessions_with_devices = self.session_repository.get_user_sessions_with_devices(
                 self.user_id, limit, offset
@@ -373,7 +476,6 @@ class GetUserSessionsUseCase:
                 for session, device in sessions_with_devices
             ]
         else:
-            # Fallback to old method if not available
             sessions = self.session_repository.get_user_sessions(self.user_id, limit, offset)
             return [self._to_dto(session) for session in sessions]
 
