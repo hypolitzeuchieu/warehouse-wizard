@@ -9,7 +9,9 @@ from rest_framework import status
 from rest_framework.exceptions import (
     AuthenticationFailed,
     NotAuthenticated,
+    NotFound,
     PermissionDenied,
+    Throttled,
     ValidationError,
 )
 from rest_framework.response import Response
@@ -202,16 +204,73 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
             f"Permission denied: {str(exc)}",
             extra={"context": context},
         )
+        # Extract meaningful message from exception if available
+        error_message = (
+            str(exc.detail)
+            if hasattr(exc, "detail")
+            else "You do not have permission to perform this action."
+        )
         permission_response: dict[str, Any] = {
             "success": False,
             "error": {
                 "code": "PERMISSION_DENIED",
-                "message": "You do not have permission to perform this action.",
+                "message": error_message,
                 "details": {"detail": str(exc)},
             },
             "status_code": status.HTTP_403_FORBIDDEN,
         }
         return Response(permission_response, status=status.HTTP_403_FORBIDDEN)
+
+    if isinstance(exc, NotFound):
+        # Not found is expected - log without traceback
+        logger.info(
+            f"Resource not found: {str(exc)}",
+            extra={"context": context},
+        )
+        # Extract meaningful message from exception if available
+        error_message = (
+            str(exc.detail) if hasattr(exc, "detail") else "The requested resource was not found."
+        )
+        not_found_response: dict[str, Any] = {
+            "success": False,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": error_message,
+                "details": {"detail": str(exc)},
+            },
+            "status_code": status.HTTP_404_NOT_FOUND,
+        }
+        return Response(not_found_response, status=status.HTTP_404_NOT_FOUND)
+
+    if isinstance(exc, Throttled):
+        # Rate limit exceeded - log without traceback
+        logger.info(
+            f"Rate limit exceeded: {str(exc)}",
+            extra={"context": context},
+        )
+        # Extract retry_after from exception if available
+        retry_after = None
+        if hasattr(exc, "wait"):
+            retry_after = int(exc.wait) if exc.wait else None
+
+        error_message = (
+            str(exc.detail)
+            if hasattr(exc, "detail")
+            else "Rate limit exceeded. Please try again later."
+        )
+        throttled_response: dict[str, Any] = {
+            "success": False,
+            "error": {
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": error_message,
+                "details": {
+                    "detail": str(exc),
+                    "retry_after": retry_after,
+                },
+            },
+            "status_code": status.HTTP_429_TOO_MANY_REQUESTS,
+        }
+        return Response(throttled_response, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
     if isinstance(exc, ValidationError):
         # Validation errors are expected - log without traceback
@@ -226,15 +285,36 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
         else:
             validation_details = {"detail": str(exc)}
 
+        # Create a meaningful error message from validation details
+        error_messages = []
+        if isinstance(validation_details, dict):
+            for field, error_list in validation_details.items():
+                if isinstance(error_list, list):
+                    for error in error_list:
+                        if isinstance(error, dict):
+                            error_messages.append(f"{field}: {str(error)}")
+                        else:
+                            field_name = field.replace("_", " ").title()
+                            error_messages.append(f"{field_name}: {str(error)}")
+                else:
+                    field_name = field.replace("_", " ").title()
+                    error_messages.append(f"{field_name}: {str(error_list)}")
+
+        meaningful_message = (
+            ". ".join(error_messages)
+            if error_messages
+            else "Validation error. Please check your input."
+        )
+
         logger.info(
-            f"Validation error: {str(exc)}",
+            f"Validation error: {meaningful_message}",
             extra={"context": context, "details": validation_details},
         )
         validation_response: dict[str, Any] = {
             "success": False,
             "error": {
                 "code": "VALIDATION_ERROR",
-                "message": "Validation error",
+                "message": meaningful_message,
                 "details": validation_details,
             },
             "status_code": status.HTTP_400_BAD_REQUEST,

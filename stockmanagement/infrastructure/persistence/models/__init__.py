@@ -34,5 +34,7 @@ __all__ = [
     # Customer models
     "Customer",
     "CustomerPurchaseHistory",
+    # Credit models
+    "Credit",
+    "CreditPayment",
 ]
-

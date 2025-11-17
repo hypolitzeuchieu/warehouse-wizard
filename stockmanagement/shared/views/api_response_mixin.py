@@ -6,7 +6,14 @@ import logging
 from typing import Any
 
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import (
+    AuthenticationFailed,
+    NotAuthenticated,
+    NotFound,
+    PermissionDenied,
+    Throttled,
+    ValidationError,
+)
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
@@ -170,7 +177,7 @@ class APIResponseMixin:
         context: dict[str, Any] | None = None,
     ) -> Response:
         """
-        Return a paginated response.
+        Return a paginated response with security validation.
 
         Args:
             request: DRF request object
@@ -182,12 +189,12 @@ class APIResponseMixin:
         Returns:
             Response with paginated format
         """
+        from shared.security.query_params_validator import QueryParamsValidator
+
         paginator = PageNumberPagination()
-        page_size = request.query_params.get("page_size", 10)
-        try:
-            page_size = int(page_size)
-        except (ValueError, TypeError):
-            page_size = 10
+        page_size = QueryParamsValidator.validate_page_size(
+            request.query_params.get("page_size"), default=20
+        )
 
         paginator.page_size = page_size
         page = paginator.paginate_queryset(queryset, request)
@@ -271,6 +278,55 @@ class APIResponseMixin:
                 errors=formatted_errors,
                 status_code=status.HTTP_400_BAD_REQUEST,
                 code="VALIDATION_ERROR",
+            )
+
+        # Handle authentication/authorization errors that bubble up to the view layer.
+        if isinstance(exc, NotAuthenticated):
+            logger.info("Authentication credentials not provided", exc_info=False)
+            return self.error(
+                message="Authentication credentials were not provided.",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="NOT_AUTHENTICATED",
+            )
+
+        if isinstance(exc, AuthenticationFailed):
+            logger.info(f"Authentication failed: {str(exc)}", exc_info=False)
+            return self.error(
+                message="Invalid authentication credentials.",
+                errors={"detail": str(exc)},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="AUTHENTICATION_FAILED",
+            )
+
+        if isinstance(exc, PermissionDenied):
+            logger.info(f"Permission denied: {str(exc)}", exc_info=False)
+            return self.error(
+                message=str(getattr(exc, "detail", exc)) or "Permission denied.",
+                errors={"detail": str(exc)},
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="PERMISSION_DENIED",
+            )
+
+        if isinstance(exc, NotFound):
+            logger.info(f"Resource not found: {str(exc)}", exc_info=False)
+            return self.error(
+                message=str(getattr(exc, "detail", exc)) or "Resource not found.",
+                errors={"detail": str(exc)},
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="NOT_FOUND",
+            )
+
+        if isinstance(exc, Throttled):
+            retry_after = int(exc.wait) if getattr(exc, "wait", None) else None
+            logger.info("Rate limit exceeded", extra={"retry_after": retry_after}, exc_info=False)
+            details: dict[str, Any] = {"detail": str(exc)}
+            if retry_after is not None:
+                details["retry_after"] = str(retry_after)
+            return self.error(
+                message=str(getattr(exc, "detail", exc)) or "Rate limit exceeded.",
+                errors=details,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                code="RATE_LIMIT_EXCEEDED",
             )
 
         # Handle other exceptions

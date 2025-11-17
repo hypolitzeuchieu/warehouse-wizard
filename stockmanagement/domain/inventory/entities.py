@@ -92,7 +92,9 @@ class Product:
     def check_expiry(self) -> bool:
         """Check if product is expired."""
         if self.expiry_date:
-            return datetime.utcnow() > self.expiry_date
+            from django.utils import timezone
+
+            return timezone.now() > self.expiry_date
         return False
 
 

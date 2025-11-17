@@ -47,7 +47,7 @@ class UserResponseDTO:
 
     id: UUID
     email: str
-    name: str  # Renamed from username
+    name: str
     role: str
     is_active: bool
     email_verified: bool

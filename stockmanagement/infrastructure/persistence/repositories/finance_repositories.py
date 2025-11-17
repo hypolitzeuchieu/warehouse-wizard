@@ -134,7 +134,9 @@ class SalaryRepositoryImpl(SalaryRepository):
 
     def get_current_salary(self, business_id: UUID, user_id: UUID) -> Salary | None:
         """Get current active salary for a user."""
-        now = datetime.utcnow()
+        from django.utils import timezone
+
+        now = timezone.now()
         try:
             salary_model = (
                 SalaryModel.objects.filter(

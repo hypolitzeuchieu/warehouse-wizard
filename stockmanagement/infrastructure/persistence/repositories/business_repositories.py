@@ -187,6 +187,22 @@ class BusinessMemberRepositoryImpl(BusinessMemberRepository):
             is_active=True,
         ).exists()
 
+    def get_by_business_and_user(self, business_id: UUID, user_id: UUID) -> BusinessMember | None:
+        """Get business member by business and user."""
+        try:
+            member_model = (
+                BusinessMemberModel.objects.filter(
+                    business_id=business_id, user_id=user_id, is_active=True
+                )
+                .select_related("business", "user")
+                .first()
+            )
+            if member_model:
+                return self._to_entity(member_model)
+            return None
+        except BusinessMemberModel.DoesNotExist:
+            return None
+
     def _to_entity(self, member_model: BusinessMemberModel) -> BusinessMember:
         """Convert Django model to domain entity."""
         return BusinessMember(

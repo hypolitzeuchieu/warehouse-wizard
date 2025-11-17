@@ -19,6 +19,12 @@ class ExpenseType(str, Enum):
     MAINTENANCE = "MAINTENANCE"
     TAX = "TAX"
     RENT = "RENT"
+    MARKETING = "MARKETING"
+    INSURANCE = "INSURANCE"
+    TRANSPORT = "TRANSPORT"
+    UTILITIES = "UTILITIES"
+    OFFICE_SUPPLIES = "OFFICE_SUPPLIES"
+    PROFESSIONAL_SERVICES = "PROFESSIONAL_SERVICES"
 
 
 @dataclass
@@ -64,6 +70,21 @@ class Salary:
     def calculate_net_salary(self) -> Decimal:
         """Calculate net salary."""
         return self.amount - self.deductions + self.bonuses
+
+    def is_active(self, current_date: datetime | None = None) -> bool:
+        """Check if salary is currently active."""
+        if current_date is None:
+            from django.utils import timezone
+
+            current_date = timezone.now()
+
+        if current_date < self.effective_from:
+            return False
+
+        if self.effective_to is None:
+            return True
+
+        return current_date <= self.effective_to
 
 
 @dataclass

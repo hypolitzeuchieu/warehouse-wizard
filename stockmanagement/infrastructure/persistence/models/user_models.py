@@ -25,8 +25,6 @@ class RetailPulseUser(AbstractUser, BaseModel):
         max_length=150, null=True, blank=True, help_text="User's display name (not unique)"
     )
 
-    USERNAME_FIELD = "email"  # Use email for authentication instead of username
-    REQUIRED_FIELDS: list[str] = []  # No required fields besides email
     phone_number = models.CharField(
         max_length=30,
         unique=True,
@@ -35,7 +33,7 @@ class RetailPulseUser(AbstractUser, BaseModel):
         help_text="Unique phone number for login (required if email is not provided)",
     )
     address = models.TextField(null=True, blank=True)
-    avatar_url = models.URLField(max_length=500, null=True, blank=True)  # Google or custom avatar
+    avatar_url = models.URLField(max_length=500, null=True, blank=True)
     auth_method = models.CharField(
         max_length=20,
         choices=[
@@ -63,12 +61,14 @@ class RetailPulseUser(AbstractUser, BaseModel):
     )
     last_login = models.DateTimeField(null=True, blank=True)
 
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS: list[str] = []
+
     class Meta:
         db_table = "retailpulse_users"
         verbose_name = "RetailPulse User"
         verbose_name_plural = "RetailPulse Users"
         ordering = ["name"]
-        # Ensure email or phone_number is provided
         constraints = [
             models.CheckConstraint(
                 check=models.Q(email__isnull=False) | models.Q(phone_number__isnull=False),
