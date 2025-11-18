@@ -3,7 +3,15 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 from uuid import UUID
+
+
+class CustomerType(str, Enum):
+    """Customer type enumeration."""
+
+    REGULAR = "REGULAR"
+    WHOLESALER = "WHOLESALER"
 
 
 @dataclass
@@ -16,6 +24,7 @@ class Customer:
     email: str | None
     phone_number: str | None
     address: str | None
+    customer_type: CustomerType
     loyalty_points: Decimal
     total_purchases: Decimal
     created_at: datetime
@@ -25,6 +34,10 @@ class Customer:
         """Validate customer data."""
         if not self.name:
             raise ValueError("Customer name is required")
+
+    def is_wholesaler(self) -> bool:
+        """Check if customer is a wholesaler."""
+        return self.customer_type == CustomerType.WHOLESALER
 
 
 @dataclass

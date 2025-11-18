@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from domain.customer.entities import Customer, CustomerPurchaseHistory
+from domain.customer.entities import Customer, CustomerPurchaseHistory, CustomerType
 from domain.customer.repositories import (
     CustomerPurchaseHistoryRepository,
     CustomerRepository,
@@ -52,11 +52,17 @@ class CustomerRepositoryImpl(CustomerRepository):
         except CustomerModel.DoesNotExist:
             return None
 
-    def get_by_business(self, business_id: UUID, limit: int = 100) -> list[Customer]:
-        """Get customers for a business."""
-        customers = CustomerModel.objects.filter(business_id=business_id).select_related(
-            "business"
-        )[:limit]
+    def get_by_business(
+        self,
+        business_id: UUID,
+        customer_type: str | None = None,
+        limit: int = 100,
+    ) -> list[Customer]:
+        """Get customers for a business with optional type filter."""
+        query = CustomerModel.objects.filter(business_id=business_id).select_related("business")
+        if customer_type:
+            query = query.filter(customer_type=customer_type)
+        customers = query[:limit]
         return [self._to_entity(customer) for customer in customers]
 
     def create(self, customer: Customer) -> Customer:
@@ -68,6 +74,7 @@ class CustomerRepositoryImpl(CustomerRepository):
             email=customer.email,
             phone_number=customer.phone_number,
             address=customer.address,
+            customer_type=customer.customer_type.value,
             loyalty_points=customer.loyalty_points,
             total_purchases=customer.total_purchases,
         )
@@ -81,6 +88,7 @@ class CustomerRepositoryImpl(CustomerRepository):
         customer_model.email = customer.email
         customer_model.phone_number = customer.phone_number
         customer_model.address = customer.address
+        customer_model.customer_type = customer.customer_type.value
         customer_model.loyalty_points = customer.loyalty_points
         customer_model.total_purchases = customer.total_purchases
         customer_model.save()
@@ -99,6 +107,7 @@ class CustomerRepositoryImpl(CustomerRepository):
             email=customer_model.email,
             phone_number=customer_model.phone_number,
             address=customer_model.address,
+            customer_type=CustomerType(customer_model.customer_type),
             loyalty_points=customer_model.loyalty_points,
             total_purchases=customer_model.total_purchases,
             created_at=customer_model.created_at,

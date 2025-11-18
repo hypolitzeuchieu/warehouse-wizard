@@ -89,3 +89,8 @@ class BusinessMemberRepository(ABC):
     def is_manager(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user is a manager of the business."""
         pass
+
+    @abstractmethod
+    def get_by_business_and_user(self, business_id: UUID, user_id: UUID) -> BusinessMember | None:
+        """Get business member by business and user."""
+        pass

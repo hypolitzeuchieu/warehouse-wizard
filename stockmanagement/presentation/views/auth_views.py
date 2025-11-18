@@ -54,10 +54,10 @@ from presentation.serializers.user_serializers import (
     ResetPasswordSerializer,
     UserCreateSerializer,
 )
+from shared.authentication.jwt import generate_tokens
+from shared.authentication.jwt_blacklist_service import JWTBlacklistService
 from shared.rate_limiting.decorators import get_client_ip, rate_limit
-from shared.services.jwt_blacklist_service import JWTBlacklistService
 from shared.utils.device import get_or_detect_device_type
-from shared.utils.jwt import generate_tokens
 from shared.views.functional_view_helper import FunctionalViewHelper
 
 logger = logging.getLogger(__name__)

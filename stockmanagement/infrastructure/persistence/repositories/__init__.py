@@ -4,6 +4,10 @@ from infrastructure.persistence.repositories.business_repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
 )
+from infrastructure.persistence.repositories.credit_repositories import (
+    CreditPaymentRepositoryImpl,
+    CreditRepositoryImpl,
+)
 from infrastructure.persistence.repositories.customer_repositories import (
     CustomerPurchaseHistoryRepositoryImpl,
     CustomerRepositoryImpl,
@@ -73,6 +77,9 @@ __all__ = [
     # Customer repositories
     "CustomerRepositoryImpl",
     "CustomerPurchaseHistoryRepositoryImpl",
+    # Credit repositories
+    "CreditRepositoryImpl",
+    "CreditPaymentRepositoryImpl",
     # OTP repositories
     "OTPRepositoryImpl",
 ]

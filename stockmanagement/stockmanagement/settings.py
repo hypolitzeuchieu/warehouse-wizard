@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from datetime import timedelta
 from pathlib import Path
 
@@ -40,6 +41,10 @@ INSTALLED_APPS = [
     "drf_yasg",
     "rest_framework_simplejwt.token_blacklist",
 ]
+
+# Add debug toolbar only in DEBUG mode
+if DEBUG:
+    INSTALLED_APPS += ["debug_toolbar"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -92,8 +97,8 @@ JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS),
-    "ROTATE_REFRESH_TOKENS": True,  # Issue new refresh token on each refresh
-    "BLACKLIST_AFTER_ROTATION": True,  # Blacklist old refresh tokens
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
     "ALGORITHM": JWT_ALGORITHM,
     "SIGNING_KEY": JWT_SECRET_KEY,
     "VERIFYING_KEY": None,
@@ -121,20 +126,36 @@ MIDDLEWARE = [
     "shared.middleware.doc_auth.DocumentationAuthMiddleware",
 ]
 
+# Add debug toolbar middleware only in DEBUG mode
+if DEBUG:
+    # Insert after CommonMiddleware (index 4)
+    MIDDLEWARE.insert(5, "debug_toolbar.middleware.DebugToolbarMiddleware")
+
 # CORS settings
-CORS_ALLOWED_ALL_ORIGINS = True
+CORS_ALLOWED_ALL_ORIGINS = True  # ⚠️ False in production
 CORS_ALLOWED_ORIGINS = [
     os.getenv("FRONTEND_URL"),
 ]
 CORS_ORIGIN_ALLOW_ALL = False
-CSRF_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SECURE = False
-
-# If using CORS headers
 CORS_EXPOSE_HEADERS = ["Content-Type", "X-CSRFToken", "X-Refresh-Token"]
 CORS_ALLOW_CREDENTIALS = True
+
+# CSRF settings
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SECURE = False  # ⚠️ True in production HTTPS
+
+# Session settings
+SESSION_COOKIE_SECURE = False  # ⚠️ True in production HTTPS
+SESSION_COOKIE_SAMESITE = "Lax"
+
+# Security settings
+SECURE_HSTS_SECONDS = 31536000  # HSTS
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_SSL_REDIRECT = False  # ⚠️ True in production HTTPS
 
 ROOT_URLCONF = "stockmanagement.urls"
 
@@ -248,6 +269,45 @@ DOC_PASSWORD = os.getenv("DOC_PASSWORD", None)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", None)
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", None)
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", None)
+
+# Django Debug Toolbar Settings
+if DEBUG:
+    hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
+    INTERNAL_IPS = [
+        "127.0.0.1",
+        "localhost",
+    ]
+    # Add gateway IPs for Docker/remote development
+    for ip in ips:
+        gateway_ip = ip[: ip.rfind(".")] + ".1"
+        if gateway_ip not in INTERNAL_IPS:
+            INTERNAL_IPS.append(gateway_ip)
+
+    # Configure Debug Toolbar panels
+    DEBUG_TOOLBAR_CONFIG = {
+        "SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG,
+        "SHOW_COLLAPSED": True,
+        "HIDE_DJANGO_SQL": False,
+        "ENABLE_STACKTRACES": True,
+        "SHOW_TEMPLATE_CONTEXT": True,
+    }
+
+    # Enable all panels for maximum debugging information
+    DEBUG_TOOLBAR_PANELS = [
+        "debug_toolbar.panels.versions.VersionsPanel",
+        "debug_toolbar.panels.timer.TimerPanel",
+        "debug_toolbar.panels.settings.SettingsPanel",
+        "debug_toolbar.panels.headers.HeadersPanel",
+        "debug_toolbar.panels.request.RequestPanel",
+        "debug_toolbar.panels.sql.SQLPanel",
+        "debug_toolbar.panels.staticfiles.StaticFilesPanel",
+        "debug_toolbar.panels.templates.TemplatesPanel",
+        "debug_toolbar.panels.cache.CachePanel",
+        "debug_toolbar.panels.signals.SignalsPanel",
+        "debug_toolbar.panels.logging.LoggingPanel",
+        "debug_toolbar.panels.redirects.RedirectsPanel",
+        "debug_toolbar.panels.profiling.ProfilingPanel",
+    ]
 
 # Password Reset Settings
 PASSWORD_RESET_EXPIRY_MINUTES = int(os.getenv("PASSWORD_RESET_EXPIRY_MINUTES", "10"))

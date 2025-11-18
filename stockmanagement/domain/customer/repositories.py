@@ -25,8 +25,13 @@ class CustomerRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_business(self, business_id: UUID, limit: int = 100) -> list[Customer]:
-        """Get customers for a business."""
+    def get_by_business(
+        self,
+        business_id: UUID,
+        customer_type: str | None = None,
+        limit: int = 100,
+    ) -> list[Customer]:
+        """Get customers for a business with optional type filter."""
         pass
 
     @abstractmethod

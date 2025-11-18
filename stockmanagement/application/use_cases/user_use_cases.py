@@ -17,6 +17,7 @@ from application.dto.user_dto import (
     UserCreateDTO,
     UserResponseDTO,
 )
+from application.use_cases.otp_use_cases import RequestOTPUseCase
 from domain.users.entities import AuthMethod, Device, Session, User, UserRole
 from domain.users.repositories import (
     DeviceRepository,
@@ -26,8 +27,8 @@ from domain.users.repositories import (
     UserRepository,
 )
 from domain.users.services import UserDomainService
+from shared.authentication.jwt_blacklist_service import JWTBlacklistService
 from shared.exceptions.base import BaseAPIException
-from shared.services.jwt_blacklist_service import JWTBlacklistService
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,12 @@ class CreateUserUseCase:
         if dto.role == UserRole.MANAGER:
             raise BaseAPIException(
                 detail="Users cannot signup with manager role",
+                code="INVALID_ROLE",
+                status_code=400,
+            )
+        if dto.role == UserRole.OWNER:
+            raise BaseAPIException(
+                detail="Users cannot signup with owner role",
                 code="INVALID_ROLE",
                 status_code=400,
             )
@@ -117,8 +124,6 @@ class SignupUseCase:
         """Initialize use case."""
         self.user_repository = user_repository
         self.otp_repository = otp_repository
-
-        from application.use_cases.otp_use_cases import RequestOTPUseCase
 
         self.otp_use_case = RequestOTPUseCase(
             otp_repository=otp_repository,

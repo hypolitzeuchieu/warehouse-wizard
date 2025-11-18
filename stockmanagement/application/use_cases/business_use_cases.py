@@ -1,5 +1,6 @@
 """Business use cases."""
 
+import logging
 from uuid import UUID, uuid4
 
 from django.utils import timezone
@@ -19,7 +20,9 @@ from domain.business.repositories import (
 from domain.business.services import BusinessDomainService
 from domain.users.entities import UserRole
 from domain.users.repositories import UserRepository
-from shared.exceptions.base import BaseAPIException
+from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class CreateBusinessUseCase:
@@ -41,26 +44,23 @@ class CreateBusinessUseCase:
         # Get user and verify they are active
         user = self.user_repository.get_by_id(self.owner_id)
         if not user:
-            raise BaseAPIException(
+            raise NotFoundError(
                 detail="User not found",
                 code="USER_NOT_FOUND",
-                status_code=404,
             )
 
         if not user.is_active:
-            raise BaseAPIException(
+            raise ForbiddenError(
                 detail="User account is not active. Please verify your OTP first.",
                 code="ACCOUNT_INACTIVE",
-                status_code=403,
             )
 
         # Check if unique_name already exists
         existing = self.business_repository.get_by_unique_name(dto.unique_name)
         if existing:
-            raise BaseAPIException(
+            raise BadRequestError(
                 detail="Business with this unique name already exists",
                 code="UNIQUE_NAME_EXISTS",
-                status_code=400,
             )
 
         # Create business entity
@@ -82,6 +82,19 @@ class CreateBusinessUseCase:
         )
 
         business = self.business_repository.create(business)
+
+        # Generate and upload QR code
+        try:
+            from shared.services.qr_code_service import QRCodeService
+
+            qr_service = QRCodeService()
+            qr_code_url = qr_service.upload_business_qr_code(business.id)
+            business.qr_code_url = qr_code_url
+            business = self.business_repository.update(business)
+            logger.info(f"QR code generated and uploaded for business {business.id}")
+        except Exception as e:
+            logger.warning(f"Failed to generate QR code for business {business.id}: {str(e)}")
+            # Continue without QR code - it can be generated later
 
         # Change user role to OWNER if not already
         if user.role != UserRole.OWNER:
@@ -132,17 +145,15 @@ class UpdateBusinessUseCase:
         # Check permissions
         business = self.business_repository.get_by_id(self.business_id)
         if not business:
-            raise BaseAPIException(
+            raise NotFoundError(
                 detail="Business not found",
                 code="BUSINESS_NOT_FOUND",
-                status_code=404,
             )
 
         if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
-            raise BaseAPIException(
+            raise ForbiddenError(
                 detail="You don't have permission to update this business",
                 code="PERMISSION_DENIED",
-                status_code=403,
             )
 
         # Update business
@@ -207,10 +218,9 @@ class DeleteBusinessUseCase:
         if not self.business_domain_service.can_user_delete_business(
             self.business_id, self.user_id
         ):
-            raise BaseAPIException(
+            raise ForbiddenError(
                 detail="Only the owner can delete the business",
                 code="PERMISSION_DENIED",
-                status_code=403,
             )
 
         self.business_repository.delete(self.business_id)
@@ -238,10 +248,9 @@ class AddBusinessMemberUseCase:
         """Execute adding business member."""
         # Check permissions
         if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
-            raise BaseAPIException(
+            raise ForbiddenError(
                 detail="You don't have permission to add members",
                 code="PERMISSION_DENIED",
-                status_code=403,
             )
 
         # Check if user is already a member
@@ -249,10 +258,9 @@ class AddBusinessMemberUseCase:
             self.business_id, active_only=True
         )
         if any(member.user_id == dto.user_id for member in existing_members):
-            raise BaseAPIException(
+            raise BadRequestError(
                 detail="User is already a member of this business",
                 code="USER_ALREADY_MEMBER",
-                status_code=400,
             )
 
         # Validate role - only owner can add managers
@@ -260,10 +268,9 @@ class AddBusinessMemberUseCase:
             if not self.business_domain_service.can_user_manage_managers(
                 self.business_id, self.user_id
             ):
-                raise BaseAPIException(
+                raise ForbiddenError(
                     detail="Only the owner can add managers",
                     code="PERMISSION_DENIED",
-                    status_code=403,
                 )
 
         # Create business member
@@ -317,10 +324,9 @@ class RemoveBusinessMemberUseCase:
         """Execute removing business member."""
         # Check permissions
         if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
-            raise BaseAPIException(
+            raise ForbiddenError(
                 detail="You don't have permission to remove members",
                 code="PERMISSION_DENIED",
-                status_code=403,
             )
 
         # Check if member is a manager - only owner can remove managers
@@ -329,10 +335,114 @@ class RemoveBusinessMemberUseCase:
             if not self.business_domain_service.can_user_manage_managers(
                 self.business_id, self.user_id
             ):
-                raise BaseAPIException(
+                raise ForbiddenError(
                     detail="Only the owner can remove managers",
                     code="PERMISSION_DENIED",
-                    status_code=403,
                 )
 
         self.business_member_repository.remove(member_id)
+
+
+class GetBusinessUseCase:
+    """Use case for getting a business by ID."""
+
+    def __init__(
+        self,
+        business_repository: BusinessRepository,
+        business_domain_service: BusinessDomainService,
+        business_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Initialize use case."""
+        self.business_repository = business_repository
+        self.business_domain_service = business_domain_service
+        self.business_id = business_id
+        self.user_id = user_id
+
+    def execute(self) -> BusinessResponseDTO:
+        """Execute getting business."""
+        business = self.business_repository.get_by_id(self.business_id)
+        if not business:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
+
+        # Check if user has access
+        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this business",
+                code="PERMISSION_DENIED",
+            )
+
+        return self._to_dto(business)
+
+    def _to_dto(self, business: Business) -> BusinessResponseDTO:
+        """Convert business entity to DTO."""
+        return BusinessResponseDTO(
+            id=business.id,
+            name=business.name,
+            unique_name=business.unique_name,
+            owner_id=business.owner_id,
+            description=business.description,
+            address=business.address,
+            phone_number=business.phone_number,
+            email=business.email,
+            qr_code_url=business.qr_code_url,
+            logo_url=business.logo_url,
+            is_active=business.is_active,
+            settings=business.settings,
+            created_at=business.created_at,
+            updated_at=business.updated_at,
+        )
+
+
+class ListBusinessesUseCase:
+    """Use case for listing businesses for a user."""
+
+    def __init__(
+        self,
+        business_repository: BusinessRepository,
+        business_member_repository: BusinessMemberRepository,
+        user_id: UUID,
+    ) -> None:
+        """Initialize use case."""
+        self.business_repository = business_repository
+        self.business_member_repository = business_member_repository
+        self.user_id = user_id
+
+    def execute(self) -> list[BusinessResponseDTO]:
+        """Execute listing businesses."""
+        # Get businesses owned by user
+        owned_businesses = self.business_repository.get_by_owner(self.user_id)
+
+        # Get businesses where user is a member
+        member_businesses = self.business_member_repository.get_user_businesses(self.user_id)
+
+        # Combine and deduplicate
+        all_businesses: list[Business] = list(owned_businesses)
+        for member in member_businesses:
+            business = self.business_repository.get_by_id(member.business_id)
+            if business and business.id not in {b.id for b in all_businesses}:
+                all_businesses.append(business)
+
+        return [self._to_dto(business) for business in all_businesses]
+
+    def _to_dto(self, business: Business) -> BusinessResponseDTO:
+        """Convert business entity to DTO."""
+        return BusinessResponseDTO(
+            id=business.id,
+            name=business.name,
+            unique_name=business.unique_name,
+            owner_id=business.owner_id,
+            description=business.description,
+            address=business.address,
+            phone_number=business.phone_number,
+            email=business.email,
+            qr_code_url=business.qr_code_url,
+            logo_url=business.logo_url,
+            is_active=business.is_active,
+            settings=business.settings,
+            created_at=business.created_at,
+            updated_at=business.updated_at,
+        )

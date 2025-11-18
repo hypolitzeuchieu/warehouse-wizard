@@ -12,6 +12,12 @@ from infrastructure.persistence.models.business_models import Business
 
 class Customer(BaseModel):
     """Customer model."""
+
+    CUSTOMER_TYPE_CHOICES = [
+        ("REGULAR", "Regular"),
+        ("WHOLESALER", "Wholesaler"),
+    ]
+
     business = models.ForeignKey(
         Business,
         on_delete=models.CASCADE,
@@ -23,12 +29,11 @@ class Customer(BaseModel):
     email = models.EmailField(null=True, blank=True)
     phone_number = models.CharField(max_length=30, null=True, blank=True)
     address = models.TextField(null=True, blank=True)
-    loyalty_points = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
+    customer_type = models.CharField(
+        max_length=20, choices=CUSTOMER_TYPE_CHOICES, default="REGULAR"
     )
-    total_purchases = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
-    )
+    loyalty_points = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    total_purchases = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
 
     class Meta:
         db_table = "customers"
@@ -46,6 +51,7 @@ class Customer(BaseModel):
 
 class CustomerPurchaseHistory(BaseModel):
     """Customer purchase history model."""
+
     customer = models.ForeignKey(
         Customer, on_delete=models.CASCADE, related_name="purchase_history"
     )
@@ -72,4 +78,3 @@ class CustomerPurchaseHistory(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.customer.name} - {self.total_amount} ({self.purchase_date.date()})"
-

@@ -141,7 +141,6 @@ class OTP:
 
     def is_valid(self) -> bool:
         """Check if OTP is valid (not expired and not verified)."""
-        from django.utils import timezone
 
         return (
             not self.verified

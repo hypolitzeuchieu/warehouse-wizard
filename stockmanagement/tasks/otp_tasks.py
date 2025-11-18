@@ -13,14 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_otp_email_task(self, email: str, otp_code: str, purpose: str | None = None) -> bool:
+def send_otp_email_task(self, email: str, otp_code: str) -> bool:
     """
     Send OTP email asynchronously via Celery.
 
     Args:
         email: Recipient email address
         otp_code: OTP code to send
-        purpose: Optional purpose (deprecated, kept for backward compatibility)
 
     Returns:
         True if email sent successfully, False otherwise
@@ -46,14 +45,13 @@ def send_otp_email_task(self, email: str, otp_code: str, purpose: str | None = N
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_otp_sms_task(self, phone_number: str, otp_code: str, purpose: str | None = None) -> bool:
+def send_otp_sms_task(self, phone_number: str, otp_code: str) -> bool:
     """
     Send OTP SMS asynchronously via Celery.
 
     Args:
         phone_number: Recipient phone number
         otp_code: OTP code to send
-        purpose: Optional purpose (deprecated, kept for backward compatibility)
 
     Returns:
         True if SMS sent successfully, False otherwise
