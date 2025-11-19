@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -11,12 +12,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.business_list_filter_dto import BusinessListFilterDTO
+from application.dto.business_member_list_filter_dto import BusinessMemberListFilterDTO
 from application.use_cases.business_use_cases import (
     AddBusinessMemberUseCase,
     CreateBusinessUseCase,
     DeleteBusinessUseCase,
     GetBusinessUseCase,
     ListBusinessesUseCase,
+    ListBusinessMembersUseCase,
     RemoveBusinessMemberUseCase,
     UpdateBusinessUseCase,
 )
@@ -29,6 +33,8 @@ from infrastructure.persistence.repositories import (
 from presentation.serializers.business_serializers import (
     BusinessCreateSerializer,
     BusinessMemberCreateSerializer,
+    BusinessMemberSerializer,
+    BusinessResponseSerializer,
     BusinessUpdateSerializer,
 )
 from shared.views.base_viewset import BaseViewSet
@@ -55,6 +61,17 @@ class BusinessViewSet(BaseViewSet):
     def list(self, request: Request) -> Response:
         """List all businesses for the authenticated user."""
         try:
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["name", "unique_name"],
+                order_fields=["name", "created_at", "updated_at"],
+                filter_definitions={
+                    "name": {"type": "string", "max_length": 255},
+                    "is_active": {"type": "boolean"},
+                },
+            )
+            filter_dto = BusinessListFilterDTO.from_payload(filter_payload)
+
             use_case = ListBusinessesUseCase(
                 business_repository=BusinessRepositoryImpl(),
                 business_member_repository=BusinessMemberRepositoryImpl(),
@@ -62,31 +79,24 @@ class BusinessViewSet(BaseViewSet):
             )
             businesses = use_case.execute()
 
-            # Convert DTOs to dict for response
-            data = [
-                {
-                    "id": str(business.id),
-                    "name": business.name,
-                    "unique_name": business.unique_name,
-                    "owner_id": str(business.owner_id),
-                    "description": business.description,
-                    "address": business.address,
-                    "phone_number": business.phone_number,
-                    "email": business.email,
-                    "qr_code_url": business.qr_code_url,
-                    "logo_url": business.logo_url,
-                    "is_active": business.is_active,
-                    "settings": business.settings,
-                    "created_at": business.created_at.isoformat(),
-                    "updated_at": business.updated_at.isoformat(),
-                }
-                for business in businesses
-            ]
+            if filter_dto.is_active is not None:
+                businesses = [
+                    business
+                    for business in businesses
+                    if business.is_active == filter_dto.is_active
+                ]
 
-            return self.success(
+            businesses = self.apply_filtering_to_items(
+                businesses,
+                filter_payload,
+                name_fields=["name", "unique_name"],
+            )
+
+            return self.paginated_response(
+                request=request,
+                queryset=businesses,
+                serializer_class=BusinessResponseSerializer,
                 message="Businesses retrieved successfully",
-                data=data,
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)
@@ -95,7 +105,11 @@ class BusinessViewSet(BaseViewSet):
         operation_summary="Create business",
         operation_description="Create a new business. User becomes OWNER automatically.",
         request_body=BusinessCreateSerializer,
-        responses={201: "Business created", 400: "Validation error", 401: "Unauthorized"},
+        responses={
+            201: BusinessResponseSerializer,
+            400: "Bad Request",
+            401: "Unauthorized",
+        },
         tags=["Business"],
     )
     def create(self, request: Request) -> Response:
@@ -112,34 +126,20 @@ class BusinessViewSet(BaseViewSet):
                 owner_id=request.user.id,
             )
             business_dto = use_case.execute(dto)
+            business_data = BusinessResponseSerializer.from_dto(business_dto)
 
-            # Get updated user info to return new role
             user = UserRepositoryImpl().get_by_id(request.user.id)
+
+            business_data["user"] = {
+                "id": str(user.id),
+                "email": user.email or "",
+                "name": user.name,
+                "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+            }
 
             return self.success(
                 message="Business created successfully. Your role has been updated to OWNER.",
-                data={
-                    "id": str(business_dto.id),
-                    "name": business_dto.name,
-                    "unique_name": business_dto.unique_name,
-                    "owner_id": str(business_dto.owner_id),
-                    "description": business_dto.description,
-                    "address": business_dto.address,
-                    "phone_number": business_dto.phone_number,
-                    "email": business_dto.email,
-                    "qr_code_url": business_dto.qr_code_url,
-                    "logo_url": business_dto.logo_url,
-                    "is_active": business_dto.is_active,
-                    "settings": business_dto.settings,
-                    "created_at": business_dto.created_at.isoformat(),
-                    "updated_at": business_dto.updated_at.isoformat(),
-                    "user": {
-                        "id": str(user.id),
-                        "email": user.email or "",
-                        "name": user.name,
-                        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-                    },
-                },
+                data=business_data,
                 status_code=status.HTTP_201_CREATED,
             )
         except Exception as e:
@@ -148,7 +148,11 @@ class BusinessViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Get business",
         operation_description="Get business details by ID.",
-        responses={200: "Business details", 403: "Permission denied", 404: "Business not found"},
+        responses={
+            200: BusinessResponseSerializer,
+            403: "Permission denied",
+            404: "Business not found",
+        },
         tags=["Business"],
     )
     def retrieve(self, request: Request, pk: UUID) -> Response:
@@ -162,24 +166,11 @@ class BusinessViewSet(BaseViewSet):
             )
             business_dto = use_case.execute()
 
+            business_data = BusinessResponseSerializer.from_dto(business_dto)
+
             return self.success(
                 message="Business retrieved successfully",
-                data={
-                    "id": str(business_dto.id),
-                    "name": business_dto.name,
-                    "unique_name": business_dto.unique_name,
-                    "owner_id": str(business_dto.owner_id),
-                    "description": business_dto.description,
-                    "address": business_dto.address,
-                    "phone_number": business_dto.phone_number,
-                    "email": business_dto.email,
-                    "qr_code_url": business_dto.qr_code_url,
-                    "logo_url": business_dto.logo_url,
-                    "is_active": business_dto.is_active,
-                    "settings": business_dto.settings,
-                    "created_at": business_dto.created_at.isoformat(),
-                    "updated_at": business_dto.updated_at.isoformat(),
-                },
+                data=business_data,
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -189,7 +180,11 @@ class BusinessViewSet(BaseViewSet):
         operation_summary="Update business",
         operation_description="Update business details. Only owner and managers can update.",
         request_body=BusinessUpdateSerializer,
-        responses={200: "Business updated", 403: "Permission denied", 404: "Business not found"},
+        responses={
+            200: BusinessResponseSerializer,
+            403: "Permission denied",
+            404: "Business not found",
+        },
         tags=["Business"],
     )
     def update(self, request: Request, pk: UUID) -> Response:
@@ -208,20 +203,11 @@ class BusinessViewSet(BaseViewSet):
             )
             business_dto = use_case.execute(dto)
 
+            business_data = BusinessResponseSerializer.from_dto(business_dto)
+
             return self.success(
                 message="Business updated successfully",
-                data={
-                    "id": str(business_dto.id),
-                    "name": business_dto.name,
-                    "unique_name": business_dto.unique_name,
-                    "description": business_dto.description,
-                    "address": business_dto.address,
-                    "phone_number": business_dto.phone_number,
-                    "email": business_dto.email,
-                    "logo_url": business_dto.logo_url,
-                    "settings": business_dto.settings,
-                    "updated_at": business_dto.updated_at.isoformat(),
-                },
+                data=business_data,
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -255,7 +241,11 @@ class BusinessViewSet(BaseViewSet):
         operation_summary="Add business member",
         operation_description="Add a member to the business. Only owner and managers can add members.",
         request_body=BusinessMemberCreateSerializer,
-        responses={201: "Member added", 400: "Validation error", 403: "Permission denied"},
+        responses={
+            201: BusinessMemberSerializer,
+            400: "Validation error",
+            403: "Permission denied",
+        },
         tags=["Business"],
     )
     @action(detail=True, methods=["post"], url_path="members")
@@ -276,17 +266,101 @@ class BusinessViewSet(BaseViewSet):
             )
             member_dto = use_case.execute(dto)
 
+            member_data = BusinessMemberSerializer.from_dto(member_dto)
+
             return self.success(
                 message="Business member added successfully",
-                data={
-                    "id": str(member_dto.id),
-                    "business_id": str(member_dto.business_id),
-                    "user_id": str(member_dto.user_id),
-                    "role": member_dto.role,
-                    "is_active": member_dto.is_active,
-                    "joined_at": member_dto.joined_at.isoformat(),
-                },
+                data=member_data,
                 status_code=status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        method="get",
+        operation_summary="List business members",
+        operation_description=(
+            "List all members of a business with pagination support. Only users with access to "
+            "the business can view members."
+        ),
+        manual_parameters=[
+            openapi.Parameter(
+                name="page",
+                in_=openapi.IN_QUERY,
+                description="Page number (defaults to 1).",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                name="page_size",
+                in_=openapi.IN_QUERY,
+                description="Number of records per page (defaults to 20, max 1000).",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                name="include_inactive",
+                in_=openapi.IN_QUERY,
+                description="Include inactive members when set to true.",
+                type=openapi.TYPE_BOOLEAN,
+            ),
+        ],
+        responses={
+            200: "List of business members",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Business not found",
+        },
+        tags=["Business"],
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="members/list",
+        url_name="list-members",
+    )
+    def list_members(self, request: Request, pk: UUID) -> Response:
+        """List members of the business."""
+        try:
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["user.name", "user.email"],
+                order_fields=["joined_at", "role", "created_at"],
+                default_order_field="joined_at",
+                filter_definitions={
+                    "include_inactive": {"type": "boolean"},
+                    "role": {
+                        "type": "enum",
+                        "choices": ["owner", "manager", "cashier", "stock_keeper", "delivery"],
+                    },
+                    "name": {"type": "string", "max_length": 255},
+                },
+            )
+            filter_payload["filters"]["business_id"] = pk
+            filter_dto = BusinessMemberListFilterDTO.from_payload(filter_payload)
+
+            use_case = ListBusinessMembersUseCase(
+                business_member_repository=BusinessMemberRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
+                user_repository=UserRepositoryImpl(),
+                business_id=pk,
+                user_id=request.user.id,
+                include_inactive=filter_dto.include_inactive,
+            )
+            members = use_case.execute()
+
+            if filter_dto.role:
+                members = [member for member in members if member.role == filter_dto.role]
+
+            members = self.apply_filtering_to_items(
+                members,
+                filter_payload,
+                name_fields=["user.name"],
+            )
+
+            return self.paginated_response(
+                request=request,
+                queryset=members,
+                serializer_class=BusinessMemberSerializer,
+                message="Business members retrieved successfully",
             )
         except Exception as e:
             return self.handle_exception(e)
@@ -320,7 +394,11 @@ class BusinessViewSet(BaseViewSet):
         operation_summary="Scan QR code",
         operation_description="Scan QR code to get business information.",
         request_body=None,
-        responses={200: "Business information", 400: "Invalid QR code", 404: "Business not found"},
+        responses={
+            200: BusinessResponseSerializer,
+            400: "Invalid QR code",
+            404: "Business not found",
+        },
         tags=["Business"],
     )
     @action(detail=False, methods=["post"], url_path="scan-qr")
@@ -351,19 +429,11 @@ class BusinessViewSet(BaseViewSet):
             )
             business_dto = use_case.execute()
 
+            business_data = BusinessResponseSerializer.from_dto(business_dto)
+
             return self.success(
                 message="Business retrieved from QR code",
-                data={
-                    "id": str(business_dto.id),
-                    "name": business_dto.name,
-                    "unique_name": business_dto.unique_name,
-                    "description": business_dto.description,
-                    "address": business_dto.address,
-                    "phone_number": business_dto.phone_number,
-                    "email": business_dto.email,
-                    "logo_url": business_dto.logo_url,
-                    "is_active": business_dto.is_active,
-                },
+                data=business_data,
                 status_code=status.HTTP_200_OK,
             )
         except ValueError as e:

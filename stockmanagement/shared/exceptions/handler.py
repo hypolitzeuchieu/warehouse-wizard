@@ -8,6 +8,7 @@ from typing import Any
 from rest_framework import status
 from rest_framework.exceptions import (
     AuthenticationFailed,
+    MethodNotAllowed,
     NotAuthenticated,
     NotFound,
     PermissionDenied,
@@ -241,6 +242,30 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
             "status_code": status.HTTP_404_NOT_FOUND,
         }
         return Response(not_found_response, status=status.HTTP_404_NOT_FOUND)
+
+    if isinstance(exc, MethodNotAllowed):
+        logger.info(
+            f"Method not allowed: {str(exc)}",
+            extra={"context": context},
+        )
+        error_message = (
+            str(exc.detail)
+            if hasattr(exc, "detail")
+            else f"Method '{getattr(exc, 'method', 'UNKNOWN')}' not allowed."
+        )
+        method_not_allowed_response: dict[str, Any] = {
+            "success": False,
+            "error": {
+                "code": "METHOD_NOT_ALLOWED",
+                "message": error_message,
+                "details": {
+                    "detail": str(exc),
+                    "allowed_methods": getattr(exc, "allowed_methods", []),
+                },
+            },
+            "status_code": status.HTTP_405_METHOD_NOT_ALLOWED,
+        }
+        return Response(method_not_allowed_response, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     if isinstance(exc, Throttled):
         # Rate limit exceeded - log without traceback

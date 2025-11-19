@@ -343,6 +343,70 @@ class RemoveBusinessMemberUseCase:
         self.business_member_repository.remove(member_id)
 
 
+class ListBusinessMembersUseCase:
+    """Use case for listing business members."""
+
+    def __init__(
+        self,
+        business_member_repository: BusinessMemberRepository,
+        business_domain_service: BusinessDomainService,
+        user_repository: UserRepository | None,
+        business_id: UUID,
+        user_id: UUID,
+        include_inactive: bool = False,
+    ) -> None:
+        """Initialize use case."""
+        self.business_member_repository = business_member_repository
+        self.business_domain_service = business_domain_service
+        self.user_repository = user_repository
+        self.business_id = business_id
+        self.user_id = user_id
+        self.include_inactive = include_inactive
+
+    def execute(self) -> list[BusinessMemberResponseDTO]:
+        """Execute listing business members."""
+        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this business",
+                code="PERMISSION_DENIED",
+            )
+
+        members = self.business_member_repository.get_business_members(
+            self.business_id, active_only=not self.include_inactive
+        )
+
+        return [self._to_dto(member) for member in members]
+
+    def _to_dto(self, member: BusinessMember) -> BusinessMemberResponseDTO:
+        """Convert business member entity to DTO with optional user details."""
+        user_details: dict | None = None
+        if self.user_repository:
+            user = self.user_repository.get_by_id(member.user_id)
+            if user:
+                user_details = {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "phone_number": user.phone_number,
+                    "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+                    "avatar_url": user.avatar_url,
+                    "is_active": user.is_active,
+                }
+
+        return BusinessMemberResponseDTO(
+            id=member.id,
+            business_id=member.business_id,
+            user_id=member.user_id,
+            role=member.role,
+            is_active=member.is_active,
+            joined_at=member.joined_at,
+            left_at=member.left_at,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+            user=user_details,
+        )
+
+
 class GetBusinessUseCase:
     """Use case for getting a business by ID."""
 

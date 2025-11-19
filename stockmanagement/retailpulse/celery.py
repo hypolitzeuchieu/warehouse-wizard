@@ -4,9 +4,9 @@ import os
 
 from celery import Celery
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stockmanagement.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "retailpulse.settings")
 
-app = Celery("stockmanagement")
+app = Celery("retailpulse")
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
 

@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from application.dto.customer_dto import (
     CustomerCreateDTO,
+    CustomerResponseDTO,
     CustomerUpdateDTO,
 )
 
@@ -52,3 +53,39 @@ class CustomerUpdateSerializer(serializers.Serializer):
             address=self.validated_data.get("address"),
             customer_type=self.validated_data.get("customer_type"),
         )
+
+
+class CustomerResponseSerializer(serializers.Serializer):
+    """Serializer for customer responses."""
+
+    id = serializers.UUIDField()
+    business_id = serializers.UUIDField(allow_null=True, required=False)
+    name = serializers.CharField()
+    email = serializers.EmailField(allow_null=True, required=False)
+    phone_number = serializers.CharField(allow_null=True, required=False)
+    address = serializers.CharField(allow_null=True, required=False)
+    customer_type = serializers.CharField()
+    loyalty_points = serializers.DecimalField(max_digits=18, decimal_places=2)
+    total_purchases = serializers.DecimalField(max_digits=18, decimal_places=2)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: CustomerResponseDTO) -> dict:
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "name": dto.name,
+                "email": dto.email,
+                "phone_number": dto.phone_number,
+                "address": dto.address,
+                "customer_type": dto.customer_type,
+                "loyalty_points": dto.loyalty_points,
+                "total_purchases": dto.total_purchases,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data

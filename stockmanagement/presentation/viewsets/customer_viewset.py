@@ -11,10 +11,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.customer_list_filter_dto import CustomerListFilterDTO
 from application.use_cases.customer_use_cases import (
     CreateCustomerUseCase,
     DeleteCustomerUseCase,
     GetCustomerUseCase,
+    ListCustomersUseCase,
     UpdateCustomerUseCase,
 )
 from domain.business.services import BusinessDomainService
@@ -30,8 +32,10 @@ from presentation.serializers.credit_serializers import (
 )
 from presentation.serializers.customer_serializers import (
     CustomerCreateSerializer,
+    CustomerResponseSerializer,
     CustomerUpdateSerializer,
 )
+from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
 
@@ -57,67 +61,48 @@ class CustomerViewSet(BaseViewSet):
     def list_customers(self, request: Request, business_id: UUID) -> Response:
         """List all customers for a business."""
         try:
-            from shared.security.query_params_validator import QueryParamsValidator
-
-            limit = QueryParamsValidator.validate_limit(
-                request.query_params.get("limit"), default=100
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["name", "email", "phone_number"],
+                order_fields=["name", "created_at", "total_purchases", "loyalty_points"],
+                filter_definitions={
+                    "name": {"type": "string", "max_length": 255},
+                    "customer_type": {
+                        "type": "enum",
+                        "choices": ["REGULAR", "WHOLESALER"],
+                    },
+                },
             )
-            customer_type = QueryParamsValidator.validate_enum(
-                request.query_params.get("customer_type"),
-                allowed_values=["REGULAR", "WHOLESALER"],
-                param_name="customer_type",
-            )
-
-            # Get customers with optional type filter
-            customer_repository = CustomerRepositoryImpl()
-            if not self._get_business_domain_service().user_has_access(
-                business_id, request.user.id
-            ):
-                return self.error(
-                    message="You don't have access to this business",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    code="PERMISSION_DENIED",
-                )
-
-            customers_entities = customer_repository.get_by_business(
-                business_id=business_id,
-                customer_type=customer_type,
-                limit=limit,
-            )
-
-            # Convert to DTOs
-            from application.use_cases.customer_use_cases import ListCustomersUseCase
+            filter_payload["filters"]["business_id"] = business_id
+            filter_dto = CustomerListFilterDTO.from_payload(filter_payload)
 
             use_case = ListCustomersUseCase(
                 customer_repository=CustomerRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
-                limit=limit,
+                limit=QueryParamsValidator.MAX_PAGE_SIZE,
             )
-            customers = [use_case._to_dto(c) for c in customers_entities]
+            customers = use_case.execute()
 
-            data = [
-                {
-                    "id": str(c.id),
-                    "business_id": str(c.business_id) if c.business_id else None,
-                    "name": c.name,
-                    "email": c.email,
-                    "phone_number": c.phone_number,
-                    "address": c.address,
-                    "customer_type": c.customer_type,
-                    "loyalty_points": str(c.loyalty_points),
-                    "total_purchases": str(c.total_purchases),
-                    "created_at": c.created_at.isoformat(),
-                    "updated_at": c.updated_at.isoformat(),
-                }
-                for c in customers
-            ]
+            if filter_dto.customer_type:
+                customers = [
+                    customer
+                    for customer in customers
+                    if customer.customer_type == filter_dto.customer_type
+                ]
 
-            return self.success(
+            customers = self.apply_filtering_to_items(
+                customers,
+                filter_payload,
+                name_fields=["name"],
+            )
+
+            return self.paginated_response(
+                request=request,
+                queryset=customers,
+                serializer_class=CustomerResponseSerializer,
                 message="Customers retrieved successfully",
-                data=data,
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)

@@ -59,7 +59,7 @@ class S3Service:
         if self._s3_client is None:
             if not all([self.aws_access_key_id, self.aws_secret_access_key, self.aws_region_name]):
                 raise BaseAPIException(
-                    detail="AWS S3 credentials are not configured. Please configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION_NAME.",
+                    detail="AWS S3 credentials are not configured.",
                     code="S3_NOT_CONFIGURED",
                     status_code=500,
                 )

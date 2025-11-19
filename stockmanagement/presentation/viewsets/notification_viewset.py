@@ -29,20 +29,29 @@ class NotificationViewSet(BaseViewSet):
     def list(self, request: Request) -> Response:
         """List all notifications for the authenticated user."""
         try:
+            from application.dto.notification_list_filter_dto import NotificationListFilterDTO
+            from presentation.serializers.notification_serializers import (
+                NotificationResponseSerializer,
+            )
             from shared.security.query_params_validator import QueryParamsValidator
 
-            # Get and validate query parameters
-            status_filter = QueryParamsValidator.validate_enum(
-                request.query_params.get("status"),
-                allowed_values=["UNREAD", "READ", "ARCHIVED"],
-                param_name="status",
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["title", "message"],
+                order_fields=["created_at", "read_at"],
+                filter_definitions={
+                    "status": {
+                        "type": "enum",
+                        "choices": ["UNREAD", "READ", "ARCHIVED"],
+                    },
+                },
             )
-            limit = QueryParamsValidator.validate_limit(
-                request.query_params.get("limit"), default=100, max_limit=500
-            )
+            filter_dto = NotificationListFilterDTO.from_payload(filter_payload)
 
             notifications = NotificationService.get_user_notifications(
-                user_id=request.user.id, status=status_filter, limit=limit
+                user_id=request.user.id,
+                status=filter_dto.status,
+                limit=QueryParamsValidator.MAX_PAGE_SIZE,
             )
 
             # Check if error
@@ -53,28 +62,17 @@ class NotificationViewSet(BaseViewSet):
                     code="NOTIFICATION_ERROR",
                 )
 
-            # Format response
-            data = [
-                {
-                    "id": str(notif.id),
-                    "notification_type": notif.notification_type,
-                    "title": notif.title,
-                    "message": notif.message,
-                    "related_entity_type": notif.related_entity_type,
-                    "related_entity_id": (
-                        str(notif.related_entity_id) if notif.related_entity_id else None
-                    ),
-                    "status": notif.status,
-                    "read_at": notif.read_at.isoformat() if notif.read_at else None,
-                    "created_at": notif.created_at.isoformat(),
-                }
-                for notif in notifications
-            ]
+            notifications = self.apply_filtering_to_items(
+                notifications,
+                filter_payload,
+                name_fields=["title", "message"],
+            )
 
-            return self.success(
+            return self.paginated_response(
+                request=request,
+                queryset=notifications,
+                serializer_class=NotificationResponseSerializer,
                 message="Notifications retrieved successfully",
-                data=data,
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)

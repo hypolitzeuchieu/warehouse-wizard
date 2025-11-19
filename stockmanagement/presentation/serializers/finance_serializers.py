@@ -4,10 +4,13 @@ from rest_framework import serializers
 
 from application.dto.finance_dto import (
     ExpenseCreateDTO,
+    ExpenseResponseDTO,
     ExpenseUpdateDTO,
     PayrollCreateDTO,
+    PayrollResponseDTO,
     SalaryCreateDTO,
     SalaryPromotionDTO,
+    SalaryResponseDTO,
     SalaryUpdateDTO,
 )
 
@@ -212,3 +215,119 @@ class PayrollCreateSerializer(serializers.Serializer):
             deductions=self.validated_data.get("deductions", 0.00),
             bonuses=self.validated_data.get("bonuses", 0.00),
         )
+
+
+class ExpenseResponseSerializer(serializers.Serializer):
+    """Serializer for expense responses."""
+
+    id = serializers.UUIDField()
+    business_id = serializers.UUIDField()
+    expense_type = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2)
+    reason = serializers.CharField()
+    user_id = serializers.UUIDField()
+    approved_by = serializers.UUIDField(allow_null=True, required=False)
+    is_approved = serializers.BooleanField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: ExpenseResponseDTO) -> dict:
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "expense_type": dto.expense_type,
+                "amount": dto.amount,
+                "reason": dto.reason,
+                "user_id": dto.user_id,
+                "approved_by": dto.approved_by,
+                "is_approved": dto.is_approved,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class SalaryResponseSerializer(serializers.Serializer):
+    """Serializer for salary responses."""
+
+    id = serializers.UUIDField()
+    business_id = serializers.UUIDField()
+    user_id = serializers.UUIDField()
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2)
+    currency = serializers.CharField()
+    payment_frequency = serializers.CharField()
+    deductions = serializers.DecimalField(max_digits=15, decimal_places=2)
+    bonuses = serializers.DecimalField(max_digits=15, decimal_places=2)
+    net_salary = serializers.DecimalField(max_digits=15, decimal_places=2)
+    effective_from = serializers.DateTimeField()
+    effective_to = serializers.DateTimeField(allow_null=True, required=False)
+    is_active = serializers.BooleanField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: SalaryResponseDTO) -> dict:
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "user_id": dto.user_id,
+                "amount": dto.amount,
+                "currency": dto.currency,
+                "payment_frequency": dto.payment_frequency,
+                "deductions": dto.deductions,
+                "bonuses": dto.bonuses,
+                "net_salary": dto.net_salary,
+                "effective_from": dto.effective_from,
+                "effective_to": dto.effective_to,
+                "is_active": dto.is_active,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class PayrollResponseSerializer(serializers.Serializer):
+    """Serializer for payroll responses."""
+
+    id = serializers.UUIDField()
+    business_id = serializers.UUIDField()
+    user_id = serializers.UUIDField()
+    salary_id = serializers.UUIDField()
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2)
+    payment_date = serializers.DateTimeField()
+    period_start = serializers.DateTimeField()
+    period_end = serializers.DateTimeField()
+    deductions = serializers.DecimalField(max_digits=15, decimal_places=2)
+    bonuses = serializers.DecimalField(max_digits=15, decimal_places=2)
+    net_amount = serializers.DecimalField(max_digits=15, decimal_places=2)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: PayrollResponseDTO) -> dict:
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "user_id": dto.user_id,
+                "salary_id": dto.salary_id,
+                "amount": dto.amount,
+                "payment_date": dto.payment_date,
+                "period_start": dto.period_start,
+                "period_end": dto.period_end,
+                "deductions": dto.deductions,
+                "bonuses": dto.bonuses,
+                "net_amount": dto.net_amount,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data

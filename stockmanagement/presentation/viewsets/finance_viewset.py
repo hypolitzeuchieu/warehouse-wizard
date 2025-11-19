@@ -57,66 +57,65 @@ class FinanceViewSet(BaseViewSet):
     def list_expenses(self, request: Request, business_id: UUID) -> Response:
         """List all expenses for a business."""
         try:
+            from application.dto.expense_list_filter_dto import ExpenseListFilterDTO
+            from presentation.serializers.finance_serializers import ExpenseResponseSerializer
             from shared.security.query_params_validator import QueryParamsValidator
 
-            # Get and validate query parameters
-            expense_type = QueryParamsValidator.validate_enum(
-                request.query_params.get("expense_type"),
-                allowed_values=[
-                    "RENT",
-                    "UTILITIES",
-                    "SALARY",
-                    "SUPPLIES",
-                    "MARKETING",
-                    "MAINTENANCE",
-                    "INSURANCE",
-                    "TAXES",
-                    "OTHER",
-                ],
-                param_name="expense_type",
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["reason"],
+                order_fields=["created_at", "updated_at", "amount"],
+                filter_definitions={
+                    "expense_type": {
+                        "type": "enum",
+                        "choices": [
+                            "REPLENISHMENT",
+                            "MISCELLANEOUS",
+                            "ELECTRICITY",
+                            "WATER",
+                            "SALARY",
+                            "EXTRA",
+                            "MAINTENANCE",
+                            "TAX",
+                            "RENT",
+                            "MARKETING",
+                            "INSURANCE",
+                            "TRANSPORT",
+                            "UTILITIES",
+                            "OFFICE_SUPPLIES",
+                            "PROFESSIONAL_SERVICES",
+                        ],
+                    },
+                    "start_date": {"type": "date"},
+                    "end_date": {"type": "date"},
+                },
             )
-            start_date = QueryParamsValidator.validate_date(
-                request.query_params.get("start_date"), param_name="start_date"
-            )
-            end_date = QueryParamsValidator.validate_date(
-                request.query_params.get("end_date"), param_name="end_date"
-            )
-            limit = QueryParamsValidator.validate_limit(
-                request.query_params.get("limit"), default=100
-            )
+            filter_payload["filters"]["business_id"] = business_id
+            filter_dto = ExpenseListFilterDTO.from_payload(filter_payload)
 
             use_case = ListExpensesUseCase(
                 expense_repository=ExpenseRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
-                expense_type=expense_type,
-                start_date=start_date,
-                end_date=end_date,
-                limit=limit,
+                expense_type=filter_dto.expense_type,
+                start_date=filter_dto.start_date,
+                end_date=filter_dto.end_date,
+                limit=QueryParamsValidator.MAX_PAGE_SIZE,
             )
             expenses = use_case.execute()
 
-            data = [
-                {
-                    "id": str(e.id),
-                    "business_id": str(e.business_id),
-                    "expense_type": e.expense_type,
-                    "amount": str(e.amount),
-                    "reason": e.reason,
-                    "user_id": str(e.user_id),
-                    "approved_by": str(e.approved_by) if e.approved_by else None,
-                    "is_approved": e.is_approved,
-                    "created_at": e.created_at.isoformat(),
-                    "updated_at": e.updated_at.isoformat(),
-                }
-                for e in expenses
-            ]
+            expenses = self.apply_filtering_to_items(
+                expenses,
+                filter_payload,
+                name_fields=["reason"],
+            )
 
-            return self.success(
+            return self.paginated_response(
+                request=request,
+                queryset=expenses,
+                serializer_class=ExpenseResponseSerializer,
                 message="Expenses retrieved successfully",
-                data=data,
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)

@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.product_list_filter_dto import ProductListFilterDTO
 from application.use_cases.inventory_use_cases import (
     CheckExpiredProductsUseCase as ListExpiredProductsUseCase,
 )
@@ -34,6 +35,7 @@ from infrastructure.persistence.repositories import (
 )
 from presentation.serializers.inventory_serializers import (
     ProductCreateSerializer,
+    ProductResponseSerializer,
     ProductUpdateSerializer,
     StockMovementCreateSerializer,
 )
@@ -69,67 +71,56 @@ class InventoryViewSet(BaseViewSet):
     def list_products(self, request: Request, business_id: UUID) -> Response:
         """List all products for a business."""
         try:
-            # Get query parameters
-            from shared.security.query_params_validator import QueryParamsValidator
-
-            category_id = QueryParamsValidator.validate_uuid(
-                request.query_params.get("category_id"), param_name="category_id"
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["name", "barcode"],
+                order_fields=[
+                    "name",
+                    "created_at",
+                    "updated_at",
+                    "quantity",
+                    "unit_price",
+                ],
+                filter_definitions={
+                    "name": {"type": "string", "max_length": 255},
+                    "category_id": {"type": "uuid"},
+                    "subcategory_id": {"type": "uuid"},
+                    "low_stock_only": {"type": "boolean"},
+                    "expired_only": {"type": "boolean"},
+                },
             )
-            low_stock_only = QueryParamsValidator.validate_boolean(
-                request.query_params.get("low_stock_only", "false"), param_name="low_stock_only"
-            )
-            expired_only = QueryParamsValidator.validate_boolean(
-                request.query_params.get("expired_only", "false"), param_name="expired_only"
-            )
+            filter_payload["filters"]["business_id"] = business_id
+            filter_dto = ProductListFilterDTO.from_payload(filter_payload)
 
             use_case = ListProductsUseCase(
                 product_repository=ProductRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
-                category_id=category_id,
-                low_stock_only=low_stock_only,
-                expired_only=expired_only,
+                category_id=filter_dto.category_id,
+                low_stock_only=filter_dto.low_stock_only,
+                expired_only=filter_dto.expired_only,
             )
             products = use_case.execute()
 
-            data = [
-                {
-                    "id": str(p.id),
-                    "business_id": str(p.business_id),
-                    "name": p.name,
-                    "description": p.description,
-                    "barcode": p.barcode,
-                    "barcode_image_url": p.barcode_image_url,
-                    "category_id": str(p.category_id),
-                    "subcategory_id": str(p.subcategory_id) if p.subcategory_id else None,
-                    "purchase_price": str(p.purchase_price),
-                    "unit_price": str(p.unit_price),
-                    "current_price": str(p.current_price),
-                    "image_url": p.image_url,
-                    "quantity": p.quantity,
-                    "min_quantity": p.min_quantity,
-                    "is_low_stock": p.is_low_stock,
-                    "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
-                    "is_expired": p.is_expired,
-                    "on_promotion": p.on_promotion,
-                    "promotion_start_date": (
-                        p.promotion_start_date.isoformat() if p.promotion_start_date else None
-                    ),
-                    "promotion_end_date": (
-                        p.promotion_end_date.isoformat() if p.promotion_end_date else None
-                    ),
-                    "promo_price": str(p.promo_price) if p.promo_price else None,
-                    "created_at": p.created_at.isoformat(),
-                    "updated_at": p.updated_at.isoformat(),
-                }
-                for p in products
-            ]
+            if filter_dto.subcategory_id:
+                products = [
+                    product
+                    for product in products
+                    if product.subcategory_id == filter_dto.subcategory_id
+                ]
 
-            return self.success(
+            products = self.apply_filtering_to_items(
+                products,
+                filter_payload,
+                name_fields=["name", "barcode"],
+            )
+
+            return self.paginated_response(
+                request=request,
+                queryset=products,
+                serializer_class=ProductResponseSerializer,
                 message="Products retrieved successfully",
-                data=data,
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)
@@ -405,16 +396,17 @@ class InventoryViewSet(BaseViewSet):
         except Exception as e:
             return self.handle_exception(e)
 
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="businesses/(?P<business_id>[^/.]+)/products/low-stock",
+        url_name="low-stock",
+    )
     @swagger_auto_schema(
         operation_summary="Get low stock products",
         operation_description="Get all products with low stock for a business.",
         responses={200: "List of low stock products", 403: "Permission denied"},
         tags=["Inventory"],
-    )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/low-stock",
     )
     def get_low_stock_products(self, request: Request, business_id: UUID) -> Response:
         """Get low stock products."""
@@ -444,16 +436,17 @@ class InventoryViewSet(BaseViewSet):
         except Exception as e:
             return self.handle_exception(e)
 
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="businesses/(?P<business_id>[^/.]+)/products/expired",
+        url_name="expired",
+    )
     @swagger_auto_schema(
         operation_summary="Get expired products",
         operation_description="Get all expired products for a business.",
         responses={200: "List of expired products", 403: "Permission denied"},
         tags=["Inventory"],
-    )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/expired",
     )
     def get_expired_products(self, request: Request, business_id: UUID) -> Response:
         """Get expired products."""
