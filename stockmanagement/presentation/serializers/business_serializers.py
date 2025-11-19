@@ -5,6 +5,8 @@ from rest_framework import serializers
 from application.dto.business_dto import (
     BusinessCreateDTO,
     BusinessMemberCreateDTO,
+    BusinessMemberResponseDTO,
+    BusinessResponseDTO,
     BusinessUpdateDTO,
 )
 
@@ -73,3 +75,107 @@ class BusinessMemberCreateSerializer(serializers.Serializer):
             role=self.validated_data["role"],
         )
 
+
+class BusinessMemberUserSerializer(serializers.Serializer):
+    """Serializer for nested user information on business members."""
+
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True, allow_blank=True, allow_null=True)
+    email = serializers.EmailField(
+        read_only=True,
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+    )
+    phone_number = serializers.CharField(
+        read_only=True,
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+    )
+    role = serializers.CharField(read_only=True, allow_blank=True, allow_null=True)
+    avatar_url = serializers.CharField(
+        read_only=True,
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+    )
+    is_active = serializers.BooleanField(read_only=True, required=False)
+
+
+class BusinessMemberSerializer(serializers.Serializer):
+    """Serializer for business member responses."""
+
+    id = serializers.UUIDField(read_only=True)
+    business_id = serializers.UUIDField(read_only=True)
+    user_id = serializers.UUIDField(read_only=True)
+    role = serializers.CharField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    joined_at = serializers.DateTimeField(read_only=True)
+    left_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    user = BusinessMemberUserSerializer(read_only=True, allow_null=True, required=False)
+
+    @classmethod
+    def from_dto(cls, dto: BusinessMemberResponseDTO) -> dict:
+        """Convert BusinessMemberResponseDTO to serialized data."""
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "user_id": dto.user_id,
+                "role": dto.role,
+                "is_active": dto.is_active,
+                "joined_at": dto.joined_at,
+                "left_at": dto.left_at,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+                "user": dto.user,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class BusinessResponseSerializer(serializers.Serializer):
+    """Serializer for business response DTOs."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    unique_name = serializers.CharField()
+    owner_id = serializers.UUIDField()
+    description = serializers.CharField(allow_null=True, required=False)
+    address = serializers.CharField(allow_null=True, required=False)
+    phone_number = serializers.CharField(allow_null=True, required=False)
+    email = serializers.EmailField(allow_null=True, required=False)
+    qr_code_url = serializers.CharField(allow_null=True, required=False)
+    logo_url = serializers.CharField(allow_null=True, required=False)
+    is_active = serializers.BooleanField()
+    settings = serializers.JSONField(required=False)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: BusinessResponseDTO) -> dict:
+        """Convert BusinessResponseDTO to serialized data."""
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "name": dto.name,
+                "unique_name": dto.unique_name,
+                "owner_id": dto.owner_id,
+                "description": dto.description,
+                "address": dto.address,
+                "phone_number": dto.phone_number,
+                "email": dto.email,
+                "qr_code_url": dto.qr_code_url,
+                "logo_url": dto.logo_url,
+                "is_active": dto.is_active,
+                "settings": dto.settings,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data

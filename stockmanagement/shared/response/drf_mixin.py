@@ -1,0 +1,323 @@
+"""DRF-specific response mixin using Response."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from rest_framework import status
+from rest_framework.exceptions import (
+    AuthenticationFailed,
+    MethodNotAllowed,
+    NotAuthenticated,
+    NotFound,
+    PermissionDenied,
+    Throttled,
+    ValidationError,
+)
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
+
+from shared.exceptions.base import BaseAPIException
+from shared.response.base_mixin import BaseResponseMixin
+from shared.security.query_params_validator import QueryParamsValidator
+
+logger = logging.getLogger(__name__)
+
+
+class DRFResponseMixin(BaseResponseMixin):
+    """Mixin for standardized API responses using DRF Response."""
+
+    def success(
+        self,
+        message: str = "Success",
+        data: Any = None,
+        status_code: int = status.HTTP_200_OK,
+    ) -> Response:
+        """
+        Return a successful response using DRF Response.
+
+        Args:
+            message: Success message
+            data: Response data
+            status_code: HTTP status code
+
+        Returns:
+            Response with success format
+        """
+        response_data = DRFResponseMixin._build_success_response(
+            message=message,
+            data=data,
+            status_code=status_code,
+        )
+        return Response(response_data, status=status_code)
+
+    def error(
+        self,
+        message: str = "Error",
+        errors: Any = None,
+        status_code: int = status.HTTP_400_BAD_REQUEST,
+        code: str = "ERROR",
+    ) -> Response:
+        """
+        Return an error response using DRF Response.
+
+        Args:
+            message: Error message
+            errors: Error details (string, list, or dict)
+            status_code: HTTP status code
+            code: Error code
+
+        Returns:
+            Response with error format
+        """
+        response_data = DRFResponseMixin._build_error_response(
+            message=message,
+            code=code,
+            errors=errors,
+            status_code=status_code,
+        )
+        return Response(response_data, status=status_code)
+
+    def format_validation_errors(self, errors: dict[str, Any]) -> dict[str, Any]:
+        """
+        Format Django/DRF validation errors into a concise and precise format.
+
+        Args:
+            errors: Validation errors from serializer or form
+
+        Returns:
+            Formatted error dictionary with concise messages
+        """
+        return DRFResponseMixin._format_validation_errors(errors)
+
+    def handle_validation_error(
+        self,
+        serializer: Any,
+        message: str = "Validation error",
+        code: str = "VALIDATION_ERROR",
+    ) -> Response:
+        """
+        Handle validation errors from a serializer and return a formatted error response.
+
+        Args:
+            serializer: DRF serializer instance with errors
+            message: Custom error message (will be overridden if meaningful errors found)
+            code: Error code
+
+        Returns:
+            Response with formatted validation errors
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        formatted_errors = self.format_validation_errors(serializer.errors)
+
+        error_messages = []
+        for field, error_msg in formatted_errors.items():
+            if error_msg:
+                error_text = str(error_msg)
+                if field.lower() not in error_text.lower():
+                    field_name = field.replace("_", " ").title()
+                    error_messages.append(f"{field_name}: {error_text}")
+                else:
+                    error_messages.append(error_text)
+
+        meaningful_message = ". ".join(error_messages) if error_messages else message
+
+        logger.warning(
+            f"Validation error: {meaningful_message}",
+            extra={"errors": formatted_errors, "raw_errors": serializer.errors},
+        )
+
+        return self.error(
+            message=meaningful_message,
+            errors=formatted_errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code=code,
+        )
+
+    def paginated_response(
+        self,
+        request: Any,
+        queryset: Any,
+        serializer_class: Any,
+        message: str = "Data retrieved successfully",
+        context: dict[str, Any] | None = None,
+    ) -> Response:
+        """
+        Return a paginated response with security validation.
+
+        Args:
+            request: DRF request object
+            queryset: QuerySet to paginate
+            serializer_class: Serializer class to use
+            message: Success message
+            context: Optional context for serializer
+
+        Returns:
+            Response with paginated format
+        """
+        paginator = PageNumberPagination()
+        page_size = QueryParamsValidator.validate_page_size(
+            request.query_params.get("page_size"), default=20
+        )
+
+        paginator.page_size = page_size
+        page = paginator.paginate_queryset(queryset, request)
+
+        if page is not None:
+            serializer = serializer_class(page, many=True, context=context or {"request": request})
+            paginated_data = paginator.get_paginated_response(serializer.data)
+
+            response_data: dict[str, Any] = {
+                "success": True,
+                "message": message,
+                "data": serializer.data,
+                "status_code": status.HTTP_200_OK,
+                "pagination": {
+                    "count": paginated_data.data.get("count", 0),
+                    "next": paginated_data.data.get("next"),
+                    "previous": paginated_data.data.get("previous"),
+                    "current_page": paginator.page.number if paginator.page else 1,
+                    "total_pages": paginator.page.paginator.num_pages if paginator.page else 0,
+                    "page_size": page_size,
+                },
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        # If no pagination needed, return all data
+        serializer = serializer_class(queryset, many=True, context=context or {"request": request})
+        return self.success(
+            message=message,
+            data=serializer.data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    def handle_exception(self, exc: Exception) -> Response:
+        """
+        Handle exceptions and return standardized error response.
+
+        Args:
+            exc: Exception instance
+
+        Returns:
+            Response with standardized error format
+        """
+        if isinstance(exc, BaseAPIException):
+            if exc.status_code >= 500:
+                logger.error(
+                    f"[{exc.code}] {exc.detail}",
+                    exc_info=True,
+                    extra={
+                        "error_code": exc.code,
+                        "status_code": exc.status_code,
+                        "details": exc.details,
+                    },
+                )
+            elif exc.status_code == 401 and exc.code in (
+                "INVALID_REFRESH_TOKEN",
+                "REFRESH_TOKEN_BLACKLISTED",
+                "TOKEN_INVALID",
+                "NOT_AUTHENTICATED",
+                "AUTHENTICATION_FAILED",
+            ):
+                # Erreurs d'authentification attendues - log en info sans traceback
+                logger.info(
+                    f"[{exc.code}] {exc.detail}",
+                    extra={
+                        "error_code": exc.code,
+                        "status_code": exc.status_code,
+                    },
+                )
+            else:
+                logger.warning(
+                    f"[{exc.code}] {exc.detail}",
+                    extra={
+                        "error_code": exc.code,
+                        "status_code": exc.status_code,
+                        "details": exc.details,
+                    },
+                )
+            return self.error(
+                message=exc.detail,
+                status_code=exc.status_code,
+                code=exc.code,
+                errors=exc.details,
+            )
+        elif isinstance(exc, ValidationError):
+            formatted_errors = self.format_validation_errors(exc.detail)
+            logger.warning(f"ValidationError: {str(exc)}", extra={"errors": formatted_errors})
+            return self.error(
+                message="Validation error",
+                errors=formatted_errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="VALIDATION_ERROR",
+            )
+        elif isinstance(exc, NotAuthenticated):
+            logger.info("Authentication credentials not provided", exc_info=False)
+            return self.error(
+                message="Authentication credentials were not provided.",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="NOT_AUTHENTICATED",
+            )
+        elif isinstance(exc, AuthenticationFailed):
+            logger.info(f"Authentication failed: {str(exc)}", exc_info=False)
+            return self.error(
+                message="Invalid authentication credentials.",
+                errors={"detail": str(exc)},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                code="AUTHENTICATION_FAILED",
+            )
+        elif isinstance(exc, PermissionDenied):
+            logger.info(f"Permission denied: {str(exc)}", exc_info=False)
+            return self.error(
+                message=str(getattr(exc, "detail", exc)) or "Permission denied.",
+                errors={"detail": str(exc)},
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="PERMISSION_DENIED",
+            )
+        elif isinstance(exc, NotFound):
+            logger.info(f"Resource not found: {str(exc)}", exc_info=False)
+            return self.error(
+                message=str(getattr(exc, "detail", exc)) or "Resource not found.",
+                errors={"detail": str(exc)},
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="NOT_FOUND",
+            )
+        elif isinstance(exc, MethodNotAllowed):
+            logger.info(f"Method not allowed: {str(exc)}", exc_info=False)
+            error_message = (
+                str(exc.detail)
+                if hasattr(exc, "detail")
+                else f"Method '{getattr(exc, 'method', 'UNKNOWN')}' not allowed."
+            )
+            return self.error(
+                message=error_message,
+                errors={
+                    "detail": str(exc),
+                    "allowed_methods": getattr(exc, "allowed_methods", []),
+                },
+                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                code="METHOD_NOT_ALLOWED",
+            )
+        elif isinstance(exc, Throttled):
+            retry_after = int(exc.wait) if getattr(exc, "wait", None) else None
+            logger.info("Rate limit exceeded", extra={"retry_after": retry_after}, exc_info=False)
+            details: dict[str, Any] = {"detail": str(exc)}
+            if retry_after is not None:
+                details["retry_after"] = str(retry_after)
+            return self.error(
+                message=str(getattr(exc, "detail", exc)) or "Rate limit exceeded.",
+                errors=details,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                code="RATE_LIMIT_EXCEEDED",
+            )
+        else:
+            logger.exception(f"Unhandled exception: {type(exc).__name__}", exc_info=exc)
+            return self.error(
+                message="An internal server error occurred",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code="INTERNAL_ERROR",
+            )

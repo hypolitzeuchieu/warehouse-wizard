@@ -115,7 +115,6 @@ SIMPLE_JWT = {
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -157,7 +156,7 @@ SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_SSL_REDIRECT = False  # ⚠️ True in production HTTPS
 
-ROOT_URLCONF = "stockmanagement.urls"
+ROOT_URLCONF = "retailpulse.urls"
 
 TEMPLATES = [
     {
@@ -175,7 +174,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "stockmanagement.wsgi.application"
+WSGI_APPLICATION = "retailpulse.wsgi.application"
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",

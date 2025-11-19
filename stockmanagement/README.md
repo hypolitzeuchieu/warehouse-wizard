@@ -33,7 +33,7 @@ Clone the repository and navigate to the project directory:
 1. **Clone the repository**:
     ```bash
     git clone git@github.com:victmanagement/VictBackendManagement.git
-    cd stockmanagement
+    cd retailpulse
     ```
 
 2. **Create the `.env` file** (configure environment variables).
@@ -55,7 +55,7 @@ Clone the repository and navigate to the project directory:
 
 6. **Start the Celery worker**:
     ```bash
-    docker-compose exec celery celery -A stockmanagement worker --loglevel=info
+    docker-compose exec celery celery -A retailpulse worker --loglevel=info
     ```
 
 7. **Stop all Docker services**:

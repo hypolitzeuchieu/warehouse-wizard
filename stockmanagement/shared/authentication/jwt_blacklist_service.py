@@ -13,6 +13,7 @@ from uuid import UUID
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import AccessToken as JWTAccessToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,6 @@ class JWTBlacklistService:
             # We need to extract expiration from the token string if provided
             if access_token_string:
                 try:
-                    from rest_framework_simplejwt.tokens import AccessToken as JWTAccessToken
 
                     access_token = JWTAccessToken(access_token_string)
                     access_exp_timestamp = access_token.get("exp")

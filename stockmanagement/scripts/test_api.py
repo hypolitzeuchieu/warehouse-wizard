@@ -12,7 +12,7 @@ sys.path.insert(0, str(project_root))
 
 import django  # noqa: E402
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stockmanagement.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "retailpulse.settings")
 django.setup()
 
 import requests  # noqa: E402

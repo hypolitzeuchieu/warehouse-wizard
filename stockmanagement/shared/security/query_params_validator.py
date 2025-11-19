@@ -15,6 +15,7 @@ class QueryParamsValidator:
     # Security limits
     MAX_PAGE_SIZE = 1000
     MAX_LIMIT = 1000
+    MAX_PAGE_NUMBER = 10000
     DEFAULT_PAGE_SIZE = 20
     DEFAULT_LIMIT = 100
     MIN_PAGE_SIZE = 1
@@ -42,7 +43,8 @@ class QueryParamsValidator:
             page_size_int = int(page_size)
         except (ValueError, TypeError) as err:
             raise BadRequestError(
-                detail=f"Invalid page_size: must be an integer between {QueryParamsValidator.MIN_PAGE_SIZE} and {QueryParamsValidator.MAX_PAGE_SIZE}",
+                detail=f"Invalid page_size: must be an integer between "
+                f"{QueryParamsValidator.MIN_PAGE_SIZE} and {QueryParamsValidator.MAX_PAGE_SIZE}",
                 code="INVALID_PAGE_SIZE",
             ) from err
 
@@ -59,6 +61,46 @@ class QueryParamsValidator:
             )
 
         return page_size_int
+
+    @staticmethod
+    def validate_page(page: str | int | None, default: int = 1) -> int:
+        """
+        Validate and sanitize page parameter.
+
+        Args:
+            page: Page number from query params
+            default: Default value if not provided
+
+        Returns:
+            Validated page number (between 1 and MAX_PAGE_NUMBER)
+
+        Raises:
+            BadRequestError: If page is invalid
+        """
+        if page is None:
+            return default
+
+        try:
+            page_int = int(page)
+        except (ValueError, TypeError) as err:
+            raise BadRequestError(
+                detail="Invalid page: must be a positive integer",
+                code="INVALID_PAGE",
+            ) from err
+
+        if page_int < 1:
+            raise BadRequestError(
+                detail="page must be at least 1",
+                code="INVALID_PAGE",
+            )
+
+        if page_int > QueryParamsValidator.MAX_PAGE_NUMBER:
+            raise BadRequestError(
+                detail=f"page cannot exceed {QueryParamsValidator.MAX_PAGE_NUMBER}",
+                code="INVALID_PAGE",
+            )
+
+        return page_int
 
     @staticmethod
     def validate_limit(
@@ -87,7 +129,8 @@ class QueryParamsValidator:
             limit_int = int(limit)
         except (ValueError, TypeError) as err:
             raise BadRequestError(
-                detail=f"Invalid limit: must be an integer between {QueryParamsValidator.MIN_LIMIT} and {max_allowed}",
+                detail=f"Invalid limit: must be an integer between "
+                f"{QueryParamsValidator.MIN_LIMIT} and {max_allowed}",
                 code="INVALID_LIMIT",
             ) from err
 

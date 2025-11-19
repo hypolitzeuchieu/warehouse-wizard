@@ -4,5 +4,5 @@ import os
 
 import django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "stockmanagement.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "retailpulse.settings")
 django.setup()

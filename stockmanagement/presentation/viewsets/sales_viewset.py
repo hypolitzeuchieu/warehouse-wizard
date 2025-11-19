@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.invoice_list_filter_dto import InvoiceListFilterDTO
 from application.use_cases.sales_use_cases import (
     CreateInvoiceUseCase,
     GetInvoiceUseCase,
@@ -26,7 +27,11 @@ from infrastructure.persistence.repositories import (
     ProductRepositoryImpl,
     StockMovementRepositoryImpl,
 )
-from presentation.serializers.sales_serializers import InvoiceCreateSerializer
+from presentation.serializers.sales_serializers import (
+    InvoiceCreateSerializer,
+    InvoiceResponseSerializer,
+)
+from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
 
@@ -59,23 +64,21 @@ class SalesViewSet(BaseViewSet):
     def list_invoices(self, request: Request, business_id: UUID) -> Response:
         """List all invoices for a business."""
         try:
-            from shared.security.query_params_validator import QueryParamsValidator
-
-            # Get and validate query parameters
-            status_filter = QueryParamsValidator.validate_enum(
-                request.query_params.get("status"),
-                allowed_values=["PENDING", "PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
-                param_name="status",
+            filter_payload = self.parse_list_filters(
+                request,
+                search_fields=["customer_name", "cashier_name", "number"],
+                order_fields=["created_at", "updated_at", "total", "number"],
+                filter_definitions={
+                    "status": {
+                        "type": "enum",
+                        "choices": ["PENDING", "PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
+                    },
+                    "start_date": {"type": "date"},
+                    "end_date": {"type": "date"},
+                },
             )
-            start_date = QueryParamsValidator.validate_date(
-                request.query_params.get("start_date"), param_name="start_date"
-            )
-            end_date = QueryParamsValidator.validate_date(
-                request.query_params.get("end_date"), param_name="end_date"
-            )
-            limit = QueryParamsValidator.validate_limit(
-                request.query_params.get("limit"), default=100
-            )
+            filter_payload["filters"]["business_id"] = business_id
+            filter_dto = InvoiceListFilterDTO.from_payload(filter_payload)
 
             use_case = ListInvoicesUseCase(
                 invoice_repository=InvoiceRepositoryImpl(),
@@ -83,53 +86,24 @@ class SalesViewSet(BaseViewSet):
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
-                status=status_filter,
-                start_date=start_date,
-                end_date=end_date,
-                limit=limit,
+                status=filter_dto.status,
+                start_date=filter_dto.start_date,
+                end_date=filter_dto.end_date,
+                limit=QueryParamsValidator.MAX_PAGE_SIZE,
             )
             invoices = use_case.execute()
 
-            data = [
-                {
-                    "id": str(inv.id),
-                    "business_id": str(inv.business_id),
-                    "number": inv.number,
-                    "customer_name": inv.customer_name,
-                    "customer_id": str(inv.customer_id) if inv.customer_id else None,
-                    "cashier_id": str(inv.cashier_id),
-                    "status": inv.status,
-                    "total": str(inv.total),
-                    "tax": str(inv.tax),
-                    "discount": str(inv.discount),
-                    "advance_paid": str(inv.advance_paid),
-                    "remaining_amount": str(inv.remaining_amount),
-                    "payment_method": inv.payment_method,
-                    "due_date": inv.due_date.isoformat() if inv.due_date else None,
-                    "is_credit_settled": inv.is_credit_settled,
-                    "reason": inv.reason,
-                    "lines": [
-                        {
-                            "id": str(line.id),
-                            "product_id": str(line.product_id),
-                            "quantity": line.quantity,
-                            "unit_price": str(line.unit_price),
-                            "discount": str(line.discount),
-                            "line_total": str(line.line_total),
-                            "created_at": line.created_at.isoformat(),
-                        }
-                        for line in (inv.lines or [])
-                    ],
-                    "created_at": inv.created_at.isoformat(),
-                    "updated_at": inv.updated_at.isoformat(),
-                }
-                for inv in invoices
-            ]
+            invoices = self.apply_filtering_to_items(
+                invoices,
+                filter_payload,
+                name_fields=["customer_name", "cashier_name"],
+            )
 
-            return self.success(
+            return self.paginated_response(
+                request=request,
+                queryset=invoices,
+                serializer_class=InvoiceResponseSerializer,
                 message="Invoices retrieved successfully",
-                data=data,
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)

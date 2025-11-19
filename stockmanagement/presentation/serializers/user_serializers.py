@@ -611,7 +611,7 @@ class UserResponseSerializer(serializers.Serializer):
             Dictionary with serialized user data (ready for JSON response)
         """
         serializer = cls(
-            {
+            data={
                 "id": str(dto.id),
                 "email": dto.email,
                 "name": dto.name,
@@ -628,4 +628,5 @@ class UserResponseSerializer(serializers.Serializer):
                 "avatar_url": dto.avatar_url,
             }
         )
+        serializer.is_valid(raise_exception=True)
         return serializer.data
