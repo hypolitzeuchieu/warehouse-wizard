@@ -381,13 +381,14 @@ class RefreshTokenUseCase:
                         status_code=401,
                     )
         except InvalidToken as e:
+            logger.info(f"Invalid refresh token: {str(e)}")
             raise BaseAPIException(
-                detail=f"Invalid or expired refresh token: {str(e)}",
+                detail="Invalid or expired refresh token",
                 code="INVALID_REFRESH_TOKEN",
                 status_code=401,
             ) from e
         except Exception as e:
-            logger.warning(f"Error checking refresh token blacklist: {e}", exc_info=True)
+            logger.warning(f"Error checking refresh token blacklist: {e}")
 
         refresh_token = self.refresh_token_repository.get_by_token(dto.refresh_token)
 
