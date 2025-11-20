@@ -158,15 +158,29 @@ class BusinessViewSet(BaseViewSet):
     def retrieve(self, request: Request, pk: UUID) -> Response:
         """Get business by ID."""
         try:
+            business_domain_service = self._get_business_domain_service()
             use_case = GetBusinessUseCase(
                 business_repository=BusinessRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
+                business_domain_service=business_domain_service,
                 business_id=pk,
                 user_id=request.user.id,
             )
             business_dto = use_case.execute()
 
-            business_data = BusinessResponseSerializer.from_dto(business_dto)
+            members_use_case = ListBusinessMembersUseCase(
+                business_member_repository=BusinessMemberRepositoryImpl(),
+                business_domain_service=business_domain_service,
+                user_repository=UserRepositoryImpl(),
+                business_id=pk,
+                user_id=request.user.id,
+                include_inactive=True,
+            )
+            members = members_use_case.execute()
+
+            business_data = BusinessResponseSerializer.from_dto(
+                business_dto,
+                members=members,
+            )
 
             return self.success(
                 message="Business retrieved successfully",

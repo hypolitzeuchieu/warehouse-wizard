@@ -582,7 +582,7 @@ class UserResponseSerializer(serializers.Serializer):
     """Serializer for user response data (from UserResponseDTO)."""
 
     id = serializers.UUIDField()
-    email = serializers.EmailField()
+    email = serializers.EmailField(allow_blank=True, allow_null=True, required=False)
     name = serializers.CharField()
     role = serializers.CharField()
     is_active = serializers.BooleanField()
@@ -613,7 +613,7 @@ class UserResponseSerializer(serializers.Serializer):
         serializer = cls(
             data={
                 "id": str(dto.id),
-                "email": dto.email,
+                "email": dto.email or None,
                 "name": dto.name,
                 "role": dto.role,
                 "is_active": dto.is_active,

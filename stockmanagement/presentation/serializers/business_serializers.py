@@ -1,5 +1,7 @@
 """Business serializers."""
 
+from collections.abc import Sequence
+
 from rest_framework import serializers
 
 from application.dto.business_dto import (
@@ -155,9 +157,14 @@ class BusinessResponseSerializer(serializers.Serializer):
     settings = serializers.JSONField(required=False)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
+    members = BusinessMemberSerializer(many=True, required=False, allow_null=True)
 
     @classmethod
-    def from_dto(cls, dto: BusinessResponseDTO) -> dict:
+    def from_dto(
+        cls,
+        dto: BusinessResponseDTO,
+        members: Sequence[BusinessMemberResponseDTO] | None = None,
+    ) -> dict:
         """Convert BusinessResponseDTO to serialized data."""
         serializer = cls(
             data={
@@ -175,7 +182,15 @@ class BusinessResponseSerializer(serializers.Serializer):
                 "settings": dto.settings,
                 "created_at": dto.created_at,
                 "updated_at": dto.updated_at,
+                "members": (
+                    [BusinessMemberSerializer.from_dto(member_dto) for member_dto in members]
+                    if members is not None
+                    else None
+                ),
             }
         )
         serializer.is_valid(raise_exception=True)
-        return serializer.data
+        data = serializer.data
+        if serializer.initial_data.get("members") is None:
+            data.pop("members", None)
+        return data
