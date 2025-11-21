@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 
@@ -11,7 +13,7 @@ class CreditCreateSerializer(serializers.Serializer):
     customer_id = serializers.UUIDField(required=True)
     invoice_id = serializers.UUIDField(required=False, allow_null=True)
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True, min_value=0.01
+        max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
     due_date = serializers.DateTimeField(required=True)
     notes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -21,7 +23,7 @@ class CreditUpdateSerializer(serializers.Serializer):
     """Serializer for updating a credit."""
 
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=False, min_value=0.01
+        max_digits=15, decimal_places=2, required=False, min_value=Decimal("0.01")
     )
     due_date = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -53,7 +55,7 @@ class CreditPaymentCreateSerializer(serializers.Serializer):
     """Serializer for creating a credit payment."""
 
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True, min_value=0.01
+        max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
     payment_method = serializers.CharField(required=False, default="cash")
     notes = serializers.CharField(required=False, allow_null=True, allow_blank=True)

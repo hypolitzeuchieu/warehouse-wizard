@@ -10,10 +10,9 @@ from infrastructure.persistence.models.user_models import RetailPulseUser
 
 class Business(BaseModel):
     """Business model."""
+
     name = models.CharField(max_length=255)
-    unique_name = models.CharField(
-        max_length=100, unique=True
-    )  # Unique identifier for QR code
+    unique_name = models.CharField(max_length=100, unique=True)  # Unique identifier for QR code
     owner = models.ForeignKey(
         RetailPulseUser,
         on_delete=models.CASCADE,
@@ -43,17 +42,14 @@ class Business(BaseModel):
         return f"{self.name} ({self.unique_name})"
 
 
-class BusinessMember(BaseModel):
+class sBusinessMember(BaseModel):
     """Business member model (employees, managers, etc.)."""
-    business = models.ForeignKey(
-        Business, on_delete=models.CASCADE, related_name="members"
-    )
+
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="members")
     user = models.ForeignKey(
         RetailPulseUser, on_delete=models.CASCADE, related_name="business_memberships"
     )
-    role = models.CharField(
-        max_length=50
-    )  # manager, cashier, stock_keeper, delivery
+    role = models.CharField(max_length=50)  # manager, cashier, stock_keeper, delivery
     is_active = models.BooleanField(default=True)
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
@@ -79,4 +75,3 @@ class BusinessMember(BaseModel):
     def is_active_member(self) -> bool:
         """Check if member is currently active."""
         return self.is_active and self.left_at is None
-

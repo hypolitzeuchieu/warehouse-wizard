@@ -96,6 +96,7 @@ class ProductUpdateDTO:
     quantity: int | None = None
     min_quantity: int | None = None
     expiry_date: datetime | None = None
+    subcategory_id_provided: bool = False
 
 
 @dataclass

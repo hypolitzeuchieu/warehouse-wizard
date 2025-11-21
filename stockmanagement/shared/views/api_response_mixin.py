@@ -4,4 +4,8 @@ from __future__ import annotations
 
 from shared.response.drf_mixin import DRFResponseMixin
 
-APIResponseMixin = DRFResponseMixin
+
+class APIResponseMixin(DRFResponseMixin):
+    """Alias for DRFResponseMixin for backward compatibility."""
+
+    pass

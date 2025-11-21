@@ -6,25 +6,433 @@ from uuid import UUID, uuid4
 from django.utils import timezone
 
 from application.dto.inventory_dto import (
+    CategoryCreateDTO,
+    CategoryResponseDTO,
+    CategoryUpdateDTO,
     ProductCreateDTO,
     ProductResponseDTO,
     ProductUpdateDTO,
     StockMovementCreateDTO,
     StockMovementResponseDTO,
+    SubCategoryCreateDTO,
+    SubCategoryResponseDTO,
+    SubCategoryUpdateDTO,
 )
 from domain.business.services import BusinessDomainService
 from domain.inventory.entities import (
+    Category,
     Product,
     StockMovement,
+    SubCategory,
 )
 from domain.inventory.repositories import (
     CategoryRepository,
     ProductRepository,
+    SubCategoryRepository,
 )
 from domain.inventory.services import InventoryDomainService
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
 
 logger = logging.getLogger(__name__)
+
+
+def _category_to_dto(category: Category) -> CategoryResponseDTO:
+    """Convert category entity to response DTO."""
+    return CategoryResponseDTO(
+        id=category.id,
+        business_id=category.business_id,
+        name=category.name,
+        description=category.description,
+        created_at=category.created_at,
+        updated_at=category.updated_at,
+    )
+
+
+def _subcategory_to_dto(subcategory: SubCategory) -> SubCategoryResponseDTO:
+    """Convert subcategory entity to response DTO."""
+    return SubCategoryResponseDTO(
+        id=subcategory.id,
+        business_id=subcategory.business_id,
+        category_id=subcategory.category_id,
+        name=subcategory.name,
+        description=subcategory.description,
+        created_at=subcategory.created_at,
+        updated_at=subcategory.updated_at,
+    )
+
+
+class ListCategoriesUseCase:
+    """Use case for listing categories for a business."""
+
+    def __init__(
+        self,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        business_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.business_id = business_id
+        self.user_id = user_id
+
+    def execute(self) -> list[CategoryResponseDTO]:
+        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this business",
+                code="PERMISSION_DENIED",
+            )
+        categories = self.category_repository.get_by_business(self.business_id)
+        return [_category_to_dto(category) for category in categories]
+
+
+class CreateCategoryUseCase:
+    """Use case for creating a category."""
+
+    def __init__(
+        self,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        business_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.business_id = business_id
+        self.user_id = user_id
+
+    def execute(self, dto: CategoryCreateDTO) -> CategoryResponseDTO:
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to create categories for this business",
+                code="PERMISSION_DENIED",
+            )
+
+        existing = self.category_repository.get_by_name(self.business_id, dto.name)
+        if existing:
+            raise BadRequestError(
+                detail="Category with this name already exists for this business",
+                code="CATEGORY_NAME_EXISTS",
+            )
+
+        category = Category(
+            id=uuid4(),
+            business_id=self.business_id,
+            name=dto.name,
+            description=dto.description,
+            created_at=timezone.now(),
+            updated_at=timezone.now(),
+            created_by=self.user_id,
+        )
+        category = self.category_repository.create(category)
+        return _category_to_dto(category)
+
+
+class GetCategoryUseCase:
+    """Use case for getting a category by ID."""
+
+    def __init__(
+        self,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        category_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.category_id = category_id
+        self.user_id = user_id
+
+    def execute(self) -> CategoryResponseDTO:
+        category = self.category_repository.get_by_id(self.category_id)
+        if not category:
+            raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.user_has_access(category.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this category",
+                code="PERMISSION_DENIED",
+            )
+
+        return _category_to_dto(category)
+
+
+class UpdateCategoryUseCase:
+    """Use case for updating a category."""
+
+    def __init__(
+        self,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        category_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.category_id = category_id
+        self.user_id = user_id
+
+    def execute(self, dto: CategoryUpdateDTO) -> CategoryResponseDTO:
+        category = self.category_repository.get_by_id(self.category_id)
+        if not category:
+            raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.can_user_manage_members(
+            category.business_id, self.user_id
+        ):
+            raise ForbiddenError(
+                detail="You don't have permission to update this category",
+                code="PERMISSION_DENIED",
+            )
+
+        if dto.name and dto.name != category.name:
+            existing = self.category_repository.get_by_name(category.business_id, dto.name)
+            if existing:
+                raise BadRequestError(
+                    detail="Category with this name already exists for this business",
+                    code="CATEGORY_NAME_EXISTS",
+                )
+            category.name = dto.name
+
+        if dto.description is not None:
+            category.description = dto.description
+
+        category.updated_at = timezone.now()
+        category = self.category_repository.update(category)
+        return _category_to_dto(category)
+
+
+class DeleteCategoryUseCase:
+    """Use case for deleting a category."""
+
+    def __init__(
+        self,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        category_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.category_id = category_id
+        self.user_id = user_id
+
+    def execute(self) -> None:
+        category = self.category_repository.get_by_id(self.category_id)
+        if not category:
+            raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.can_user_manage_members(
+            category.business_id, self.user_id
+        ):
+            raise ForbiddenError(
+                detail="You don't have permission to delete this category",
+                code="PERMISSION_DENIED",
+            )
+
+        self.category_repository.delete(self.category_id)
+
+
+class ListSubCategoriesUseCase:
+    """Use case for listing subcategories under a category."""
+
+    def __init__(
+        self,
+        subcategory_repository: SubCategoryRepository,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        category_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.subcategory_repository = subcategory_repository
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.category_id = category_id
+        self.user_id = user_id
+
+    def execute(self) -> list[SubCategoryResponseDTO]:
+        category = self.category_repository.get_by_id(self.category_id)
+        if not category:
+            raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.user_has_access(category.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this category",
+                code="PERMISSION_DENIED",
+            )
+
+        subcategories = self.subcategory_repository.get_by_category(self.category_id)
+        return [_subcategory_to_dto(subcategory) for subcategory in subcategories]
+
+
+class CreateSubCategoryUseCase:
+    """Use case for creating a subcategory."""
+
+    def __init__(
+        self,
+        subcategory_repository: SubCategoryRepository,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        business_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.subcategory_repository = subcategory_repository
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.business_id = business_id
+        self.user_id = user_id
+
+    def execute(self, dto: SubCategoryCreateDTO) -> SubCategoryResponseDTO:
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to create subcategories for this business",
+                code="PERMISSION_DENIED",
+            )
+
+        category = self.category_repository.get_by_id(dto.category_id)
+        if not category:
+            raise NotFoundError(
+                detail=f"Category with ID {dto.category_id} not found",
+                code="CATEGORY_NOT_FOUND",
+            )
+        category_business_id = UUID(str(category.business_id))
+        use_case_business_id = UUID(str(self.business_id))
+
+        if category_business_id != use_case_business_id:
+            logger.error(
+                f"Category {dto.category_id} does not belong to business {self.business_id}"
+            )
+            raise NotFoundError(
+                detail=f"Category {dto.category_id} does not belong to business {self.business_id}",
+                code="CATEGORY_NOT_FOUND",
+            )
+
+        existing = self.subcategory_repository.get_by_name(dto.category_id, dto.name)
+        if existing:
+            raise BadRequestError(
+                detail="Subcategory with this name already exists in this category",
+                code="SUBCATEGORY_NAME_EXISTS",
+            )
+
+        subcategory = SubCategory(
+            id=uuid4(),
+            business_id=self.business_id,
+            category_id=dto.category_id,
+            name=dto.name,
+            description=dto.description,
+            created_at=timezone.now(),
+            updated_at=timezone.now(),
+            created_by=self.user_id,
+        )
+        subcategory = self.subcategory_repository.create(subcategory)
+        return _subcategory_to_dto(subcategory)
+
+
+class GetSubCategoryUseCase:
+    """Use case for getting a subcategory by ID."""
+
+    def __init__(
+        self,
+        subcategory_repository: SubCategoryRepository,
+        business_domain_service: BusinessDomainService,
+        subcategory_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.subcategory_repository = subcategory_repository
+        self.business_domain_service = business_domain_service
+        self.subcategory_id = subcategory_id
+        self.user_id = user_id
+
+    def execute(self) -> SubCategoryResponseDTO:
+        subcategory = self.subcategory_repository.get_by_id(self.subcategory_id)
+        if not subcategory:
+            raise NotFoundError(detail="Subcategory not found", code="SUBCATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.user_has_access(subcategory.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this subcategory",
+                code="PERMISSION_DENIED",
+            )
+
+        return _subcategory_to_dto(subcategory)
+
+
+class UpdateSubCategoryUseCase:
+    """Use case for updating a subcategory."""
+
+    def __init__(
+        self,
+        subcategory_repository: SubCategoryRepository,
+        category_repository: CategoryRepository,
+        business_domain_service: BusinessDomainService,
+        subcategory_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.subcategory_repository = subcategory_repository
+        self.category_repository = category_repository
+        self.business_domain_service = business_domain_service
+        self.subcategory_id = subcategory_id
+        self.user_id = user_id
+
+    def execute(self, dto: SubCategoryUpdateDTO) -> SubCategoryResponseDTO:
+        subcategory = self.subcategory_repository.get_by_id(self.subcategory_id)
+        if not subcategory:
+            raise NotFoundError(detail="Subcategory not found", code="SUBCATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.can_user_manage_members(
+            subcategory.business_id, self.user_id
+        ):
+            raise ForbiddenError(
+                detail="You don't have permission to update this subcategory",
+                code="PERMISSION_DENIED",
+            )
+
+        if dto.name and dto.name != subcategory.name:
+            existing = self.subcategory_repository.get_by_name(subcategory.category_id, dto.name)
+            if existing:
+                raise BadRequestError(
+                    detail="Subcategory with this name already exists in this category",
+                    code="SUBCATEGORY_NAME_EXISTS",
+                )
+            subcategory.name = dto.name
+
+        if dto.description is not None:
+            subcategory.description = dto.description
+
+        subcategory.updated_at = timezone.now()
+        subcategory = self.subcategory_repository.update(subcategory)
+        return _subcategory_to_dto(subcategory)
+
+
+class DeleteSubCategoryUseCase:
+    """Use case for deleting a subcategory."""
+
+    def __init__(
+        self,
+        subcategory_repository: SubCategoryRepository,
+        business_domain_service: BusinessDomainService,
+        subcategory_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        self.subcategory_repository = subcategory_repository
+        self.business_domain_service = business_domain_service
+        self.subcategory_id = subcategory_id
+        self.user_id = user_id
+
+    def execute(self) -> None:
+        subcategory = self.subcategory_repository.get_by_id(self.subcategory_id)
+        if not subcategory:
+            raise NotFoundError(detail="Subcategory not found", code="SUBCATEGORY_NOT_FOUND")
+
+        if not self.business_domain_service.can_user_manage_members(
+            subcategory.business_id, self.user_id
+        ):
+            raise ForbiddenError(
+                detail="You don't have permission to delete this subcategory",
+                code="PERMISSION_DENIED",
+            )
+
+        self.subcategory_repository.delete(self.subcategory_id)
 
 
 class CreateProductUseCase:
@@ -34,12 +442,14 @@ class CreateProductUseCase:
         self,
         product_repository: ProductRepository,
         category_repository: CategoryRepository,
+        subcategory_repository: SubCategoryRepository,
         business_id: UUID,
         user_id: UUID,
     ) -> None:
         """Initialize use case."""
         self.product_repository = product_repository
         self.category_repository = category_repository
+        self.subcategory_repository = subcategory_repository
         self.business_id = business_id
         self.user_id = user_id
 
@@ -53,6 +463,20 @@ class CreateProductUseCase:
                 code="CATEGORY_NOT_FOUND",
             )
 
+        subcategory_id = dto.subcategory_id
+        if subcategory_id:
+            subcategory = self.subcategory_repository.get_by_id(subcategory_id)
+            if not subcategory or subcategory.business_id != self.business_id:
+                raise NotFoundError(
+                    detail="Subcategory not found",
+                    code="SUBCATEGORY_NOT_FOUND",
+                )
+            if subcategory.category_id != dto.category_id:
+                raise BadRequestError(
+                    detail="Subcategory does not belong to the specified category",
+                    code="SUBCATEGORY_MISMATCH",
+                )
+
         # Check if barcode already exists
         if dto.barcode:
             existing = self.product_repository.get_by_barcode(dto.barcode, self.business_id)
@@ -61,6 +485,18 @@ class CreateProductUseCase:
                     detail="Product with this barcode already exists",
                     code="BARCODE_EXISTS",
                 )
+
+        existing_name = self.product_repository.get_by_name_in_scope(
+            business_id=self.business_id,
+            category_id=dto.category_id,
+            subcategory_id=subcategory_id,
+            name=dto.name,
+        )
+        if existing_name:
+            raise BadRequestError(
+                detail="Product with this name already exists in this category or subcategory",
+                code="PRODUCT_NAME_EXISTS",
+            )
 
         # Generate barcode if not provided
         barcode_value = dto.barcode
@@ -86,7 +522,7 @@ class CreateProductUseCase:
             barcode=barcode_value,
             barcode_image_url=barcode_image_url,
             category_id=dto.category_id,
-            subcategory_id=dto.subcategory_id,
+            subcategory_id=subcategory_id,
             purchase_price=dto.purchase_price,
             unit_price=dto.unit_price,
             image_url=dto.image_url,
@@ -366,6 +802,7 @@ class ListProductsUseCase:
         business_id: UUID,
         user_id: UUID,
         category_id: UUID | None = None,
+        subcategory_id: UUID | None = None,
         low_stock_only: bool = False,
         expired_only: bool = False,
     ) -> None:
@@ -375,6 +812,7 @@ class ListProductsUseCase:
         self.business_id = business_id
         self.user_id = user_id
         self.category_id = category_id
+        self.subcategory_id = subcategory_id
         self.low_stock_only = low_stock_only
         self.expired_only = expired_only
 
@@ -390,6 +828,7 @@ class ListProductsUseCase:
         products = self.product_repository.get_by_business(
             business_id=self.business_id,
             category_id=self.category_id,
+            subcategory_id=self.subcategory_id,
             low_stock_only=self.low_stock_only,
             expired_only=self.expired_only,
         )
@@ -432,6 +871,7 @@ class UpdateProductUseCase:
         self,
         product_repository: ProductRepository,
         category_repository: CategoryRepository,
+        subcategory_repository: SubCategoryRepository,
         business_domain_service: BusinessDomainService,
         product_id: UUID,
         business_id: UUID,
@@ -440,6 +880,7 @@ class UpdateProductUseCase:
         """Initialize use case."""
         self.product_repository = product_repository
         self.category_repository = category_repository
+        self.subcategory_repository = subcategory_repository
         self.business_domain_service = business_domain_service
         self.product_id = product_id
         self.business_id = business_id
@@ -461,6 +902,51 @@ class UpdateProductUseCase:
                 code="PRODUCT_NOT_FOUND",
             )
 
+        target_category_id = product.category_id
+        if dto.category_id is not None:
+            category = self.category_repository.get_by_id(dto.category_id)
+            if not category or category.business_id != self.business_id:
+                raise NotFoundError(
+                    detail="Category not found",
+                    code="CATEGORY_NOT_FOUND",
+                )
+            target_category_id = dto.category_id
+
+        if dto.subcategory_id_provided:
+            target_subcategory_id = dto.subcategory_id
+        elif dto.category_id is not None:
+            target_subcategory_id = None
+        else:
+            target_subcategory_id = product.subcategory_id
+
+        if target_subcategory_id:
+            subcategory = self.subcategory_repository.get_by_id(target_subcategory_id)
+            if not subcategory or subcategory.business_id != self.business_id:
+                raise NotFoundError(
+                    detail="Subcategory not found",
+                    code="SUBCATEGORY_NOT_FOUND",
+                )
+            if subcategory.category_id != target_category_id:
+                raise BadRequestError(
+                    detail="Subcategory does not belong to the specified category",
+                    code="SUBCATEGORY_MISMATCH",
+                )
+
+        target_name = dto.name if dto.name is not None else product.name
+
+        existing_with_name = self.product_repository.get_by_name_in_scope(
+            business_id=self.business_id,
+            category_id=target_category_id,
+            subcategory_id=target_subcategory_id,
+            name=target_name,
+            exclude_id=product.id,
+        )
+        if existing_with_name:
+            raise BadRequestError(
+                detail="Product with this name already exists in this category or subcategory",
+                code="PRODUCT_NAME_EXISTS",
+            )
+
         # Update fields
         if dto.name is not None:
             product.name = dto.name
@@ -475,16 +961,8 @@ class UpdateProductUseCase:
                     code="BARCODE_EXISTS",
                 )
             product.barcode = dto.barcode
-        if dto.category_id is not None:
-            category = self.category_repository.get_by_id(dto.category_id)
-            if not category or category.business_id != self.business_id:
-                raise NotFoundError(
-                    detail="Category not found",
-                    code="CATEGORY_NOT_FOUND",
-                )
-            product.category_id = dto.category_id
-        if dto.subcategory_id is not None:
-            product.subcategory_id = dto.subcategory_id
+        product.category_id = target_category_id
+        product.subcategory_id = target_subcategory_id
         if dto.purchase_price is not None:
             product.purchase_price = dto.purchase_price
         if dto.unit_price is not None:

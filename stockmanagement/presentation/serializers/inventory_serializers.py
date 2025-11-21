@@ -5,12 +5,126 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from application.dto.inventory_dto import (
+    CategoryCreateDTO,
+    CategoryResponseDTO,
+    CategoryUpdateDTO,
     ProductCreateDTO,
     ProductResponseDTO,
     ProductUpdateDTO,
     StockMovementCreateDTO,
     StockMovementResponseDTO,
+    SubCategoryCreateDTO,
+    SubCategoryResponseDTO,
+    SubCategoryUpdateDTO,
 )
+
+
+class CategoryCreateSerializer(serializers.Serializer):
+    """Serializer for category creation."""
+
+    name = serializers.CharField(max_length=100)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def to_dto(self) -> CategoryCreateDTO:
+        return CategoryCreateDTO(
+            name=self.validated_data["name"],
+            description=self.validated_data.get("description"),
+        )
+
+
+class CategoryUpdateSerializer(serializers.Serializer):
+    """Serializer for category update."""
+
+    name = serializers.CharField(max_length=100, required=False, allow_blank=False)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def to_dto(self) -> CategoryUpdateDTO:
+        return CategoryUpdateDTO(
+            name=self.validated_data.get("name"),
+            description=self.validated_data.get("description"),
+        )
+
+
+class CategoryResponseSerializer(serializers.Serializer):
+    """Serializer for category responses."""
+
+    id = serializers.UUIDField()
+    business_id = serializers.UUIDField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_null=True, required=False)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: CategoryResponseDTO) -> dict:
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "name": dto.name,
+                "description": dto.description,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class SubCategoryCreateSerializer(serializers.Serializer):
+    """Serializer for subcategory creation."""
+
+    category_id = serializers.UUIDField()
+    name = serializers.CharField(max_length=100)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def to_dto(self) -> SubCategoryCreateDTO:
+        return SubCategoryCreateDTO(
+            category_id=self.validated_data["category_id"],
+            name=self.validated_data["name"],
+            description=self.validated_data.get("description"),
+        )
+
+
+class SubCategoryUpdateSerializer(serializers.Serializer):
+    """Serializer for subcategory update."""
+
+    name = serializers.CharField(max_length=100, required=False, allow_blank=False)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def to_dto(self) -> SubCategoryUpdateDTO:
+        return SubCategoryUpdateDTO(
+            name=self.validated_data.get("name"),
+            description=self.validated_data.get("description"),
+        )
+
+
+class SubCategoryResponseSerializer(serializers.Serializer):
+    """Serializer for subcategory responses."""
+
+    id = serializers.UUIDField()
+    business_id = serializers.UUIDField()
+    category_id = serializers.UUIDField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_null=True, required=False)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+    @classmethod
+    def from_dto(cls, dto: SubCategoryResponseDTO) -> dict:
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "business_id": dto.business_id,
+                "category_id": dto.category_id,
+                "name": dto.name,
+                "description": dto.description,
+                "created_at": dto.created_at,
+                "updated_at": dto.updated_at,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
 
 
 class ProductCreateSerializer(serializers.Serializer):
@@ -66,18 +180,23 @@ class ProductUpdateSerializer(serializers.Serializer):
 
     def to_dto(self) -> ProductUpdateDTO:
         """Convert to DTO."""
+        subcategory_present = "subcategory_id" in self.validated_data
+        subcategory_value = (
+            self.validated_data.get("subcategory_id") if subcategory_present else None
+        )
         return ProductUpdateDTO(
             name=self.validated_data.get("name"),
             description=self.validated_data.get("description"),
             barcode=self.validated_data.get("barcode"),
             category_id=self.validated_data.get("category_id"),
-            subcategory_id=self.validated_data.get("subcategory_id"),
+            subcategory_id=subcategory_value,
             purchase_price=self.validated_data.get("purchase_price"),
             unit_price=self.validated_data.get("unit_price"),
             image_url=self.validated_data.get("image_url"),
             quantity=self.validated_data.get("quantity"),
             min_quantity=self.validated_data.get("min_quantity"),
             expiry_date=self.validated_data.get("expiry_date"),
+            subcategory_id_provided=subcategory_present,
         )
 
 
@@ -189,6 +308,88 @@ class StockMovementResponseSerializer(serializers.Serializer):
                 "product_name": dto.product_name,
                 "reason": dto.reason,
                 "user_name": dto.user_name,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class LowStockProductSerializer(serializers.Serializer):
+    """Serializer for low stock product responses."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    quantity = serializers.IntegerField()
+    min_quantity = serializers.IntegerField()
+    is_low_stock = serializers.BooleanField()
+
+    @classmethod
+    def from_dto(cls, dto: ProductResponseDTO) -> dict:
+        """Convert ProductResponseDTO to serialized format."""
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "name": dto.name,
+                "quantity": dto.quantity,
+                "min_quantity": dto.min_quantity,
+                "is_low_stock": dto.is_low_stock,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class ExpiredProductSerializer(serializers.Serializer):
+    """Serializer for expired product responses."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    expiry_date = serializers.DateTimeField(allow_null=True, required=False)
+    is_expired = serializers.BooleanField()
+
+    @classmethod
+    def from_dto(cls, dto: ProductResponseDTO) -> dict:
+        """Convert ProductResponseDTO to serialized format."""
+        serializer = cls(
+            data={
+                "id": dto.id,
+                "name": dto.name,
+                "expiry_date": dto.expiry_date,
+                "is_expired": dto.is_expired,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.data
+
+
+class ProductScanSerializer(serializers.Serializer):
+    """Serializer for product scan responses."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    barcode = serializers.CharField(allow_null=True, required=False)
+    barcode_image_url = serializers.CharField(allow_null=True, required=False)
+    unit_price = serializers.DecimalField(max_digits=15, decimal_places=2)
+    current_price = serializers.DecimalField(max_digits=15, decimal_places=2)
+    quantity = serializers.IntegerField()
+    is_low_stock = serializers.BooleanField()
+    is_expired = serializers.BooleanField()
+
+    @classmethod
+    def from_product(cls, product) -> dict:
+        """Convert product entity to serialized format."""
+
+        serializer = cls(
+            data={
+                "id": product.id,
+                "name": product.name,
+                "barcode": product.barcode,
+                "barcode_image_url": product.barcode_image_url,
+                "unit_price": product.unit_price,
+                "current_price": product.get_current_price(),
+                "quantity": product.quantity,
+                "is_low_stock": product.is_low_stock(),
+                "is_expired": product.is_expired,
             }
         )
         serializer.is_valid(raise_exception=True)
