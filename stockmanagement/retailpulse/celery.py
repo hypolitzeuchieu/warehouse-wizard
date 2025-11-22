@@ -10,4 +10,5 @@ app = Celery("retailpulse")
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
-app.autodiscover_tasks()
+# Explicitly discover tasks from the tasks package
+app.autodiscover_tasks(packages=["tasks"])
