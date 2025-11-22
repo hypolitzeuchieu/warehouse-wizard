@@ -12,6 +12,7 @@ from presentation.viewsets.customer_viewset import CustomerViewSet
 from presentation.viewsets.finance_viewset import FinanceViewSet
 from presentation.viewsets.inventory_viewset import InventoryViewSet
 from presentation.viewsets.notification_viewset import NotificationViewSet
+from presentation.viewsets.product_viewset import ProductViewSet
 from presentation.viewsets.sales_viewset import SalesViewSet
 from presentation.viewsets.subcategory_viewset import SubCategoryViewSet
 
@@ -24,6 +25,7 @@ router.register(r"notifications", NotificationViewSet, basename="notification")
 router.register(r"inventory", InventoryViewSet, basename="inventory")
 router.register(r"categories", CategoryViewSet, basename="category")
 router.register(r"subcategories", SubCategoryViewSet, basename="subcategory")
+router.register(r"products", ProductViewSet, basename="product")
 router.register(r"sales", SalesViewSet, basename="sales")
 router.register(r"customers", CustomerViewSet, basename="customer")
 router.register(r"finance", FinanceViewSet, basename="finance")

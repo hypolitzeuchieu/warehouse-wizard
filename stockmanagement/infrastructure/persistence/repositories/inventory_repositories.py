@@ -185,6 +185,10 @@ class ProductRepositoryImpl(ProductRepository):
         except ProductModel.DoesNotExist:
             return None
 
+    def barcode_exists_globally(self, barcode: str) -> bool:
+        """Check if barcode exists globally (across all businesses)."""
+        return ProductModel.objects.filter(barcode=barcode).exists()
+
     def get_by_business(
         self,
         business_id: UUID,

@@ -1,6 +1,7 @@
 """Inventory serializers."""
 
 from decimal import Decimal
+from uuid import uuid4
 
 from rest_framework import serializers
 
@@ -17,6 +18,7 @@ from application.dto.inventory_dto import (
     SubCategoryResponseDTO,
     SubCategoryUpdateDTO,
 )
+from shared.services.s3_service import S3Service
 
 
 class CategoryCreateSerializer(serializers.Serializer):
@@ -132,20 +134,113 @@ class ProductCreateSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=255, required=True)
     description = serializers.CharField(required=False, allow_blank=True)
-    barcode = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    barcode = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, allow_null=True
+    )
+
+    def validate_barcode(self, value):
+        """Validate barcode format if provided."""
+        if value and value.strip():
+            cleaned_value = value.strip()
+            if not cleaned_value.isdigit() or len(cleaned_value) != 13:
+                return None
+            return cleaned_value
+        return None  # Return None to trigger automatic generation
+
     category_id = serializers.UUIDField(required=True)
     subcategory_id = serializers.UUIDField(required=False, allow_null=True)
     purchase_price = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
     unit_price = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
-    image_url = serializers.URLField(max_length=500, required=False, allow_blank=True)
+    image = serializers.ImageField(required=False, allow_null=True)
     quantity = serializers.IntegerField(required=False, default=0, min_value=0)
     min_quantity = serializers.IntegerField(required=False, default=10, min_value=0)
     expiry_date = serializers.DateTimeField(required=False, allow_null=True)
+    on_promotion = serializers.BooleanField(required=False, default=False)
+    promotion_start_date = serializers.DateTimeField(required=False, allow_null=True)
+    promotion_end_date = serializers.DateTimeField(required=False, allow_null=True)
+    promo_price = serializers.DecimalField(
+        max_digits=15, decimal_places=2, required=False, allow_null=True, min_value=Decimal("0.01")
+    )
 
-    def to_dto(self) -> ProductCreateDTO:
+    def validate(self, attrs):
+        """Validate product data."""
+        unit_price = attrs.get("unit_price")
+        purchase_price = attrs.get("purchase_price")
+        quantity = attrs.get("quantity", 0)
+        min_quantity = attrs.get("min_quantity", 10)
+        on_promotion = attrs.get("on_promotion", False)
+        promotion_start_date = attrs.get("promotion_start_date")
+        promotion_end_date = attrs.get("promotion_end_date")
+        promo_price = attrs.get("promo_price")
+
+        if min_quantity > quantity:
+            raise serializers.ValidationError(
+                {"min_quantity": "min_quantity cannot be greater than quantity"}
+            )
+
+        if on_promotion:
+            if not promotion_start_date:
+                raise serializers.ValidationError(
+                    {
+                        "promotion_start_date": "promotion_start_date is required when on_promotion is True"
+                    }
+                )
+            if not promotion_end_date:
+                raise serializers.ValidationError(
+                    {
+                        "promotion_end_date": "promotion_end_date is required when on_promotion is True"
+                    }
+                )
+            if not promo_price:
+                raise serializers.ValidationError(
+                    {"promo_price": "promo_price is required when on_promotion is True"}
+                )
+
+            # Validate promotion dates
+            if promotion_end_date <= promotion_start_date:
+                raise serializers.ValidationError(
+                    {"promotion_end_date": "promotion_end_date must be after promotion_start_date"}
+                )
+
+            # Validate promo_price < unit_price
+            if promo_price >= unit_price:
+                raise serializers.ValidationError(
+                    {"promo_price": "promo_price must be less than unit_price"}
+                )
+
+        else:
+            # If not on promotion, unit_price must be >= purchase_price
+            if unit_price < purchase_price:
+                raise serializers.ValidationError(
+                    {
+                        "unit_price": "unit_price must be greater than or equal to purchase_price when not on promotion"
+                    }
+                )
+
+        return attrs
+
+    def to_dto(self, business_id: str | None = None) -> ProductCreateDTO:
         """Convert to DTO."""
+        # Handle image upload if provided
+        image_url = None
+
+        if "image" in self.validated_data and self.validated_data["image"]:
+
+            s3_service = S3Service()
+            image_file = self.validated_data["image"]
+            # Set content_type for the file
+            image_file.content_type = image_file.content_type or "image/jpeg"
+
+            # Generate unique filename
+            filename = f"product_{business_id}_{uuid4()}" if business_id else f"product_{uuid4()}"
+            image_url = s3_service.upload_image(
+                file=image_file,
+                folder="products",
+                filename=filename,
+            )
+
         return ProductCreateDTO(
             name=self.validated_data["name"],
             description=self.validated_data.get("description"),
@@ -154,10 +249,14 @@ class ProductCreateSerializer(serializers.Serializer):
             subcategory_id=self.validated_data.get("subcategory_id"),
             purchase_price=self.validated_data["purchase_price"],
             unit_price=self.validated_data["unit_price"],
-            image_url=self.validated_data.get("image_url"),
+            image_url=image_url,
             quantity=self.validated_data.get("quantity", 0),
             min_quantity=self.validated_data.get("min_quantity", 10),
             expiry_date=self.validated_data.get("expiry_date"),
+            on_promotion=self.validated_data.get("on_promotion", False),
+            promotion_start_date=self.validated_data.get("promotion_start_date"),
+            promotion_end_date=self.validated_data.get("promotion_end_date"),
+            promo_price=self.validated_data.get("promo_price"),
         )
 
 
@@ -173,13 +272,39 @@ class ProductUpdateSerializer(serializers.Serializer):
     unit_price = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=False, min_value=Decimal("0.01")
     )
-    image_url = serializers.URLField(max_length=500, required=False, allow_blank=True)
+    image = serializers.ImageField(required=False, allow_null=True)
     quantity = serializers.IntegerField(required=False, min_value=0)
     min_quantity = serializers.IntegerField(required=False, min_value=0)
     expiry_date = serializers.DateTimeField(required=False, allow_null=True)
 
-    def to_dto(self) -> ProductUpdateDTO:
+    def to_dto(
+        self, business_id: str | None = None, old_image_url: str | None = None
+    ) -> ProductUpdateDTO:
         """Convert to DTO."""
+        # Handle image upload if provided
+        image_url = old_image_url
+
+        if "image" in self.validated_data and self.validated_data["image"]:
+
+            s3_service = S3Service()
+            image_file = self.validated_data["image"]
+            # Set content_type for the file
+            image_file.content_type = image_file.content_type or "image/jpeg"
+
+            filename = f"product_{business_id}_{uuid4()}" if business_id else f"product_{uuid4()}"
+            image_url = s3_service.upload_image(
+                file=image_file,
+                folder="products",
+                filename=filename,
+            )
+
+            # Delete old image if new one is uploaded
+            if old_image_url:
+                try:
+                    s3_service.delete_file_safe(old_image_url)
+                except Exception:
+                    pass  # Logged in delete_file_safe
+
         subcategory_present = "subcategory_id" in self.validated_data
         subcategory_value = (
             self.validated_data.get("subcategory_id") if subcategory_present else None
@@ -192,7 +317,7 @@ class ProductUpdateSerializer(serializers.Serializer):
             subcategory_id=subcategory_value,
             purchase_price=self.validated_data.get("purchase_price"),
             unit_price=self.validated_data.get("unit_price"),
-            image_url=self.validated_data.get("image_url"),
+            image_url=image_url,
             quantity=self.validated_data.get("quantity"),
             min_quantity=self.validated_data.get("min_quantity"),
             expiry_date=self.validated_data.get("expiry_date"),

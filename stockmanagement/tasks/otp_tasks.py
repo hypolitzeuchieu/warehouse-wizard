@@ -58,6 +58,7 @@ def send_otp_sms_task(self, phone_number: str, otp_code: str) -> bool:
     """
     try:
         sms_service = SMSService()
+        logger.info(f"Attempting to send OTP SMS to {phone_number}: {otp_code}")
         success = sms_service.send_otp_sms(
             phone_number=phone_number,
             otp_code=otp_code,

@@ -31,9 +31,55 @@ from domain.inventory.repositories import (
     SubCategoryRepository,
 )
 from domain.inventory.services import InventoryDomainService
+from infrastructure.messaging.email_service import EmailService
+from infrastructure.persistence.repositories import BusinessRepositoryImpl
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
+from shared.services.barcode_service import BarcodeService
+from shared.services.s3_service import S3Service
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_uuid(value: UUID | str | None) -> UUID | None:
+    """
+    Normalize UUID value to UUID type for consistent comparison.
+
+    Args:
+        value: UUID, string, or None value to normalize
+
+    Returns:
+        UUID object or None if value is None
+    """
+    if value is None:
+        return None
+    if isinstance(value, UUID):
+        return value
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
+def _compare_business_ids(
+    entity_business_id: UUID | str | None, target_business_id: UUID | str | None
+) -> bool:
+    """
+    Compare two business IDs safely, handling UUID and string types.
+
+    Args:
+        entity_business_id: Business ID from entity (can be UUID or str)
+        target_business_id: Target business ID to compare (can be UUID or str)
+
+    Returns:
+        True if both IDs are equal, False otherwise
+    """
+    normalized_entity = _normalize_uuid(entity_business_id)
+    normalized_target = _normalize_uuid(target_business_id)
+
+    if normalized_entity is None or normalized_target is None:
+        return False
+
+    return normalized_entity == normalized_target
 
 
 def _category_to_dto(category: Category) -> CategoryResponseDTO:
@@ -295,10 +341,8 @@ class CreateSubCategoryUseCase:
                 detail=f"Category with ID {dto.category_id} not found",
                 code="CATEGORY_NOT_FOUND",
             )
-        category_business_id = UUID(str(category.business_id))
-        use_case_business_id = UUID(str(self.business_id))
 
-        if category_business_id != use_case_business_id:
+        if not _compare_business_ids(category.business_id, self.business_id):
             logger.error(
                 f"Category {dto.category_id} does not belong to business {self.business_id}"
             )
@@ -457,33 +501,52 @@ class CreateProductUseCase:
         """Execute product creation."""
         # Validate category exists
         category = self.category_repository.get_by_id(dto.category_id)
-        if not category or category.business_id != self.business_id:
+        if not category:
+            logger.error(f"Category {dto.category_id} not found in database")
             raise NotFoundError(
-                detail="Category not found",
+                detail=f"Category with ID {dto.category_id} not found",
+                code="CATEGORY_NOT_FOUND",
+            )
+
+        # Ensure category belongs to the business
+        if not _compare_business_ids(category.business_id, self.business_id):
+            logger.warning(
+                f"Category {dto.category_id} (business: {category.business_id}) "
+                f"does not belong to business {self.business_id}"
+            )
+            raise NotFoundError(
+                detail=f"Category {dto.category_id} does not belong to business {self.business_id}",
                 code="CATEGORY_NOT_FOUND",
             )
 
         subcategory_id = dto.subcategory_id
         if subcategory_id:
             subcategory = self.subcategory_repository.get_by_id(subcategory_id)
-            if not subcategory or subcategory.business_id != self.business_id:
+            if not subcategory:
                 raise NotFoundError(
                     detail="Subcategory not found",
                     code="SUBCATEGORY_NOT_FOUND",
                 )
-            if subcategory.category_id != dto.category_id:
+
+            # Ensure subcategory belongs to the business
+            if not _compare_business_ids(subcategory.business_id, self.business_id):
+                logger.warning(
+                    f"Subcategory {subcategory_id} (business: {subcategory.business_id}) "
+                    f"does not belong to business {self.business_id}"
+                )
+                raise NotFoundError(
+                    detail=f"Subcategory {subcategory_id} does not belong to business {self.business_id}",
+                    code="SUBCATEGORY_NOT_FOUND",
+                )
+
+            # Ensure subcategory belongs to the specified category
+            normalized_subcategory_category = _normalize_uuid(subcategory.category_id)
+            normalized_dto_category = _normalize_uuid(dto.category_id)
+
+            if normalized_subcategory_category != normalized_dto_category:
                 raise BadRequestError(
                     detail="Subcategory does not belong to the specified category",
                     code="SUBCATEGORY_MISMATCH",
-                )
-
-        # Check if barcode already exists
-        if dto.barcode:
-            existing = self.product_repository.get_by_barcode(dto.barcode, self.business_id)
-            if existing:
-                raise BadRequestError(
-                    detail="Product with this barcode already exists",
-                    code="BARCODE_EXISTS",
                 )
 
         existing_name = self.product_repository.get_by_name_in_scope(
@@ -498,20 +561,47 @@ class CreateProductUseCase:
                 code="PRODUCT_NAME_EXISTS",
             )
 
-        # Generate barcode if not provided
         barcode_value = dto.barcode
         barcode_image_url = None
 
+        # Normalize barcode: treat empty strings as None
+        if barcode_value and barcode_value.strip():
+            barcode_value = barcode_value.strip()
+        else:
+            barcode_value = None
+
         if not barcode_value:
             try:
-                from shared.services.barcode_service import BarcodeService
-
                 barcode_service = BarcodeService()
-                barcode_value, barcode_image_url = barcode_service.generate_and_upload_barcode()
-                logger.info(f"Generated barcode for product: {barcode_value}")
+                barcode_value, barcode_image_url = barcode_service.generate_and_upload_barcode(
+                    product_repository=self.product_repository
+                )
+                logger.info(f"Generated unique barcode for product: {barcode_value}")
             except Exception as e:
                 logger.warning(f"Failed to generate barcode for product: {str(e)}")
                 # Continue without barcode - it can be generated later
+        else:
+            logger.info(f"Checking provided barcode for uniqueness: {barcode_value}")
+            if self.product_repository.barcode_exists_globally(barcode_value):
+                logger.warning(f"Provided barcode {barcode_value} already exists globally")
+                raise BadRequestError(
+                    detail="Product with this barcode already exists. Barcodes must be unique across all businesses.",
+                    code="BARCODE_EXISTS",
+                )
+            logger.info(f"Provided barcode {barcode_value} is unique")
+
+        # Validate promotion if provided
+        if dto.on_promotion:
+            if not dto.promo_price or not dto.promotion_start_date or not dto.promotion_end_date:
+                raise BadRequestError(
+                    detail="promo_price, promotion_start_date, and promotion_end_date are required when on_promotion is True",
+                    code="PROMOTION_FIELDS_REQUIRED",
+                )
+            if dto.promo_price >= dto.unit_price:
+                raise BadRequestError(
+                    detail="promo_price must be less than unit_price",
+                    code="INVALID_PROMO_PRICE",
+                )
 
         # Create product entity
         product = Product(
@@ -530,10 +620,10 @@ class CreateProductUseCase:
             min_quantity=dto.min_quantity,
             expiry_date=dto.expiry_date,
             is_expired=False,
-            on_promotion=False,
-            promotion_start_date=None,
-            promotion_end_date=None,
-            promo_price=None,
+            on_promotion=dto.on_promotion,
+            promotion_start_date=dto.promotion_start_date,
+            promotion_end_date=dto.promotion_end_date,
+            promo_price=dto.promo_price,
             created_at=timezone.now(),
             updated_at=timezone.now(),
             created_by=self.user_id,
@@ -595,7 +685,7 @@ class RecordStockMovementUseCase:
         """Execute stock movement recording."""
         # Validate product exists
         product = self.product_repository.get_by_id(dto.product_id)
-        if not product or product.business_id != self.business_id:
+        if not product or not _compare_business_ids(product.business_id, self.business_id):
             raise NotFoundError(
                 detail="Product not found",
                 code="PRODUCT_NOT_FOUND",
@@ -755,7 +845,7 @@ class GetProductUseCase:
             )
 
         product = self.product_repository.get_by_id(self.product_id)
-        if not product or product.business_id != self.business_id:
+        if not product or not _compare_business_ids(product.business_id, self.business_id):
             raise NotFoundError(
                 detail="Product not found",
                 code="PRODUCT_NOT_FOUND",
@@ -896,7 +986,7 @@ class UpdateProductUseCase:
             )
 
         product = self.product_repository.get_by_id(self.product_id)
-        if not product or product.business_id != self.business_id:
+        if not product or not _compare_business_ids(product.business_id, self.business_id):
             raise NotFoundError(
                 detail="Product not found",
                 code="PRODUCT_NOT_FOUND",
@@ -905,7 +995,7 @@ class UpdateProductUseCase:
         target_category_id = product.category_id
         if dto.category_id is not None:
             category = self.category_repository.get_by_id(dto.category_id)
-            if not category or category.business_id != self.business_id:
+            if not category or not _compare_business_ids(category.business_id, self.business_id):
                 raise NotFoundError(
                     detail="Category not found",
                     code="CATEGORY_NOT_FOUND",
@@ -921,12 +1011,19 @@ class UpdateProductUseCase:
 
         if target_subcategory_id:
             subcategory = self.subcategory_repository.get_by_id(target_subcategory_id)
-            if not subcategory or subcategory.business_id != self.business_id:
+            if not subcategory or not _compare_business_ids(
+                subcategory.business_id, self.business_id
+            ):
                 raise NotFoundError(
                     detail="Subcategory not found",
                     code="SUBCATEGORY_NOT_FOUND",
                 )
-            if subcategory.category_id != target_category_id:
+
+            # Ensure subcategory belongs to the specified category
+            normalized_subcategory_category = _normalize_uuid(subcategory.category_id)
+            normalized_target_category = _normalize_uuid(target_category_id)
+
+            if normalized_subcategory_category != normalized_target_category:
                 raise BadRequestError(
                     detail="Subcategory does not belong to the specified category",
                     code="SUBCATEGORY_MISMATCH",
@@ -1042,10 +1139,162 @@ class DeleteProductUseCase:
             )
 
         product = self.product_repository.get_by_id(self.product_id)
-        if not product or product.business_id != self.business_id:
+        if not product:
             raise NotFoundError(
                 detail="Product not found",
                 code="PRODUCT_NOT_FOUND",
             )
 
+        # Ensure product belongs to the business
+        if not _compare_business_ids(product.business_id, self.business_id):
+            logger.warning(
+                f"Product {self.product_id} (business: {product.business_id}) "
+                f"does not belong to business {self.business_id}"
+            )
+            raise NotFoundError(
+                detail="Product not found",
+                code="PRODUCT_NOT_FOUND",
+            )
+
+        # Delete S3 files before deleting product
+        s3_service = S3Service()
+
+        # Delete product image
+        if product.image_url:
+            try:
+                s3_service.delete_file_safe(product.image_url)
+            except Exception as e:
+                logger.warning(f"Failed to delete product image from S3: {str(e)}")
+
+        # Delete barcode image
+        if product.barcode_image_url:
+            try:
+                s3_service.delete_file_safe(product.barcode_image_url)
+            except Exception as e:
+                logger.warning(f"Failed to delete barcode image from S3: {str(e)}")
+
         self.product_repository.delete(self.product_id)
+
+
+class ScanBarcodeUseCase:
+    """Use case for scanning barcode to find a product."""
+
+    def __init__(
+        self,
+        product_repository: ProductRepository,
+        business_id: UUID,
+    ):
+        self.product_repository = product_repository
+        self.business_id = business_id
+
+    def execute(self, barcode: str) -> ProductResponseDTO:
+        """Scan barcode and return product information."""
+        if not barcode:
+            raise BadRequestError(
+                detail="Barcode is required",
+                code="BARCODE_REQUIRED",
+            )
+
+        product = self.product_repository.get_by_barcode(barcode, self.business_id)
+        if not product:
+            raise NotFoundError(
+                detail=f"Product with barcode {barcode} not found",
+                code="PRODUCT_NOT_FOUND",
+            )
+
+        return self._to_dto(product)
+
+    def _to_dto(self, product: Product) -> ProductResponseDTO:
+        """Convert product entity to DTO."""
+        return ProductResponseDTO(
+            id=product.id,
+            business_id=product.business_id,
+            name=product.name,
+            description=product.description,
+            barcode=product.barcode,
+            barcode_image_url=product.barcode_image_url,
+            category_id=product.category_id,
+            subcategory_id=product.subcategory_id,
+            purchase_price=product.purchase_price,
+            unit_price=product.unit_price,
+            current_price=product.get_current_price(),
+            image_url=product.image_url,
+            quantity=product.quantity,
+            min_quantity=product.min_quantity,
+            is_low_stock=product.is_low_stock(),
+            expiry_date=product.expiry_date,
+            is_expired=product.is_expired,
+            on_promotion=product.on_promotion,
+            promotion_start_date=product.promotion_start_date,
+            promotion_end_date=product.promotion_end_date,
+            promo_price=product.promo_price,
+            created_at=product.created_at,
+            updated_at=product.updated_at,
+        )
+
+
+class NotifyExpiringProductsUseCase:
+    """Use case for notifying business owners about expiring products."""
+
+    def __init__(
+        self,
+        product_repository: ProductRepository,
+        business_domain_service: BusinessDomainService,
+        product_id: UUID,
+        business_id: UUID,
+    ) -> None:
+        """Initialize use case."""
+        self.product_repository = product_repository
+        self.business_domain_service = business_domain_service
+        self.product_id = product_id
+        self.business_id = business_id
+
+    def execute(self) -> None:
+        """Execute notification."""
+        product = self.product_repository.get_by_id(self.product_id)
+        if not product or not _compare_business_ids(product.business_id, self.business_id):
+            logger.warning(f"Product {self.product_id} not found for notification")
+            return
+
+        business_repo = BusinessRepositoryImpl()
+        business = business_repo.get_by_id(self.business_id)
+        if not business:
+            logger.warning(f"Business {self.business_id} not found for notification")
+            return
+
+        # Get owner email from business
+        from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
+
+        try:
+            owner = UserModel.objects.get(id=business.owner_id)
+            owner_email = owner.email
+        except UserModel.DoesNotExist:
+            logger.warning(f"Owner not found for business {self.business_id}")
+            return
+
+        # Calculate days until expiry
+        days_until_expiry = None
+        if product.expiry_date:
+            delta = product.expiry_date - timezone.now()
+            days_until_expiry = delta.days
+
+        # Send email notification
+        try:
+            email_service = EmailService()
+            subject = "Product Expiry Alert"
+
+            if product.is_expired:
+                message = f"Product '{product.name}' has expired on {product.expiry_date.strftime('%Y-%m-%d')}."
+            elif days_until_expiry is not None and days_until_expiry <= 15:
+                message = f"Product '{product.name}' will expire in {days_until_expiry} days ({product.expiry_date.strftime('%Y-%m-%d')})."
+            else:
+                message = f"Product '{product.name}' expiry alert."
+
+            email_service.send_email(
+                to_email=owner_email,
+                subject=subject,
+                message=message,
+            )
+            logger.info(f"Expiry notification sent for product {product.id} to {owner_email}")
+        except Exception as e:
+            logger.error(f"Failed to send expiry notification: {str(e)}", exc_info=True)

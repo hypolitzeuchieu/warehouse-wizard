@@ -42,7 +42,7 @@ class Business(BaseModel):
         return f"{self.name} ({self.unique_name})"
 
 
-class sBusinessMember(BaseModel):
+class BusinessMember(BaseModel):
     """Business member model (employees, managers, etc.)."""
 
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="members")
