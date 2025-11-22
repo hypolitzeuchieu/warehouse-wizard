@@ -79,6 +79,10 @@ class ProductCreateDTO:
     quantity: int = 0
     min_quantity: int = 10
     expiry_date: datetime | None = None
+    on_promotion: bool = False
+    promotion_start_date: datetime | None = None
+    promotion_end_date: datetime | None = None
+    promo_price: Decimal | None = None
 
 
 @dataclass
@@ -96,6 +100,7 @@ class ProductUpdateDTO:
     quantity: int | None = None
     min_quantity: int | None = None
     expiry_date: datetime | None = None
+    subcategory_id_provided: bool = False
 
 
 @dataclass

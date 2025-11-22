@@ -26,6 +26,11 @@ class CategoryRepository(ABC):
         pass
 
     @abstractmethod
+    def get_by_name(self, business_id: UUID, name: str) -> Category | None:
+        """Get category by name within a business."""
+        pass
+
+    @abstractmethod
     def create(self, category: Category) -> Category:
         """Create a new category."""
         pass
@@ -52,6 +57,11 @@ class SubCategoryRepository(ABC):
     @abstractmethod
     def get_by_category(self, category_id: UUID) -> list[SubCategory]:
         """Get all subcategories for a category."""
+        pass
+
+    @abstractmethod
+    def get_by_name(self, category_id: UUID, name: str) -> SubCategory | None:
+        """Get subcategory by name within a category."""
         pass
 
     @abstractmethod
@@ -88,10 +98,23 @@ class ProductRepository(ABC):
         self,
         business_id: UUID,
         category_id: UUID | None = None,
+        subcategory_id: UUID | None = None,
         low_stock_only: bool = False,
         expired_only: bool = False,
     ) -> list[Product]:
         """Get products for a business with optional filters."""
+        pass
+
+    @abstractmethod
+    def get_by_name_in_scope(
+        self,
+        business_id: UUID,
+        category_id: UUID,
+        subcategory_id: UUID | None,
+        name: str,
+        exclude_id: UUID | None = None,
+    ) -> Product | None:
+        """Get product by name within category/subcategory scope (optionally excluding an ID)."""
         pass
 
     @abstractmethod

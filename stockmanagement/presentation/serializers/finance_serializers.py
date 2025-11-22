@@ -1,5 +1,7 @@
 """Finance serializers."""
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from application.dto.finance_dto import (
@@ -39,7 +41,7 @@ class ExpenseCreateSerializer(serializers.Serializer):
         required=True,
     )
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True, min_value=0.01
+        max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
     reason = serializers.CharField(required=True)
 
@@ -76,7 +78,7 @@ class ExpenseUpdateSerializer(serializers.Serializer):
         required=False,
     )
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=False, min_value=0.01
+        max_digits=15, decimal_places=2, required=False, min_value=Decimal("0.01")
     )
     reason = serializers.CharField(required=False)
     is_approved = serializers.BooleanField(required=False)
@@ -96,7 +98,7 @@ class SalaryCreateSerializer(serializers.Serializer):
 
     user_id = serializers.UUIDField(required=True)
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True, min_value=0.01
+        max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
     currency = serializers.CharField(max_length=10, default="USD", required=False)
     payment_frequency = serializers.ChoiceField(
@@ -129,7 +131,7 @@ class SalaryUpdateSerializer(serializers.Serializer):
     """Serializer for salary update."""
 
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=False, min_value=0.01
+        max_digits=15, decimal_places=2, required=False, min_value=Decimal("0.01")
     )
     currency = serializers.CharField(max_length=10, required=False)
     payment_frequency = serializers.ChoiceField(
@@ -157,7 +159,7 @@ class SalaryPromotionSerializer(serializers.Serializer):
     """Serializer for employee promotion."""
 
     new_amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True, min_value=0.01
+        max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
     currency = serializers.CharField(max_length=10, default="USD", required=False)
     payment_frequency = serializers.ChoiceField(
@@ -191,7 +193,7 @@ class PayrollCreateSerializer(serializers.Serializer):
     user_id = serializers.UUIDField(required=True)
     salary_id = serializers.UUIDField(required=True)
     amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, required=True, min_value=0.01
+        max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
     payment_date = serializers.DateTimeField(required=False)
     period_start = serializers.DateTimeField(required=False)

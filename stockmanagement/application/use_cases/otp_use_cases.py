@@ -84,7 +84,6 @@ class RequestOTPUseCase:
         )
 
         if otp_type == "email" and dto.email:
-            from kombu.exceptions import OperationalError
 
             try:
                 # Send email in background
@@ -93,7 +92,7 @@ class RequestOTPUseCase:
                     otp_code=otp.otp_code,
                 )
                 logger.info(f"OTP email task queued for {dto.email} (OTP ID: {otp.id})")
-            except (OperationalError, ConnectionError) as celery_error:
+            except ConnectionError as celery_error:
                 logger.error(
                     f"Failed to queue OTP email task for {dto.email} (OTP ID: {otp.id}): {str(celery_error)}. "
                     f"OTP created but email sending may be delayed. Please ensure Celery worker is running.",
@@ -102,7 +101,6 @@ class RequestOTPUseCase:
                 )
 
         elif otp_type == "sms" and dto.phone_number:
-            from kombu.exceptions import OperationalError
 
             try:
                 send_otp_sms_task.delay(
@@ -110,7 +108,7 @@ class RequestOTPUseCase:
                     otp_code=otp.otp_code,
                 )
                 logger.info(f"OTP SMS task queued for {dto.phone_number} (OTP ID: {otp.id})")
-            except (OperationalError, ConnectionError) as celery_error:
+            except ConnectionError as celery_error:
                 logger.error(
                     f"Failed to queue OTP SMS task for {dto.phone_number} (OTP ID: {otp.id}): {str(celery_error)}. "
                     f"OTP created but SMS sending may be delayed. Please ensure Celery worker is running.",

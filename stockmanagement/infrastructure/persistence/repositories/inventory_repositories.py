@@ -3,6 +3,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from django.db.models import F
+
 from domain.inventory.entities import (
     Category,
     Product,
@@ -47,6 +49,14 @@ class CategoryRepositoryImpl(CategoryRepository):
             "business"
         )
         return [self._to_entity(category) for category in categories]
+
+    def get_by_name(self, business_id: UUID, name: str) -> Category | None:
+        """Get category by name within a business."""
+        try:
+            category_model = CategoryModel.objects.get(business_id=business_id, name=name)
+            return self._to_entity(category_model)
+        except CategoryModel.DoesNotExist:
+            return None
 
     def create(self, category: Category) -> Category:
         """Create a new category."""
@@ -104,6 +114,14 @@ class SubCategoryRepositoryImpl(SubCategoryRepository):
             "category"
         )
         return [self._to_entity(sub) for sub in subcategories]
+
+    def get_by_name(self, category_id: UUID, name: str) -> SubCategory | None:
+        """Get subcategory by name within a category."""
+        try:
+            subcategory_model = SubCategoryModel.objects.get(category_id=category_id, name=name)
+            return self._to_entity(subcategory_model)
+        except SubCategoryModel.DoesNotExist:
+            return None
 
     def create(self, subcategory: SubCategory) -> SubCategory:
         """Create a new subcategory."""
@@ -167,10 +185,15 @@ class ProductRepositoryImpl(ProductRepository):
         except ProductModel.DoesNotExist:
             return None
 
+    def barcode_exists_globally(self, barcode: str) -> bool:
+        """Check if barcode exists globally (across all businesses)."""
+        return ProductModel.objects.filter(barcode=barcode).exists()
+
     def get_by_business(
         self,
         business_id: UUID,
         category_id: UUID | None = None,
+        subcategory_id: UUID | None = None,
         low_stock_only: bool = False,
         expired_only: bool = False,
     ) -> list[Product]:
@@ -181,10 +204,13 @@ class ProductRepositoryImpl(ProductRepository):
 
         if category_id:
             query = query.filter(category_id=category_id)
+        if subcategory_id is not None:
+            if subcategory_id:
+                query = query.filter(subcategory_id=subcategory_id)
+            else:
+                query = query.filter(subcategory__isnull=True)
 
         if low_stock_only:
-            # Filter products where quantity <= min_quantity
-            from django.db.models import F
 
             query = query.filter(quantity__lte=F("min_quantity"))
 
@@ -193,6 +219,34 @@ class ProductRepositoryImpl(ProductRepository):
 
         products = query.prefetch_related("stock_movements")
         return [self._to_entity(product) for product in products]
+
+    def get_by_name_in_scope(
+        self,
+        business_id: UUID,
+        category_id: UUID,
+        subcategory_id: UUID | None,
+        name: str,
+        exclude_id: UUID | None = None,
+    ) -> Product | None:
+        """Get product by name within category/subcategory scope."""
+        query = ProductModel.objects.filter(
+            business_id=business_id,
+            category_id=category_id,
+            name=name,
+        )
+        if subcategory_id:
+            query = query.filter(subcategory_id=subcategory_id)
+        else:
+            query = query.filter(subcategory__isnull=True)
+
+        if exclude_id:
+            query = query.exclude(id=exclude_id)
+
+        try:
+            product_model = query.get()
+            return self._to_entity(product_model)
+        except ProductModel.DoesNotExist:
+            return None
 
     def create(self, product: Product) -> Product:
         """Create a new product."""

@@ -24,10 +24,24 @@ from application.use_cases.business_use_cases import (
     RemoveBusinessMemberUseCase,
     UpdateBusinessUseCase,
 )
+from application.use_cases.dashboard_use_cases import GetDashboardSummaryUseCase
+from application.use_cases.inventory_use_cases import (
+    ListCategoriesUseCase,
+    ListSubCategoriesUseCase,
+)
 from domain.business.services import BusinessDomainService
+from domain.dashboard.services import DashboardMetricsService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
+    CategoryRepositoryImpl,
+    CreditRepositoryImpl,
+    ExpenseRepositoryImpl,
+    InvoiceLineRepositoryImpl,
+    InvoiceRepositoryImpl,
+    PayrollRepositoryImpl,
+    ProductRepositoryImpl,
+    SubCategoryRepositoryImpl,
     UserRepositoryImpl,
 )
 from presentation.serializers.business_serializers import (
@@ -37,6 +51,12 @@ from presentation.serializers.business_serializers import (
     BusinessResponseSerializer,
     BusinessUpdateSerializer,
 )
+from presentation.serializers.inventory_serializers import (
+    CategoryResponseSerializer,
+    SubCategoryResponseSerializer,
+)
+from shared.security import QueryParamsValidator
+from shared.services import QRCodeService
 from shared.views.base_viewset import BaseViewSet
 
 
@@ -158,15 +178,58 @@ class BusinessViewSet(BaseViewSet):
     def retrieve(self, request: Request, pk: UUID) -> Response:
         """Get business by ID."""
         try:
+            business_domain_service = self._get_business_domain_service()
             use_case = GetBusinessUseCase(
                 business_repository=BusinessRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
+                business_domain_service=business_domain_service,
                 business_id=pk,
                 user_id=request.user.id,
             )
             business_dto = use_case.execute()
 
-            business_data = BusinessResponseSerializer.from_dto(business_dto)
+            members_use_case = ListBusinessMembersUseCase(
+                business_member_repository=BusinessMemberRepositoryImpl(),
+                business_domain_service=business_domain_service,
+                user_repository=UserRepositoryImpl(),
+                business_id=pk,
+                user_id=request.user.id,
+                include_inactive=True,
+            )
+            members = members_use_case.execute()
+
+            business_data = BusinessResponseSerializer.from_dto(
+                business_dto,
+                members=members,
+            )
+
+            category_repository = CategoryRepositoryImpl()
+            subcategory_repository = SubCategoryRepositoryImpl()
+
+            categories_use_case = ListCategoriesUseCase(
+                category_repository=category_repository,
+                business_domain_service=business_domain_service,
+                business_id=pk,
+                user_id=request.user.id,
+            )
+            categories = categories_use_case.execute()
+            categories_data: list[dict] = []
+
+            for category_dto in categories:
+                cat_data = CategoryResponseSerializer.from_dto(category_dto)
+                subcategories_use_case = ListSubCategoriesUseCase(
+                    subcategory_repository=subcategory_repository,
+                    category_repository=category_repository,
+                    business_domain_service=business_domain_service,
+                    category_id=category_dto.id,
+                    user_id=request.user.id,
+                )
+                subcategories = subcategories_use_case.execute()
+                cat_data["subcategories"] = [
+                    SubCategoryResponseSerializer.from_dto(sub_dto) for sub_dto in subcategories
+                ]
+                categories_data.append(cat_data)
+
+            business_data["categories"] = categories_data
 
             return self.success(
                 message="Business retrieved successfully",
@@ -413,8 +476,6 @@ class BusinessViewSet(BaseViewSet):
                     code="MISSING_QR_DATA",
                 )
 
-            from shared.services.qr_code_service import QRCodeService
-
             qr_service = QRCodeService()
             parsed_data = qr_service.scan_qr_code(qr_data)
 
@@ -459,16 +520,6 @@ class BusinessViewSet(BaseViewSet):
     def get_dashboard(self, request: Request, pk: UUID) -> Response:
         """Get dashboard summary for a business."""
         try:
-            from application.use_cases.dashboard_use_cases import GetDashboardSummaryUseCase
-            from domain.dashboard.services import DashboardMetricsService
-            from infrastructure.persistence.repositories import (
-                CreditRepositoryImpl,
-                ExpenseRepositoryImpl,
-                InvoiceLineRepositoryImpl,
-                InvoiceRepositoryImpl,
-                PayrollRepositoryImpl,
-                ProductRepositoryImpl,
-            )
 
             # Check if user has access to business
             if not self._get_business_domain_service().user_has_access(pk, request.user.id):
@@ -477,9 +528,6 @@ class BusinessViewSet(BaseViewSet):
                     status_code=status.HTTP_403_FORBIDDEN,
                     code="PERMISSION_DENIED",
                 )
-
-            from shared.security.query_params_validator import QueryParamsValidator
-
             # Get and validate period from query params
             period = QueryParamsValidator.validate_enum(
                 request.query_params.get("period", "month"),

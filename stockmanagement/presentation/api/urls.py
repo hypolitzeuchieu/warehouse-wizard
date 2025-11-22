@@ -7,11 +7,14 @@ from presentation.views import (
     auth_views,
 )
 from presentation.viewsets.business_viewset import BusinessViewSet
+from presentation.viewsets.category_viewset import CategoryViewSet
 from presentation.viewsets.customer_viewset import CustomerViewSet
 from presentation.viewsets.finance_viewset import FinanceViewSet
 from presentation.viewsets.inventory_viewset import InventoryViewSet
 from presentation.viewsets.notification_viewset import NotificationViewSet
+from presentation.viewsets.product_viewset import ProductViewSet
 from presentation.viewsets.sales_viewset import SalesViewSet
+from presentation.viewsets.subcategory_viewset import SubCategoryViewSet
 
 app_name = "api"
 
@@ -20,6 +23,9 @@ router = DefaultRouter()
 router.register(r"businesses", BusinessViewSet, basename="business")
 router.register(r"notifications", NotificationViewSet, basename="notification")
 router.register(r"inventory", InventoryViewSet, basename="inventory")
+router.register(r"categories", CategoryViewSet, basename="category")
+router.register(r"subcategories", SubCategoryViewSet, basename="subcategory")
+router.register(r"products", ProductViewSet, basename="product")
 router.register(r"sales", SalesViewSet, basename="sales")
 router.register(r"customers", CustomerViewSet, basename="customer")
 router.register(r"finance", FinanceViewSet, basename="finance")

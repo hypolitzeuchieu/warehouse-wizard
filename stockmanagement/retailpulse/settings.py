@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 from shared.config.logging_config import get_logging_config
@@ -256,6 +257,15 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# Celery Beat Schedule
+
+CELERY_BEAT_SCHEDULE = {
+    "check-expired-products": {
+        "task": "tasks.inventory_tasks.check_expired_products",
+        "schedule": crontab(hour=0, minute=0),
+    },
+}
 
 # Logging configuration
 LOGGING = get_logging_config(debug=DEBUG)

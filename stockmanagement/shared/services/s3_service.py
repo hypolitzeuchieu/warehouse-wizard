@@ -314,3 +314,29 @@ class S3Service:
                 status_code=500,
                 details={"error": str(e)},
             ) from e
+
+    def delete_file_safe(self, file_url: str) -> bool:
+        """
+        Delete a file from S3 safely (returns boolean instead of raising exception).
+
+        Args:
+            file_url: S3 URL of the file to delete
+
+        Returns:
+            True if deletion succeeded, False otherwise
+        """
+        try:
+            # Extract key from URL
+            if ".amazonaws.com/" in file_url:
+                key = file_url.split(".amazonaws.com/")[1]
+            else:
+                logger.warning(f"Invalid S3 URL format: {file_url}")
+                return False
+
+            self.s3_client.delete_object(Bucket=self.aws_bucket_name, Key=key)
+            logger.info(f"File successfully deleted from S3: {file_url}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to delete file from S3: {file_url}, error: {str(e)}")
+            return False
