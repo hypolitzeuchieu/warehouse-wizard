@@ -31,8 +31,12 @@ from domain.inventory.repositories import (
     SubCategoryRepository,
 )
 from domain.inventory.services import InventoryDomainService
-from infrastructure.messaging.email_service import EmailService
-from infrastructure.persistence.repositories import BusinessRepositoryImpl
+from domain.notifications.services import NotificationDomainService
+from infrastructure.persistence.repositories import (
+    BusinessMemberRepositoryImpl,
+    BusinessRepositoryImpl,
+    NotificationRepositoryImpl,
+)
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
 from shared.services.barcode_service import BarcodeService
 from shared.services.s3_service import S3Service
@@ -1234,7 +1238,9 @@ class ScanBarcodeUseCase:
 
 
 class NotifyExpiringProductsUseCase:
-    """Use case for notifying business owners about expiring products."""
+    """
+    Use case for notifying business owners and managers about expiring/expired products.
+    """
 
     def __init__(
         self,
@@ -1243,34 +1249,35 @@ class NotifyExpiringProductsUseCase:
         product_id: UUID,
         business_id: UUID,
     ) -> None:
-        """Initialize use case."""
+        """
+        Initialize use case.
+
+        Args:
+            product_repository: Repository for product operations
+            business_domain_service: Service for business operations
+            product_id: ID of the product to notify about
+            business_id: ID of the business that owns the product
+        """
         self.product_repository = product_repository
         self.business_domain_service = business_domain_service
         self.product_id = product_id
         self.business_id = business_id
 
     def execute(self) -> None:
-        """Execute notification."""
+        """
+        Execute notification using NotificationDomainService.
+        """
         product = self.product_repository.get_by_id(self.product_id)
         if not product or not _compare_business_ids(product.business_id, self.business_id):
             logger.warning(f"Product {self.product_id} not found for notification")
             return
 
-        business_repo = BusinessRepositoryImpl()
-        business = business_repo.get_by_id(self.business_id)
-        if not business:
-            logger.warning(f"Business {self.business_id} not found for notification")
-            return
-
-        # Get owner email from business
-        from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
-
-        try:
-            owner = UserModel.objects.get(id=business.owner_id)
-            owner_email = owner.email
-        except UserModel.DoesNotExist:
-            logger.warning(f"Owner not found for business {self.business_id}")
-            return
+        # Initialize notification domain service
+        notification_domain_service = NotificationDomainService(
+            notification_repository=NotificationRepositoryImpl(),
+            business_repository=BusinessRepositoryImpl(),
+            business_member_repository=BusinessMemberRepositoryImpl(),
+        )
 
         # Calculate days until expiry
         days_until_expiry = None
@@ -1278,23 +1285,37 @@ class NotifyExpiringProductsUseCase:
             delta = product.expiry_date - timezone.now()
             days_until_expiry = delta.days
 
-        # Send email notification
+        # Create notifications based on product status
         try:
-            email_service = EmailService()
-            subject = "Product Expiry Alert"
-
             if product.is_expired:
-                message = f"Product '{product.name}' has expired on {product.expiry_date.strftime('%Y-%m-%d')}."
+                # Product is expired - notify about expiration
+                notifications = notification_domain_service.notify_product_expired(
+                    product_id=product.id,
+                    product_name=product.name,
+                    business_id=product.business_id,
+                    expiry_date=product.expiry_date,
+                )
+                logger.info(
+                    f"Created {len(notifications)} notifications for expired product {product.id}"
+                )
             elif days_until_expiry is not None and days_until_expiry <= 15:
-                message = f"Product '{product.name}' will expire in {days_until_expiry} days ({product.expiry_date.strftime('%Y-%m-%d')})."
+                # Product is expiring soon - notify about upcoming expiration
+                notifications = notification_domain_service.notify_product_expiring(
+                    product_id=product.id,
+                    product_name=product.name,
+                    business_id=product.business_id,
+                    expiry_date=product.expiry_date,
+                    days_until_expiry=days_until_expiry,
+                )
+                logger.info(
+                    f"Created {len(notifications)} notifications for expiring product {product.id}"
+                )
             else:
-                message = f"Product '{product.name}' expiry alert."
-
-            email_service.send_email(
-                to_email=owner_email,
-                subject=subject,
-                message=message,
-            )
-            logger.info(f"Expiry notification sent for product {product.id} to {owner_email}")
+                logger.debug(
+                    f"Product {product.id} expiry is more than 15 days away, skipping notification"
+                )
         except Exception as e:
-            logger.error(f"Failed to send expiry notification: {str(e)}", exc_info=True)
+            logger.error(
+                f"Failed to create notifications for product {product.id}: {str(e)}",
+                exc_info=True,
+            )
