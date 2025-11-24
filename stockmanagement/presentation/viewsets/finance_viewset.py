@@ -33,6 +33,7 @@ from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
     CreditRepositoryImpl,
+    ExpenseAuditLogRepositoryImpl,
     ExpenseRepositoryImpl,
     SalaryRepositoryImpl,
 )
@@ -110,20 +111,69 @@ class FinanceViewSet(BaseViewSet):
                     },
                     "start_date": {"type": "date"},
                     "end_date": {"type": "date"},
+                    "payment_method": {
+                        "type": "enum",
+                        "choices": [
+                            "CASH",
+                            "MOBILE_MONEY",
+                            "BANK_TRANSFER",
+                            "CARD",
+                            "CHECK",
+                            "OTHER",
+                        ],
+                    },
+                    "payee_type": {
+                        "type": "enum",
+                        "choices": [
+                            "EMPLOYEE",
+                            "SUPPLIER",
+                            "SERVICE_PROVIDER",
+                            "GOVERNMENT",
+                            "LANDLORD",
+                            "OTHER",
+                        ],
+                    },
+                    "min_amount": {"type": "decimal"},
+                    "max_amount": {"type": "decimal"},
+                    "is_approved": {"type": "boolean"},
                 },
-                additional_allowed_params=["business_id"],
+                additional_allowed_params=[
+                    "business_id",
+                    "payment_method",
+                    "payee_type",
+                    "min_amount",
+                    "max_amount",
+                    "is_approved",
+                ],
             )
             filter_payload["filters"]["business_id"] = business_id
+            optional_filters = [
+                "payment_method",
+                "payee_type",
+                "min_amount",
+                "max_amount",
+                "is_approved",
+            ]
+            for field in optional_filters:
+                value = query_serializer.validated_data.get(field)
+                if value is not None:
+                    filter_payload["filters"][field] = value
             filter_dto = ExpenseListFilterDTO.from_payload(filter_payload)
 
+            expense_repo = ExpenseRepositoryImpl()
             use_case = ListExpensesUseCase(
-                expense_repository=ExpenseRepositoryImpl(),
+                expense_repository=expense_repo,
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
                 expense_type=filter_dto.expense_type,
                 start_date=filter_dto.start_date,
                 end_date=filter_dto.end_date,
+                payment_method=filter_dto.payment_method,
+                payee_type=filter_dto.payee_type,
+                min_amount=filter_dto.min_amount,
+                max_amount=filter_dto.max_amount,
+                is_approved=filter_dto.is_approved,
                 limit=QueryParamsValidator.MAX_PAGE_SIZE,
             )
             expenses = use_case.execute()
@@ -161,49 +211,22 @@ class FinanceViewSet(BaseViewSet):
             return self.handle_validation_error(serializer)
 
         try:
-            # Get business_id from serializer validated data
-            business_id_str = serializer.validated_data.get("business_id")
-            if not business_id_str:
-                return self.error(
-                    message="business_id is required in request body",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    code="MISSING_BUSINESS_ID",
-                )
-
-            try:
-                business_id = UUID(str(business_id_str))
-            except (ValueError, TypeError):
-                return self.error(
-                    message="Invalid business_id format",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    code="INVALID_BUSINESS_ID",
-                )
+            business_id = serializer.validated_data["business_id"]
 
             dto = serializer.to_dto()
             use_case = CreateExpenseUseCase(
                 expense_repository=ExpenseRepositoryImpl(),
+                audit_log_repository=ExpenseAuditLogRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
             )
             expense_dto = use_case.execute(dto)
 
+            response_payload = ExpenseResponseSerializer.from_dto(expense_dto)
             return self.success(
                 message="Expense created successfully",
-                data={
-                    "id": str(expense_dto.id),
-                    "business_id": str(expense_dto.business_id),
-                    "expense_type": expense_dto.expense_type,
-                    "amount": str(expense_dto.amount),
-                    "reason": expense_dto.reason,
-                    "user_id": str(expense_dto.user_id),
-                    "approved_by": (
-                        str(expense_dto.approved_by) if expense_dto.approved_by else None
-                    ),
-                    "is_approved": expense_dto.is_approved,
-                    "created_at": expense_dto.created_at.isoformat(),
-                    "updated_at": expense_dto.updated_at.isoformat(),
-                },
+                data=response_payload,
                 status_code=status.HTTP_201_CREATED,
             )
         except Exception as e:
@@ -242,22 +265,10 @@ class FinanceViewSet(BaseViewSet):
             )
             expense_dto = use_case.execute()
 
+            response_payload = ExpenseResponseSerializer.from_dto(expense_dto)
             return self.success(
                 message="Expense retrieved successfully",
-                data={
-                    "id": str(expense_dto.id),
-                    "business_id": str(expense_dto.business_id),
-                    "expense_type": expense_dto.expense_type,
-                    "amount": str(expense_dto.amount),
-                    "reason": expense_dto.reason,
-                    "user_id": str(expense_dto.user_id),
-                    "approved_by": (
-                        str(expense_dto.approved_by) if expense_dto.approved_by else None
-                    ),
-                    "is_approved": expense_dto.is_approved,
-                    "created_at": expense_dto.created_at.isoformat(),
-                    "updated_at": expense_dto.updated_at.isoformat(),
-                },
+                data=response_payload,
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -295,6 +306,7 @@ class FinanceViewSet(BaseViewSet):
             dto = serializer.to_dto()
             use_case = UpdateExpenseUseCase(
                 expense_repository=expense_repo,
+                audit_log_repository=ExpenseAuditLogRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 expense_id=pk,
                 business_id=expense.business_id,
@@ -302,19 +314,10 @@ class FinanceViewSet(BaseViewSet):
             )
             expense_dto = use_case.execute(dto)
 
+            response_payload = ExpenseResponseSerializer.from_dto(expense_dto)
             return self.success(
                 message="Expense updated successfully",
-                data={
-                    "id": str(expense_dto.id),
-                    "expense_type": expense_dto.expense_type,
-                    "amount": str(expense_dto.amount),
-                    "reason": expense_dto.reason,
-                    "approved_by": (
-                        str(expense_dto.approved_by) if expense_dto.approved_by else None
-                    ),
-                    "is_approved": expense_dto.is_approved,
-                    "updated_at": expense_dto.updated_at.isoformat(),
-                },
+                data=response_payload,
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -346,6 +349,7 @@ class FinanceViewSet(BaseViewSet):
 
             use_case = DeleteExpenseUseCase(
                 expense_repository=expense_repo,
+                audit_log_repository=ExpenseAuditLogRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 expense_id=pk,
                 business_id=expense.business_id,

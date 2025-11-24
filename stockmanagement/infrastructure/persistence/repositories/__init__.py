@@ -16,6 +16,7 @@ from infrastructure.persistence.repositories.delivery_repositories import (
     DeliveryRepositoryImpl,
 )
 from infrastructure.persistence.repositories.finance_repositories import (
+    ExpenseAuditLogRepositoryImpl,
     ExpenseRepositoryImpl,
     FinancialSummaryRepositoryImpl,
     PayrollRepositoryImpl,
@@ -71,6 +72,7 @@ __all__ = [
     "OrderItemRepositoryImpl",
     # Finance repositories
     "ExpenseRepositoryImpl",
+    "ExpenseAuditLogRepositoryImpl",
     "SalaryRepositoryImpl",
     "PayrollRepositoryImpl",
     "FinancialSummaryRepositoryImpl",

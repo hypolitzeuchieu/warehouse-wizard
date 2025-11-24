@@ -1,19 +1,27 @@
 """Finance repository implementations."""
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from django.db import models
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from domain.finance.entities import (
     Expense,
+    ExpenseAuditLog,
+    ExpensePayeeType,
+    ExpensePaymentMethod,
     ExpenseType,
     FinancialSummary,
     Payroll,
     Salary,
 )
 from domain.finance.repositories import (
+    ExpenseAuditLogRepository,
     ExpenseRepository,
     FinancialSummaryRepository,
     PayrollRepository,
@@ -21,6 +29,9 @@ from domain.finance.repositories import (
 )
 from infrastructure.persistence.models.finance_models import (
     Expense as ExpenseModel,
+)
+from infrastructure.persistence.models.finance_models import (
+    ExpenseAuditLog as ExpenseAuditLogModel,
 )
 from infrastructure.persistence.models.finance_models import (
     FinancialSummary as FinancialSummaryModel,
@@ -52,6 +63,11 @@ class ExpenseRepositoryImpl(ExpenseRepository):
         expense_type: ExpenseType | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        payment_method: str | None = None,
+        payee_type: str | None = None,
+        min_amount: Decimal | None = None,
+        max_amount: Decimal | None = None,
+        is_approved: bool | None = None,
         limit: int = 100,
     ) -> list[Expense]:
         """Get expenses for a business with optional filters."""
@@ -68,6 +84,21 @@ class ExpenseRepositoryImpl(ExpenseRepository):
         if end_date:
             query = query.filter(created_at__lte=end_date)
 
+        if payment_method:
+            query = query.filter(payment_method=payment_method)
+
+        if payee_type:
+            query = query.filter(payee_type=payee_type)
+
+        if min_amount is not None:
+            query = query.filter(amount__gte=min_amount)
+
+        if max_amount is not None:
+            query = query.filter(amount__lte=max_amount)
+
+        if is_approved is not None:
+            query = query.filter(is_approved=is_approved)
+
         expenses = query.order_by("-created_at")[:limit]
         return [self._to_entity(expense) for expense in expenses]
 
@@ -79,9 +110,15 @@ class ExpenseRepositoryImpl(ExpenseRepository):
             expense_type=expense.expense_type.value,
             amount=expense.amount,
             reason=expense.reason,
+            reason_details=expense.reason_details or "",
             user_id=expense.user_id,
             approved_by_id=expense.approved_by,
             is_approved=expense.is_approved,
+            payment_method=expense.payment_method.value,
+            payment_reference=expense.payment_reference or "",
+            payee_name=expense.payee_name or "",
+            payee_type=expense.payee_type.value,
+            justification_metadata=expense.justification_metadata,
         )
         expense_model.save()
         return self._to_entity(expense_model)
@@ -92,8 +129,14 @@ class ExpenseRepositoryImpl(ExpenseRepository):
         expense_model.expense_type = expense.expense_type.value
         expense_model.amount = expense.amount
         expense_model.reason = expense.reason
+        expense_model.reason_details = expense.reason_details or ""
         expense_model.approved_by_id = expense.approved_by
         expense_model.is_approved = expense.is_approved
+        expense_model.payment_method = expense.payment_method.value
+        expense_model.payment_reference = expense.payment_reference or ""
+        expense_model.payee_name = expense.payee_name or ""
+        expense_model.payee_type = expense.payee_type.value
+        expense_model.justification_metadata = expense.justification_metadata
         expense_model.save()
         return self._to_entity(expense_model)
 
@@ -109,12 +152,86 @@ class ExpenseRepositoryImpl(ExpenseRepository):
             expense_type=ExpenseType(expense_model.expense_type),
             amount=expense_model.amount,
             reason=expense_model.reason,
+            reason_details=expense_model.reason_details,
             user_id=expense_model.user_id,
             approved_by=expense_model.approved_by_id,
             is_approved=expense_model.is_approved,
+            payment_method=ExpensePaymentMethod(expense_model.payment_method),
+            payment_reference=expense_model.payment_reference,
+            payee_type=ExpensePayeeType(expense_model.payee_type),
+            payee_name=expense_model.payee_name,
+            justification_metadata=expense_model.justification_metadata,
             created_at=expense_model.created_at,
             updated_at=expense_model.updated_at,
         )
+
+    def get_summary(
+        self,
+        business_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return aggregated summary stats for expenses."""
+        query = ExpenseModel.objects.filter(business_id=business_id)
+        if start_date:
+            query = query.filter(created_at__gte=start_date)
+        if end_date:
+            query = query.filter(created_at__lte=end_date)
+
+        totals = query.aggregate(
+            total_amount=Sum("amount"),
+            total_count=Count("id"),
+        )
+        total_amount = totals["total_amount"] or Decimal("0.00")
+        total_count = totals["total_count"] or 0
+
+        by_type_rows = query.values("expense_type").annotate(
+            total_amount=Sum("amount"),
+            count=Count("id"),
+        )
+        by_type = []
+        for row in by_type_rows:
+            count = row["count"] or 0
+            total = row["total_amount"] or Decimal("0.00")
+            average = total / count if count else Decimal("0.00")
+            percentage = (total / total_amount * 100) if total_amount > 0 else Decimal("0.00")
+            by_type.append(
+                {
+                    "expense_type": row["expense_type"],
+                    "total_amount": total,
+                    "count": count,
+                    "average_amount": average,
+                    "percentage_of_total": percentage,
+                }
+            )
+
+        by_payment_rows = query.values("payment_method").annotate(total_amount=Sum("amount"))
+        by_payment_method = {
+            row["payment_method"]: row["total_amount"] or Decimal("0.00") for row in by_payment_rows
+        }
+
+        monthly_rows = (
+            query.annotate(month=TruncMonth("created_at"))
+            .values("month")
+            .annotate(total_amount=Sum("amount"), count=Count("id"))
+            .order_by("month")
+        )
+        monthly_stats = [
+            {
+                "month": row["month"],
+                "total_amount": row["total_amount"] or Decimal("0.00"),
+                "count": row["count"] or 0,
+            }
+            for row in monthly_rows
+        ]
+
+        return {
+            "total_amount": total_amount,
+            "total_count": total_count,
+            "by_type": by_type,
+            "by_payment_method": by_payment_method,
+            "monthly_stats": monthly_stats,
+        }
 
 
 class SalaryRepositoryImpl(SalaryRepository):
@@ -328,4 +445,72 @@ class FinancialSummaryRepositoryImpl(FinancialSummaryRepository):
             net_profit=summary_model.net_profit,
             tax_amount=summary_model.tax_amount,
             created_at=summary_model.created_at,
+        )
+
+
+class ExpenseAuditLogRepositoryImpl(ExpenseAuditLogRepository):
+    """Repository for ExpenseAuditLog."""
+
+    def create(self, log: ExpenseAuditLog) -> ExpenseAuditLog:
+        log_model = ExpenseAuditLogModel.objects.create(
+            id=log.id,
+            expense_id=log.expense_id,
+            action=log.action,
+            performed_by_id=log.performed_by,
+            amount_before=log.amount_before,
+            amount_after=log.amount_after,
+            reason_before=log.reason_before,
+            reason_after=log.reason_after,
+            reason_details_before=log.reason_details_before,
+            reason_details_after=log.reason_details_after,
+            payment_method_before=(
+                log.payment_method_before.value if log.payment_method_before else None
+            ),
+            payment_method_after=(
+                log.payment_method_after.value if log.payment_method_after else None
+            ),
+            payee_type_before=log.payee_type_before.value if log.payee_type_before else None,
+            payee_type_after=log.payee_type_after.value if log.payee_type_after else None,
+            payee_name_before=log.payee_name_before,
+            payee_name_after=log.payee_name_after,
+            justification_snapshot=log.justification_snapshot,
+        )
+        return self._to_entity(log_model)
+
+    def list_for_expense(self, expense_id: UUID) -> list[ExpenseAuditLog]:
+        entries = ExpenseAuditLogModel.objects.filter(expense_id=expense_id).order_by("-created_at")
+        return [self._to_entity(entry) for entry in entries]
+
+    def _to_entity(self, model: ExpenseAuditLogModel) -> ExpenseAuditLog:
+        return ExpenseAuditLog(
+            id=model.id,
+            expense_id=model.expense_id,
+            action=model.action,
+            performed_by=model.performed_by_id,
+            amount_before=model.amount_before,
+            amount_after=model.amount_after,
+            reason_before=model.reason_before,
+            reason_after=model.reason_after,
+            reason_details_before=model.reason_details_before,
+            reason_details_after=model.reason_details_after,
+            payment_method_before=(
+                ExpensePaymentMethod(model.payment_method_before)
+                if model.payment_method_before
+                else None
+            ),
+            payment_method_after=(
+                ExpensePaymentMethod(model.payment_method_after)
+                if model.payment_method_after
+                else None
+            ),
+            payee_type_before=(
+                ExpensePayeeType(model.payee_type_before) if model.payee_type_before else None
+            ),
+            payee_type_after=(
+                ExpensePayeeType(model.payee_type_after) if model.payee_type_after else None
+            ),
+            payee_name_before=model.payee_name_before,
+            payee_name_after=model.payee_name_after,
+            justification_snapshot=model.justification_snapshot,
+            created_at=model.created_at,
         )
