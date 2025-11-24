@@ -12,7 +12,7 @@ RUNSERVER_PID := $(PID_DIR)/runserver.pid
 CELERY_PID := $(PID_DIR)/celery.pid
 RUNSERVER_PORT ?= 8000
 
-start: check-and-create-migrations migrate start-celery start-runserver
+start: check-migrations migrate start-celery start-runserver
 	@echo "All services started. Logs: $(LOG_DIR)/runserver.log, $(LOG_DIR)/celery.log"
 	@echo "Use \`make stop\` to stop background processes."
 
@@ -22,7 +22,7 @@ check-migrations:
 
 check-and-create-migrations:
 	@echo "Checking for pending migrations..."
-	@if ! $(MANAGE) makemigrations --check --dry-run >/dev/null 2>&1; then \
+	@if ! $(MANAGE) makemigrations --check >/dev/null 2>&1; then \
 		echo "Creating new migrations..."; \
 		$(MANAGE) makemigrations; \
 	else \
