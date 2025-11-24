@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import logging
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, TypedDict
+from uuid import UUID
 
-from domain.sales.entities import Invoice, InvoiceLine
+from domain.sales.entities import Invoice, InvoiceLine, InvoiceLogAction
 
 logger = logging.getLogger(__name__)
+
+
+class PaymentProcessingResult(TypedDict):
+    amount_applied: Decimal
+    change_amount: Decimal
+    new_paid: Decimal
+    new_remaining: Decimal
+    is_fully_paid: bool
 
 
 class InvoiceCalculationService:
@@ -369,3 +378,305 @@ class WholesalePricingService:
                 discount_percentage=wholesale_discount,
             )
         return regular_price
+
+
+class InvoiceIntegrityService:
+    """Service for validating invoice financial integrity."""
+
+    @staticmethod
+    def validate_invoice_integrity(invoice: Invoice) -> None:
+        """
+        Validate invoice financial integrity.
+
+        Raises:
+            ValueError: If invoice has invalid financial data
+        """
+        errors = []
+
+        # Validate advance_paid
+        if invoice.advance_paid < Decimal("0.00"):
+            errors.append("advance_paid cannot be negative")
+
+        # Validate remaining_amount
+        if invoice.remaining_amount < Decimal("0.00"):
+            errors.append("remaining_amount cannot be negative")
+
+        # Validate remaining_amount calculation
+        if invoice.advance_paid >= invoice.total:
+            expected_remaining = Decimal("0.00")
+        else:
+            expected_remaining = invoice.total - invoice.advance_paid
+
+        expected_remaining = expected_remaining.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        # Allow small rounding differences (0.01)
+        difference = abs(invoice.remaining_amount - expected_remaining)
+        if difference > Decimal("0.01"):
+            errors.append(
+                f"remaining_amount calculation mismatch: "
+                f"expected {expected_remaining}, got {invoice.remaining_amount} "
+                f"(total={invoice.total}, advance_paid={invoice.advance_paid})"
+            )
+
+        # Validate total
+        if invoice.total < Decimal("0.00"):
+            errors.append("total cannot be negative")
+
+        if errors:
+            error_msg = "; ".join(errors)
+            logger.error(
+                f"Invoice integrity validation failed for invoice {invoice.id}: {error_msg}"
+            )
+            raise ValueError(f"Invoice integrity validation failed: {error_msg}")
+
+
+class PaymentValidationService:
+    """Service for validating payment scenarios."""
+
+    @staticmethod
+    def validate_payment_amount(
+        payment_amount: Decimal,
+        invoice_total: Decimal,
+        already_paid: Decimal = Decimal("0.00"),
+    ) -> dict[str, Any]:
+        """
+        Validate payment amount against invoice.
+
+        Args:
+            payment_amount: Amount being paid
+            invoice_total: Total invoice amount
+            already_paid: Amount already paid (for partial payments)
+
+        Returns:
+            Dictionary with validation results:
+            - is_valid: bool
+            - remaining_amount: Decimal
+            - change_amount: Decimal (if overpayment)
+            - errors: list of error messages
+        """
+        errors = []
+        remaining_amount = invoice_total - already_paid
+        change_amount = Decimal("0.00")
+
+        # Validation
+        if payment_amount <= 0:
+            errors.append("Payment amount must be greater than zero")
+
+        if payment_amount > remaining_amount:
+            # Overpayment - calculate change
+            change_amount = payment_amount - remaining_amount
+            change_amount = change_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            logger.info(
+                f"Overpayment detected: payment={payment_amount}, "
+                f"remaining={remaining_amount}, change={change_amount}"
+            )
+
+        is_valid = len(errors) == 0
+
+        return {
+            "is_valid": is_valid,
+            "remaining_amount": remaining_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            "change_amount": change_amount,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def validate_refund_amount(
+        refund_amount: Decimal,
+        invoice_total: Decimal,
+        already_paid: Decimal,
+    ) -> dict[str, Any]:
+        """
+        Validate refund amount.
+
+        Args:
+            refund_amount: Amount to refund
+            invoice_total: Total invoice amount
+            already_paid: Amount already paid
+
+        Returns:
+            Dictionary with validation results
+        """
+        errors = []
+        max_refund = min(invoice_total, already_paid)
+
+        if refund_amount <= 0:
+            errors.append("Refund amount must be greater than zero")
+
+        if refund_amount > max_refund:
+            errors.append(
+                f"Refund amount ({refund_amount}) cannot exceed "
+                f"maximum refundable amount ({max_refund})"
+            )
+
+        is_valid = len(errors) == 0
+
+        return {
+            "is_valid": is_valid,
+            "max_refund": max_refund.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            "errors": errors,
+        }
+
+
+class PaymentProcessingService:
+    """Service for processing payments with precision."""
+
+    @staticmethod
+    def process_payment(
+        payment_amount: Decimal,
+        invoice_total: Decimal,
+        already_paid: Decimal = Decimal("0.00"),
+    ) -> PaymentProcessingResult:
+        """
+        Process a payment and calculate all amounts.
+
+        Handles:
+        - Exact payment
+        - Partial payment (for credit)
+        - Overpayment with change calculation
+
+        Args:
+            payment_amount: Amount being paid
+            invoice_total: Total invoice amount
+            already_paid: Amount already paid
+
+        Returns:
+            Dictionary with:
+            - amount_applied: Amount applied to invoice
+            - change_amount: Amount to return to customer (overpayment)
+            - new_remaining: New remaining amount
+            - is_fully_paid: Whether invoice is fully paid
+        """
+        # Validate
+        validation = PaymentValidationService.validate_payment_amount(
+            payment_amount=payment_amount,
+            invoice_total=invoice_total,
+            already_paid=already_paid,
+        )
+
+        if not validation["is_valid"] and validation["change_amount"] == Decimal("0.00"):
+            raise ValueError(f"Payment validation failed: {validation['errors']}")
+
+        remaining_before = invoice_total - already_paid
+        remaining_before = remaining_before.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        # Calculate amounts
+        if payment_amount <= remaining_before:
+            # Normal payment or partial payment
+            amount_applied = payment_amount
+            change_amount = Decimal("0.00")
+        else:
+            # Overpayment
+            amount_applied = remaining_before
+            change_amount = payment_amount - remaining_before
+            change_amount = change_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        new_paid = already_paid + amount_applied
+        new_remaining = invoice_total - new_paid
+        new_remaining = max(new_remaining, Decimal("0.00"))
+        new_remaining = new_remaining.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        is_fully_paid = new_remaining <= Decimal("0.00")
+
+        logger.info(
+            f"Payment processed: payment={payment_amount}, applied={amount_applied}, "
+            f"change={change_amount}, remaining={new_remaining}, fully_paid={is_fully_paid}"
+        )
+
+        return {
+            "amount_applied": amount_applied,
+            "change_amount": change_amount,
+            "new_paid": new_paid,
+            "new_remaining": new_remaining,
+            "is_fully_paid": is_fully_paid,
+        }
+
+    @staticmethod
+    def calculate_refund(
+        refund_amount: Decimal,
+        invoice_total: Decimal,
+        already_paid: Decimal,
+    ) -> dict[str, Decimal]:
+        """
+        Calculate refund amounts.
+
+        Args:
+            refund_amount: Amount to refund
+            invoice_total: Total invoice amount
+            already_paid: Amount already paid
+
+        Returns:
+            Dictionary with:
+            - refund_amount: Actual refund amount (validated)
+            - new_paid: New paid amount after refund
+            - new_remaining: New remaining amount
+        """
+        # Validate
+        validation = PaymentValidationService.validate_refund_amount(
+            refund_amount=refund_amount,
+            invoice_total=invoice_total,
+            already_paid=already_paid,
+        )
+
+        if not validation["is_valid"]:
+            raise ValueError(f"Refund validation failed: {validation['errors']}")
+
+        # Ensure refund doesn't exceed max
+        max_refund = validation["max_refund"]
+        actual_refund = min(refund_amount, max_refund)
+        actual_refund = actual_refund.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        new_paid = already_paid - actual_refund
+        new_paid = max(new_paid, Decimal("0.00"))
+        new_paid = new_paid.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        new_remaining = invoice_total - new_paid
+        new_remaining = max(new_remaining, Decimal("0.00"))
+        new_remaining = new_remaining.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        logger.info(
+            f"Refund calculated: refund={actual_refund}, "
+            f"new_paid={new_paid}, new_remaining={new_remaining}"
+        )
+
+        return {
+            "refund_amount": actual_refund,
+            "new_paid": new_paid,
+            "new_remaining": new_remaining,
+        }
+
+
+class InvoiceLoggingService:
+    """Service for logging invoice actions."""
+
+    @staticmethod
+    def create_log(
+        invoice_id: UUID,
+        action: InvoiceLogAction,
+        old_value: str | None = None,
+        new_value: str | None = None,
+        description: str | None = None,
+        user_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a log entry for an invoice action.
+
+        Args:
+            invoice_id: Invoice ID
+            action: Action type
+            old_value: Old value (JSON string or text)
+            new_value: New value (JSON string or text)
+            description: Description of the action
+            user_id: User who performed the action
+
+        Returns:
+            Dictionary with log data
+        """
+        return {
+            "invoice_id": invoice_id,
+            "action": action,
+            "old_value": old_value,
+            "new_value": new_value,
+            "description": description,
+            "user_id": user_id,
+        }

@@ -2,6 +2,8 @@
 
 from uuid import UUID
 
+from django.utils import timezone
+
 from domain.notifications.entities import (
     Notification,
     NotificationStatus,
@@ -76,8 +78,6 @@ class NotificationRepositoryImpl(NotificationRepository):
 
     def mark_all_as_read(self, user_id: UUID) -> None:
         """Mark all notifications as read for a user."""
-        from django.utils import timezone
-
         NotificationModel.objects.filter(user_id=user_id, status="UNREAD").update(
             status="READ", read_at=timezone.now()
         )

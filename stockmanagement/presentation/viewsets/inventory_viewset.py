@@ -11,6 +11,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.use_cases.alert_use_cases import (
+    CheckExpiredProductsUseCase as CheckExpiredProductsUseCaseFromAlert,
+)
 from application.use_cases.alert_use_cases import CheckLowStockProductsUseCase
 from application.use_cases.inventory_use_cases import (
     CheckExpiredProductsUseCase as ListExpiredProductsUseCase,
@@ -401,9 +404,7 @@ class InventoryViewSet(BaseViewSet):
     def check_expired_products(self, request: Request, business_id: UUID) -> Response:
         """Check expired products and create notifications."""
         try:
-            from application.use_cases.alert_use_cases import CheckExpiredProductsUseCase
-
-            use_case = CheckExpiredProductsUseCase(
+            use_case = CheckExpiredProductsUseCaseFromAlert(
                 inventory_domain_service=self._get_inventory_domain_service(),
                 business_id=business_id,
             )

@@ -17,6 +17,39 @@ from application.dto.finance_dto import (
 )
 
 
+class ExpenseListQuerySerializer(serializers.Serializer):
+    """Serializer for expense list query parameters."""
+
+    business_id = serializers.UUIDField(required=True)
+    expense_type = serializers.ChoiceField(
+        choices=[
+            "REPLENISHMENT",
+            "MISCELLANEOUS",
+            "ELECTRICITY",
+            "WATER",
+            "SALARY",
+            "EXTRA",
+            "MAINTENANCE",
+            "TAX",
+            "RENT",
+            "MARKETING",
+            "INSURANCE",
+            "TRANSPORT",
+            "UTILITIES",
+            "OFFICE_SUPPLIES",
+            "PROFESSIONAL_SERVICES",
+        ],
+        required=False,
+        allow_null=True,
+    )
+    start_date = serializers.DateField(required=False, allow_null=True)
+    end_date = serializers.DateField(required=False, allow_null=True)
+    search = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    page = serializers.IntegerField(required=False, min_value=1, default=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=1000, default=20)
+    order_by = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
 class ExpenseCreateSerializer(serializers.Serializer):
     """Serializer for expense creation."""
 

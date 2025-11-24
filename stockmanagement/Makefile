@@ -1,4 +1,4 @@
-.PHONY: start stop makemigrations migrate start-celery start-runserver check-migrations
+.PHONY: start stop makemigrations migrate start-celery start-runserver check-migrations check-and-create-migrations
 
 UV ?= uv
 PYTHON ?= python
@@ -12,13 +12,22 @@ RUNSERVER_PID := $(PID_DIR)/runserver.pid
 CELERY_PID := $(PID_DIR)/celery.pid
 RUNSERVER_PORT ?= 8000
 
-start: check-migrations migrate start-celery start-runserver
+start: check-and-create-migrations migrate start-celery start-runserver
 	@echo "All services started. Logs: $(LOG_DIR)/runserver.log, $(LOG_DIR)/celery.log"
 	@echo "Use \`make stop\` to stop background processes."
 
 check-migrations:
 	@echo "Checking for pending migrations (no files will be created)..."
 	@$(MANAGE) makemigrations --check 2>/dev/null || echo "Note: Some migrations may be needed. Run 'make makemigrations' to create them."; true
+
+check-and-create-migrations:
+	@echo "Checking for pending migrations..."
+	@if ! $(MANAGE) makemigrations --check --dry-run >/dev/null 2>&1; then \
+		echo "Creating new migrations..."; \
+		$(MANAGE) makemigrations; \
+	else \
+		echo "No new migrations needed."; \
+	fi
 
 makemigrations:
 	@echo "Running makemigrations..."

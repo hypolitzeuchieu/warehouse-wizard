@@ -32,9 +32,7 @@ class Invoice(BaseModel):
         ("paypal", "PayPal"),
         ("credit", "Credit"),
     ]
-    business = models.ForeignKey(
-        Business, on_delete=models.CASCADE, related_name="invoices"
-    )
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="invoices")
     number = models.PositiveIntegerField()
     customer_name = models.CharField(max_length=255, null=True, blank=True)
     customer = models.ForeignKey(
@@ -54,21 +52,11 @@ class Invoice(BaseModel):
     total = models.DecimalField(
         max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))]
     )
-    tax = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
-    )
-    discount = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
-    )
-    advance_paid = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
-    )
-    remaining_amount = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
-    )
-    payment_method = models.CharField(
-        max_length=20, choices=PAYMENT_METHOD_CHOICES, default="cash"
-    )
+    tax = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    discount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    advance_paid = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    remaining_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default="cash")
     due_date = models.DateField(null=True, blank=True)
     is_credit_settled = models.BooleanField(default=False)
     reason = models.TextField(null=True, blank=True)
@@ -100,19 +88,14 @@ class Invoice(BaseModel):
 
 class InvoiceLine(BaseModel):
     """Invoice line item model."""
-    invoice = models.ForeignKey(
-        Invoice, on_delete=models.CASCADE, related_name="lines"
-    )
-    product = models.ForeignKey(
-        Product, on_delete=models.CASCADE, related_name="invoice_lines"
-    )
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="lines")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="invoice_lines")
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(
         max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
     )
-    discount = models.DecimalField(
-        max_digits=15, decimal_places=2, default=Decimal("0.00")
-    )
+    discount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal("0.00"))
     line_total = models.DecimalField(
         max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))]
     )
@@ -153,12 +136,8 @@ class Order(BaseModel):
         ("stripe", "Stripe"),
         ("paypal", "PayPal"),
     ]
-    business = models.ForeignKey(
-        Business, on_delete=models.CASCADE, related_name="orders"
-    )
-    customer = models.ForeignKey(
-        Customer, on_delete=models.CASCADE, related_name="orders"
-    )
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="orders")
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="orders")
     order_number = models.CharField(max_length=100, unique=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     total = models.DecimalField(
@@ -188,12 +167,9 @@ class Order(BaseModel):
 
 class OrderItem(BaseModel):
     """Order item model."""
-    order = models.ForeignKey(
-        Order, on_delete=models.CASCADE, related_name="items"
-    )
-    product = models.ForeignKey(
-        Product, on_delete=models.CASCADE, related_name="order_items"
-    )
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="order_items")
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(
         max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
@@ -218,3 +194,101 @@ class OrderItem(BaseModel):
         self.line_total = self.unit_price * self.quantity
         super().save(*args, **kwargs)
 
+
+class InvoicePayment(BaseModel):
+    """Invoice payment model to track all payments made on an invoice."""
+
+    PAYMENT_METHOD_CHOICES = [
+        ("cash", "Cash"),
+        ("card", "Card"),
+        ("mobile_money", "Mobile Money"),
+        ("stripe", "Stripe"),
+        ("paypal", "PayPal"),
+        ("credit", "Credit"),
+    ]
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="payments")
+    amount = models.DecimalField(
+        max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default="cash")
+    change_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Amount returned to customer (overpayment)",
+    )
+    refund_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Amount refunded to customer",
+    )
+    payment_date = models.DateTimeField()
+    notes = models.TextField(null=True, blank=True)
+    idempotency_key = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="Prevents double-spending if payment is retried",
+    )
+    created_by = models.ForeignKey(
+        RetailPulseUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_invoice_payments",
+    )
+
+    class Meta:
+        db_table = "invoice_payments"
+        verbose_name = "Invoice Payment"
+        verbose_name_plural = "Invoice Payments"
+        indexes = [
+            models.Index(fields=["invoice", "-payment_date"]),
+            models.Index(fields=["payment_date"]),
+            models.Index(fields=["idempotency_key"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Payment {self.amount} for Invoice {self.invoice.number}"
+
+
+class InvoiceLog(BaseModel):
+    """Invoice log model to track all actions on invoices."""
+
+    ACTION_CHOICES = [
+        ("CREATED", "Created"),
+        ("UPDATED", "Updated"),
+        ("PAYMENT_RECEIVED", "Payment Received"),
+        ("REFUNDED", "Refunded"),
+        ("CANCELLED", "Cancelled"),
+        ("LINE_ADDED", "Line Added"),
+        ("LINE_REMOVED", "Line Removed"),
+        ("LINE_UPDATED", "Line Updated"),
+        ("CREDIT_APPLIED", "Credit Applied"),
+        ("STATUS_CHANGED", "Status Changed"),
+    ]
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="logs")
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    old_value = models.TextField(null=True, blank=True)
+    new_value = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        RetailPulseUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_invoice_logs",
+    )
+
+    class Meta:
+        db_table = "invoice_logs"
+        verbose_name = "Invoice Log"
+        verbose_name_plural = "Invoice Logs"
+        indexes = [
+            models.Index(fields=["invoice", "-created_at"]),
+            models.Index(fields=["action"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Log {self.action} for Invoice {self.invoice.number}"

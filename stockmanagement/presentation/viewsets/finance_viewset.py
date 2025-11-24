@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -11,6 +12,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.expense_list_filter_dto import ExpenseListFilterDTO
+from application.use_cases.credit_use_cases import CheckOverdueCreditsUseCase
 from application.use_cases.finance_use_cases import (
     CreateExpenseUseCase,
     DeleteExpenseUseCase,
@@ -18,20 +21,32 @@ from application.use_cases.finance_use_cases import (
     ListExpensesUseCase,
     UpdateExpenseUseCase,
 )
+from application.use_cases.salary_use_cases import (
+    CreateSalaryUseCase,
+    GetSalaryHistoryUseCase,
+    GetSalaryUseCase,
+    PromoteEmployeeUseCase,
+    UpdateSalaryUseCase,
+)
 from domain.business.services import BusinessDomainService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
+    CreditRepositoryImpl,
     ExpenseRepositoryImpl,
     SalaryRepositoryImpl,
 )
 from presentation.serializers.finance_serializers import (
     ExpenseCreateSerializer,
+    ExpenseListQuerySerializer,
+    ExpenseResponseSerializer,
     ExpenseUpdateSerializer,
     SalaryCreateSerializer,
     SalaryPromotionSerializer,
+    SalaryResponseSerializer,
     SalaryUpdateSerializer,
 )
+from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
 
@@ -50,16 +65,23 @@ class FinanceViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="List expenses",
         operation_description="Get all expenses for a business with optional filters.",
-        responses={200: "List of expenses", 403: "Permission denied"},
+        query_serializer=ExpenseListQuerySerializer,
+        responses={
+            200: ExpenseResponseSerializer(many=True),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Finance"],
     )
-    @action(detail=False, methods=["get"], url_path="businesses/(?P<business_id>[^/.]+)/expenses")
-    def list_expenses(self, request: Request, business_id: UUID) -> Response:
+    def list(self, request: Request) -> Response:
         """List all expenses for a business."""
         try:
-            from application.dto.expense_list_filter_dto import ExpenseListFilterDTO
-            from presentation.serializers.finance_serializers import ExpenseResponseSerializer
-            from shared.security.query_params_validator import QueryParamsValidator
+            # Validate query parameters
+            query_serializer = ExpenseListQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
 
             filter_payload = self.parse_list_filters(
                 request,
@@ -89,6 +111,7 @@ class FinanceViewSet(BaseViewSet):
                     "start_date": {"type": "date"},
                     "end_date": {"type": "date"},
                 },
+                additional_allowed_params=["business_id"],
             )
             filter_payload["filters"]["business_id"] = business_id
             filter_dto = ExpenseListFilterDTO.from_payload(filter_payload)
@@ -122,19 +145,40 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Create expense",
-        operation_description="Create a new expense for a business.",
+        operation_description="Create a new expense for a business. business_id must be provided in the request body.",
         request_body=ExpenseCreateSerializer,
-        responses={201: "Expense created", 400: "Validation error", 403: "Permission denied"},
+        responses={
+            201: ExpenseResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Finance"],
     )
-    @action(detail=False, methods=["post"], url_path="businesses/(?P<business_id>[^/.]+)/expenses")
-    def create_expense(self, request: Request, business_id: UUID) -> Response:
+    def create(self, request: Request) -> Response:
         """Create a new expense."""
         serializer = ExpenseCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
 
         try:
+            # Get business_id from serializer validated data
+            business_id_str = serializer.validated_data.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id is required in request body",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(str(business_id_str))
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
+
             dto = serializer.to_dto()
             use_case = CreateExpenseUseCase(
                 expense_repository=ExpenseRepositoryImpl(),
@@ -167,23 +211,33 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get expense",
-        operation_description="Get expense details by ID.",
-        responses={200: "Expense details", 403: "Permission denied", 404: "Expense not found"},
+        operation_description="Get expense details by ID. business_id is retrieved from the expense.",
+        responses={
+            200: ExpenseResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Expense not found",
+        },
         tags=["Finance"],
     )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/expenses/(?P<expense_id>[^/.]+)",
-    )
-    def get_expense(self, request: Request, business_id: UUID, expense_id: UUID) -> Response:
+    def retrieve(self, request: Request, pk: UUID) -> Response:
         """Get expense by ID."""
         try:
+            # Get expense first to retrieve business_id
+            expense_repo = ExpenseRepositoryImpl()
+            expense = expense_repo.get_by_id(pk)
+            if not expense:
+                return self.error(
+                    message="Expense not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="EXPENSE_NOT_FOUND",
+                )
+
             use_case = GetExpenseUseCase(
-                expense_repository=ExpenseRepositoryImpl(),
+                expense_repository=expense_repo,
                 business_domain_service=self._get_business_domain_service(),
-                expense_id=expense_id,
-                business_id=business_id,
+                expense_id=pk,
+                business_id=expense.business_id,
                 user_id=request.user.id,
             )
             expense_dto = use_case.execute()
@@ -211,27 +265,28 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Update expense",
-        operation_description="Update expense details. Only owner/manager can approve.",
+        operation_description="Update expense details. Only owner/manager can approve. business_id is retrieved from the expense.",
         request_body=ExpenseUpdateSerializer,
-        responses={200: "Expense updated", 403: "Permission denied", 404: "Expense not found"},
+        responses={
+            200: ExpenseResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Expense not found",
+        },
         tags=["Finance"],
-        method="put",
     )
-    @swagger_auto_schema(
-        operation_summary="Update expense (partial)",
-        operation_description="Partially update expense details. Only owner/manager can approve.",
-        request_body=ExpenseUpdateSerializer,
-        responses={200: "Expense updated", 403: "Permission denied", 404: "Expense not found"},
-        tags=["Finance"],
-        method="patch",
-    )
-    @action(
-        detail=False,
-        methods=["put", "patch"],
-        url_path="businesses/(?P<business_id>[^/.]+)/expenses/(?P<expense_id>[^/.]+)",
-    )
-    def update_expense(self, request: Request, business_id: UUID, expense_id: UUID) -> Response:
+    def update(self, request: Request, pk: UUID) -> Response:
         """Update expense."""
+        # Get expense first to retrieve business_id
+        expense_repo = ExpenseRepositoryImpl()
+        expense = expense_repo.get_by_id(pk)
+        if not expense:
+            return self.error(
+                message="Expense not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="EXPENSE_NOT_FOUND",
+            )
+
         serializer = ExpenseUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
@@ -239,10 +294,10 @@ class FinanceViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto()
             use_case = UpdateExpenseUseCase(
-                expense_repository=ExpenseRepositoryImpl(),
+                expense_repository=expense_repo,
                 business_domain_service=self._get_business_domain_service(),
-                expense_id=expense_id,
-                business_id=business_id,
+                expense_id=pk,
+                business_id=expense.business_id,
                 user_id=request.user.id,
             )
             expense_dto = use_case.execute(dto)
@@ -267,23 +322,33 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Delete expense",
-        operation_description="Delete an expense.",
-        responses={200: "Expense deleted", 403: "Permission denied", 404: "Expense not found"},
+        operation_description="Delete an expense. business_id is retrieved from the expense.",
+        responses={
+            204: "No Content",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Expense not found",
+        },
         tags=["Finance"],
     )
-    @action(
-        detail=False,
-        methods=["delete"],
-        url_path="businesses/(?P<business_id>[^/.]+)/expenses/(?P<expense_id>[^/.]+)",
-    )
-    def delete_expense(self, request: Request, business_id: UUID, expense_id: UUID) -> Response:
+    def destroy(self, request: Request, pk: UUID) -> Response:
         """Delete expense."""
         try:
+            # Get expense first to retrieve business_id
+            expense_repo = ExpenseRepositoryImpl()
+            expense = expense_repo.get_by_id(pk)
+            if not expense:
+                return self.error(
+                    message="Expense not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="EXPENSE_NOT_FOUND",
+                )
+
             use_case = DeleteExpenseUseCase(
-                expense_repository=ExpenseRepositoryImpl(),
+                expense_repository=expense_repo,
                 business_domain_service=self._get_business_domain_service(),
-                expense_id=expense_id,
-                business_id=business_id,
+                expense_id=pk,
+                business_id=expense.business_id,
                 user_id=request.user.id,
             )
             use_case.execute()
@@ -297,20 +362,44 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get overdue credits",
-        operation_description="Get all overdue credits for a business and create notifications.",
+        operation_description="Get all overdue credits for a business and create notifications. business_id is required as query parameter.",
+        manual_parameters=[
+            openapi.Parameter(
+                "business_id",
+                openapi.IN_QUERY,
+                description="Business ID (required)",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_UUID,
+                required=True,
+            ),
+        ],
         responses={200: "List of overdue credits", 403: "Permission denied"},
         tags=["Finance"],
     )
     @action(
         detail=False,
         methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/credits/overdue",
+        url_path="credits/overdue",
     )
-    def get_overdue_credits(self, request: Request, business_id: UUID) -> Response:
+    def get_overdue_credits(self, request: Request) -> Response:
         """Get overdue credits for a business."""
         try:
-            from application.use_cases.credit_use_cases import CheckOverdueCreditsUseCase
-            from infrastructure.persistence.repositories import CreditRepositoryImpl
+            business_id_str = request.query_params.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id query parameter is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(business_id_str)
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
 
             # Check if user has access to business
             if not self._get_business_domain_service().user_has_access(
@@ -355,21 +444,41 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Create salary",
-        operation_description="Create a new salary for an employee.",
+        operation_description="Create a new salary for an employee. business_id must be provided in the request body.",
         request_body=SalaryCreateSerializer,
-        responses={201: "Salary created", 400: "Validation error", 403: "Permission denied"},
+        responses={
+            201: SalaryResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Finance"],
     )
-    @action(detail=False, methods=["post"], url_path="businesses/(?P<business_id>[^/.]+)/salaries")
-    def create_salary(self, request: Request, business_id: UUID) -> Response:
+    @action(detail=False, methods=["post"], url_path="salaries")
+    def create_salary(self, request: Request) -> Response:
         """Create a new salary for an employee."""
-        from application.use_cases.salary_use_cases import CreateSalaryUseCase
-
         serializer = SalaryCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
 
         try:
+            # Get business_id from serializer validated data
+            business_id_str = serializer.validated_data.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id is required in request body",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(str(business_id_str))
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
+
             dto = serializer.to_dto()
             use_case = CreateSalaryUseCase(
                 salary_repository=SalaryRepositoryImpl(),
@@ -406,25 +515,38 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get salary",
-        operation_description="Get salary details by ID.",
-        responses={200: "Salary details", 403: "Permission denied", 404: "Salary not found"},
+        operation_description="Get salary details by ID. business_id is retrieved from the salary.",
+        responses={
+            200: SalaryResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Salary not found",
+        },
         tags=["Finance"],
     )
     @action(
         detail=False,
         methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/salaries/(?P<salary_id>[^/.]+)",
+        url_path="salaries/(?P<salary_id>[^/.]+)",
     )
-    def get_salary(self, request: Request, business_id: UUID, salary_id: UUID) -> Response:
+    def get_salary(self, request: Request, salary_id: UUID) -> Response:
         """Get salary by ID."""
-        from application.use_cases.salary_use_cases import GetSalaryUseCase
-
         try:
+            # Get salary first to retrieve business_id
+            salary_repo = SalaryRepositoryImpl()
+            salary = salary_repo.get_by_id(salary_id)
+            if not salary:
+                return self.error(
+                    message="Salary not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="SALARY_NOT_FOUND",
+                )
+
             use_case = GetSalaryUseCase(
-                salary_repository=SalaryRepositoryImpl(),
+                salary_repository=salary_repo,
                 business_domain_service=self._get_business_domain_service(),
                 salary_id=salary_id,
-                business_id=business_id,
+                business_id=salary.business_id,
                 user_id=request.user.id,
             )
             salary_dto = use_case.execute()
@@ -456,20 +578,49 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get salary history",
-        operation_description="Get salary history for a user. Users can only see their own history unless they're owner/manager.",
-        responses={200: "Salary history", 403: "Permission denied"},
+        operation_description="Get salary history for a user. Users can only see their own history unless they're owner/manager. business_id is required as query parameter.",
+        manual_parameters=[
+            openapi.Parameter(
+                "business_id",
+                openapi.IN_QUERY,
+                description="Business ID (required)",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_UUID,
+                required=True,
+            ),
+        ],
+        responses={
+            200: SalaryResponseSerializer(many=True),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Finance"],
     )
     @action(
         detail=False,
         methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/salaries/user/(?P<user_id>[^/.]+)/history",
+        url_path="salaries/user/(?P<user_id>[^/.]+)/history",
     )
-    def get_salary_history(self, request: Request, business_id: UUID, user_id: UUID) -> Response:
+    def get_salary_history(self, request: Request, user_id: UUID) -> Response:
         """Get salary history for a user."""
-        from application.use_cases.salary_use_cases import GetSalaryHistoryUseCase
-
         try:
+            business_id_str = request.query_params.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id query parameter is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(business_id_str)
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
+
             use_case = GetSalaryHistoryUseCase(
                 salary_repository=SalaryRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
@@ -507,25 +658,45 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Promote employee",
-        operation_description="Promote an employee by creating a new salary with higher amount.",
+        operation_description="Promote an employee by creating a new salary with higher amount. business_id must be provided in the request body.",
         request_body=SalaryPromotionSerializer,
-        responses={201: "Employee promoted", 400: "Validation error", 403: "Permission denied"},
+        responses={
+            201: SalaryResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Finance"],
     )
     @action(
         detail=False,
         methods=["post"],
-        url_path="businesses/(?P<business_id>[^/.]+)/salaries/employee/(?P<employee_id>[^/.]+)/promote",
+        url_path="salaries/employee/(?P<employee_id>[^/.]+)/promote",
     )
-    def promote_employee(self, request: Request, business_id: UUID, employee_id: UUID) -> Response:
+    def promote_employee(self, request: Request, employee_id: UUID) -> Response:
         """Promote an employee (create new salary with higher amount)."""
-        from application.use_cases.salary_use_cases import PromoteEmployeeUseCase
-
         serializer = SalaryPromotionSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
 
         try:
+            # Get business_id from serializer validated data
+            business_id_str = serializer.validated_data.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id is required in request body",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(str(business_id_str))
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
+
             dto = serializer.to_dto()
             use_case = PromoteEmployeeUseCase(
                 salary_repository=SalaryRepositoryImpl(),
@@ -563,28 +734,32 @@ class FinanceViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Update salary",
-        operation_description="Update salary details. Only owner/manager can update.",
+        operation_description="Update salary details. Only owner/manager can update. business_id is retrieved from the salary.",
         request_body=SalaryUpdateSerializer,
-        responses={200: "Salary updated", 403: "Permission denied", 404: "Salary not found"},
+        responses={
+            200: SalaryResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Salary not found",
+        },
         tags=["Finance"],
-        method="put",
-    )
-    @swagger_auto_schema(
-        operation_summary="Update salary (partial)",
-        operation_description="Partially update salary details. Only owner/manager can update.",
-        request_body=SalaryUpdateSerializer,
-        responses={200: "Salary updated", 403: "Permission denied", 404: "Salary not found"},
-        tags=["Finance"],
-        method="patch",
     )
     @action(
         detail=False,
-        methods=["put", "patch"],
-        url_path="businesses/(?P<business_id>[^/.]+)/salaries/(?P<salary_id>[^/.]+)",
+        methods=["put"],
+        url_path="salaries/(?P<salary_id>[^/.]+)",
     )
-    def update_salary(self, request: Request, business_id: UUID, salary_id: UUID) -> Response:
+    def update_salary(self, request: Request, salary_id: UUID) -> Response:
         """Update salary."""
-        from application.use_cases.salary_use_cases import UpdateSalaryUseCase
+        # Get salary first to retrieve business_id
+        salary_repo = SalaryRepositoryImpl()
+        salary = salary_repo.get_by_id(salary_id)
+        if not salary:
+            return self.error(
+                message="Salary not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="SALARY_NOT_FOUND",
+            )
 
         serializer = SalaryUpdateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -593,10 +768,10 @@ class FinanceViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto()
             use_case = UpdateSalaryUseCase(
-                salary_repository=SalaryRepositoryImpl(),
+                salary_repository=salary_repo,
                 business_domain_service=self._get_business_domain_service(),
                 salary_id=salary_id,
-                business_id=business_id,
+                business_id=salary.business_id,
                 user_id=request.user.id,
             )
             salary_dto = use_case.execute(dto)

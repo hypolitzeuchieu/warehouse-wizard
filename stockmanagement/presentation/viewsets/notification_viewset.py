@@ -11,7 +11,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.notification_list_filter_dto import NotificationListFilterDTO
 from infrastructure.persistence.services.notification_service import NotificationService
+from presentation.serializers.notification_serializers import NotificationResponseSerializer
+from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
 
@@ -29,12 +32,6 @@ class NotificationViewSet(BaseViewSet):
     def list(self, request: Request) -> Response:
         """List all notifications for the authenticated user."""
         try:
-            from application.dto.notification_list_filter_dto import NotificationListFilterDTO
-            from presentation.serializers.notification_serializers import (
-                NotificationResponseSerializer,
-            )
-            from shared.security.query_params_validator import QueryParamsValidator
-
             filter_payload = self.parse_list_filters(
                 request,
                 search_fields=["title", "message"],

@@ -175,6 +175,18 @@ class ProductRepositoryImpl(ProductRepository):
         except ProductModel.DoesNotExist:
             return None
 
+    def get_by_id_for_update(self, product_id: UUID) -> Product | None:
+        """Get product by ID with row lock for update (prevents race conditions)."""
+        try:
+            product_model = (
+                ProductModel.objects.select_related("business", "category", "subcategory")
+                .select_for_update()
+                .get(id=product_id)
+            )
+            return self._to_entity(product_model)
+        except ProductModel.DoesNotExist:
+            return None
+
     def get_by_barcode(self, barcode: str, business_id: UUID) -> Product | None:
         """Get product by barcode."""
         try:

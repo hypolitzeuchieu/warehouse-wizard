@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from django.db import models
+from django.utils import timezone
 
 from domain.finance.entities import (
     Expense,
@@ -134,8 +135,6 @@ class SalaryRepositoryImpl(SalaryRepository):
 
     def get_current_salary(self, business_id: UUID, user_id: UUID) -> Salary | None:
         """Get current active salary for a user."""
-        from django.utils import timezone
-
         now = timezone.now()
         try:
             salary_model = (

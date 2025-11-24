@@ -6,6 +6,9 @@ from uuid import UUID
 from domain.sales.entities import (
     Invoice,
     InvoiceLine,
+    InvoiceLog,
+    InvoiceLogAction,
+    InvoicePayment,
     InvoiceStatus,
     Order,
     OrderItem,
@@ -13,6 +16,8 @@ from domain.sales.entities import (
 )
 from domain.sales.repositories import (
     InvoiceLineRepository,
+    InvoiceLogRepository,
+    InvoicePaymentRepository,
     InvoiceRepository,
     OrderItemRepository,
     OrderRepository,
@@ -22,6 +27,12 @@ from infrastructure.persistence.models.sales_models import (
 )
 from infrastructure.persistence.models.sales_models import (
     InvoiceLine as InvoiceLineModel,
+)
+from infrastructure.persistence.models.sales_models import (
+    InvoiceLog as InvoiceLogModel,
+)
+from infrastructure.persistence.models.sales_models import (
+    InvoicePayment as InvoicePaymentModel,
 )
 from infrastructure.persistence.models.sales_models import (
     Order as OrderModel,
@@ -40,6 +51,18 @@ class InvoiceRepositoryImpl(InvoiceRepository):
             invoice_model = InvoiceModel.objects.select_related(
                 "business", "customer", "cashier"
             ).get(id=invoice_id)
+            return self._to_entity(invoice_model)
+        except InvoiceModel.DoesNotExist:
+            return None
+
+    def get_by_id_for_update(self, invoice_id: UUID) -> Invoice | None:
+        """Get invoice by ID with row lock for update (prevents race conditions)."""
+        try:
+            invoice_model = (
+                InvoiceModel.objects.select_related("business", "customer", "cashier")
+                .select_for_update()
+                .get(id=invoice_id)
+            )
             return self._to_entity(invoice_model)
         except InvoiceModel.DoesNotExist:
             return None
@@ -153,6 +176,16 @@ class InvoiceRepositoryImpl(InvoiceRepository):
 
 class InvoiceLineRepositoryImpl(InvoiceLineRepository):
     """Django implementation of InvoiceLineRepository."""
+
+    def get_by_id(self, line_id: UUID) -> InvoiceLine | None:
+        """Get invoice line by ID."""
+        try:
+            line_model = InvoiceLineModel.objects.select_related("invoice", "product").get(
+                id=line_id
+            )
+            return self._to_entity(line_model)
+        except InvoiceLineModel.DoesNotExist:
+            return None
 
     def get_by_invoice(self, invoice_id: UUID) -> list[InvoiceLine]:
         """Get all lines for an invoice."""
@@ -306,4 +339,145 @@ class OrderItemRepositoryImpl(OrderItemRepository):
             unit_price=item_model.unit_price,
             line_total=item_model.line_total,
             created_at=item_model.created_at,
+        )
+
+
+class InvoicePaymentRepositoryImpl(InvoicePaymentRepository):
+    """Django implementation of InvoicePaymentRepository."""
+
+    def get_by_id(self, payment_id: UUID) -> InvoicePayment | None:
+        """Get payment by ID."""
+        try:
+            payment_model = InvoicePaymentModel.objects.select_related("invoice", "created_by").get(
+                id=payment_id
+            )
+            return self._to_entity(payment_model)
+        except InvoicePaymentModel.DoesNotExist:
+            return None
+
+    def get_by_invoice(self, invoice_id: UUID, limit: int = 100) -> list[InvoicePayment]:
+        """Get all payments for an invoice."""
+        payments = (
+            InvoicePaymentModel.objects.filter(invoice_id=invoice_id)
+            .select_related("created_by")
+            .order_by("-payment_date")[:limit]
+        )
+        return [self._to_entity(payment) for payment in payments]
+
+    def get_by_idempotency_key(
+        self, invoice_id: UUID, idempotency_key: UUID
+    ) -> InvoicePayment | None:
+        """Get payment by idempotency key for an invoice (prevents double-spending)."""
+        try:
+            payment_model = InvoicePaymentModel.objects.select_related("invoice", "created_by").get(
+                invoice_id=invoice_id, idempotency_key=idempotency_key
+            )
+            return self._to_entity(payment_model)
+        except InvoicePaymentModel.DoesNotExist:
+            return None
+
+    def get_by_business(
+        self,
+        business_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        limit: int = 100,
+    ) -> list[InvoicePayment]:
+        """Get all payments for a business."""
+        query = InvoicePaymentModel.objects.filter(invoice__business_id=business_id).select_related(
+            "invoice", "created_by"
+        )
+
+        if start_date:
+            query = query.filter(payment_date__gte=start_date)
+
+        if end_date:
+            query = query.filter(payment_date__lte=end_date)
+
+        payments = query.order_by("-payment_date")[:limit]
+        return [self._to_entity(payment) for payment in payments]
+
+    def create(self, payment: InvoicePayment) -> InvoicePayment:
+        """Create a new payment."""
+        payment_model = InvoicePaymentModel(
+            id=payment.id,
+            invoice_id=payment.invoice_id,
+            amount=payment.amount,
+            payment_method=payment.payment_method.value,
+            change_amount=payment.change_amount,
+            refund_amount=payment.refund_amount,
+            payment_date=payment.payment_date,
+            notes=payment.notes,
+            idempotency_key=payment.idempotency_key,
+            created_by_id=payment.created_by,
+        )
+        payment_model.save()
+        return self._to_entity(payment_model)
+
+    def _to_entity(self, payment_model: InvoicePaymentModel) -> InvoicePayment:
+        """Convert Django model to domain entity."""
+        return InvoicePayment(
+            id=payment_model.id,
+            invoice_id=payment_model.invoice_id,
+            amount=payment_model.amount,
+            payment_method=PaymentMethod(payment_model.payment_method),
+            change_amount=payment_model.change_amount,
+            refund_amount=payment_model.refund_amount,
+            payment_date=payment_model.payment_date,
+            notes=payment_model.notes,
+            idempotency_key=payment_model.idempotency_key,
+            created_at=payment_model.created_at,
+            updated_at=payment_model.updated_at,
+            created_by=payment_model.created_by_id,
+        )
+
+
+class InvoiceLogRepositoryImpl(InvoiceLogRepository):
+    """Django implementation of InvoiceLogRepository."""
+
+    def get_by_id(self, log_id: UUID) -> InvoiceLog | None:
+        """Get log by ID."""
+        try:
+            log_model = InvoiceLogModel.objects.select_related("invoice", "created_by").get(
+                id=log_id
+            )
+            return self._to_entity(log_model)
+        except InvoiceLogModel.DoesNotExist:
+            return None
+
+    def get_by_invoice(self, invoice_id: UUID, limit: int = 100) -> list[InvoiceLog]:
+        """Get all logs for an invoice."""
+        logs = (
+            InvoiceLogModel.objects.filter(invoice_id=invoice_id)
+            .select_related("created_by")
+            .order_by("-created_at")[:limit]
+        )
+        return [self._to_entity(log) for log in logs]
+
+    def create(self, log: InvoiceLog) -> InvoiceLog:
+        """Create a new log entry."""
+        log_model = InvoiceLogModel(
+            id=log.id,
+            invoice_id=log.invoice_id,
+            action=log.action.value,
+            old_value=log.old_value,
+            new_value=log.new_value,
+            description=log.description,
+            created_by_id=log.created_by,
+        )
+        log_model.save()
+        return self._to_entity(log_model)
+
+    def _to_entity(self, log_model: InvoiceLogModel) -> InvoiceLog:
+        """Convert Django model to domain entity."""
+        return InvoiceLog(
+            id=log_model.id,
+            invoice_id=log_model.invoice_id,
+            action=InvoiceLogAction(log_model.action),
+            old_value=log_model.old_value,
+            new_value=log_model.new_value,
+            description=log_model.description,
+            created_at=log_model.created_at,
+            updated_at=log_model.updated_at,
+            created_by=log_model.created_by_id,
         )

@@ -6,6 +6,8 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
+from django.utils import timezone
+
 
 class ExpenseType(str, Enum):
     """Expense type enumeration."""
@@ -74,8 +76,6 @@ class Salary:
     def is_active(self, current_date: datetime | None = None) -> bool:
         """Check if salary is currently active."""
         if current_date is None:
-            from django.utils import timezone
-
             current_date = timezone.now()
 
         if current_date < self.effective_from:
