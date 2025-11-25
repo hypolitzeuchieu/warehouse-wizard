@@ -487,6 +487,21 @@ class ExpiredProductSerializer(serializers.Serializer):
         return serializer.data
 
 
+class ProductListQuerySerializer(serializers.Serializer):
+    """Serializer for product list query parameters."""
+
+    business_id = serializers.UUIDField(required=True)
+    category_id = serializers.UUIDField(required=False, allow_null=True)
+    subcategory_id = serializers.UUIDField(required=False, allow_null=True)
+    name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    low_stock_only = serializers.BooleanField(required=False, allow_null=True)
+    expired_only = serializers.BooleanField(required=False, allow_null=True)
+    search = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    page = serializers.IntegerField(required=False, min_value=1, default=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=1000, default=20)
+    order_by = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
 class ProductScanSerializer(serializers.Serializer):
     """Serializer for product scan responses."""
 

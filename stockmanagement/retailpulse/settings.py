@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # New DDD structure
     "infrastructure.persistence.models.apps.PersistenceModelsConfig",
+    # Celery tasks app - must be after persistence models
+    "tasks.apps.TasksConfig",
     "rest_framework",
     "corsheaders",
     "rest_framework.authtoken",

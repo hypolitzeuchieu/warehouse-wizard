@@ -8,6 +8,8 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
+from django.utils import timezone
+
 
 class CreditStatus(str, Enum):
     """Credit status enumeration."""
@@ -48,8 +50,6 @@ class Credit:
 
     def is_overdue(self) -> bool:
         """Check if credit is overdue."""
-        from django.utils import timezone
-
         return (
             self.status != CreditStatus.SETTLED
             and self.status != CreditStatus.CANCELLED

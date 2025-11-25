@@ -1,4 +1,4 @@
-.PHONY: start stop makemigrations migrate start-celery start-runserver check-migrations
+.PHONY: start stop makemigrations migrate start-celery start-runserver check-migrations check-and-create-migrations
 
 UV ?= uv
 PYTHON ?= python
@@ -19,6 +19,15 @@ start: check-migrations migrate start-celery start-runserver
 check-migrations:
 	@echo "Checking for pending migrations (no files will be created)..."
 	@$(MANAGE) makemigrations --check 2>/dev/null || echo "Note: Some migrations may be needed. Run 'make makemigrations' to create them."; true
+
+check-and-create-migrations:
+	@echo "Checking for pending migrations..."
+	@if ! $(MANAGE) makemigrations --check >/dev/null 2>&1; then \
+		echo "Creating new migrations..."; \
+		$(MANAGE) makemigrations; \
+	else \
+		echo "No new migrations needed."; \
+	fi
 
 makemigrations:
 	@echo "Running makemigrations..."

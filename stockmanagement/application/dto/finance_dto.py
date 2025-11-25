@@ -1,8 +1,9 @@
 """Finance DTOs."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 
@@ -13,6 +14,12 @@ class ExpenseCreateDTO:
     expense_type: str
     amount: Decimal
     reason: str
+    reason_details: str
+    payment_method: str
+    payment_reference: str | None
+    payee_type: str
+    payee_name: str
+    justification_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -22,7 +29,13 @@ class ExpenseUpdateDTO:
     expense_type: str | None = None
     amount: Decimal | None = None
     reason: str | None = None
+    reason_details: str | None = None
     is_approved: bool | None = None
+    payment_method: str | None = None
+    payment_reference: str | None = None
+    payee_type: str | None = None
+    payee_name: str | None = None
+    justification_metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -34,9 +47,15 @@ class ExpenseResponseDTO:
     expense_type: str
     amount: Decimal
     reason: str
+    reason_details: str | None
     user_id: UUID
     approved_by: UUID | None
     is_approved: bool
+    payment_method: str
+    payment_reference: str | None
+    payee_type: str
+    payee_name: str | None
+    justification_metadata: dict[str, Any]
     created_at: datetime
     updated_at: datetime
 
@@ -142,3 +161,48 @@ class ExpenseCategoryStatsDTO:
     count: int
     average_amount: Decimal
     percentage_of_total: Decimal
+
+
+@dataclass
+class MonthlyExpenseStatDTO:
+    """DTO describing aggregated expense per month."""
+
+    month: datetime
+    total_amount: Decimal
+    count: int
+
+
+@dataclass
+class ExpenseSummaryDTO:
+    """DTO for aggregated expense summary."""
+
+    business_id: UUID
+    total_amount: Decimal
+    total_count: int
+    by_type: list[ExpenseCategoryStatsDTO]
+    by_payment_method: dict[str, Decimal]
+    monthly_stats: list[MonthlyExpenseStatDTO]
+
+
+@dataclass
+class ExpenseAuditLogDTO:
+    """DTO for returning expense audit history."""
+
+    id: UUID
+    expense_id: UUID
+    action: str
+    performed_by: UUID | None
+    amount_before: Decimal | None
+    amount_after: Decimal | None
+    reason_before: str | None
+    reason_after: str | None
+    reason_details_before: str | None
+    reason_details_after: str | None
+    payment_method_before: str | None
+    payment_method_after: str | None
+    payee_type_before: str | None
+    payee_type_after: str | None
+    payee_name_before: str | None
+    payee_name_after: str | None
+    justification_snapshot: dict[str, Any]
+    created_at: datetime

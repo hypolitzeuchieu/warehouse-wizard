@@ -89,6 +89,11 @@ class ProductRepository(ABC):
         pass
 
     @abstractmethod
+    def get_by_id_for_update(self, product_id: UUID) -> Product | None:
+        """Get product by ID with row lock for update (prevents race conditions)."""
+        pass
+
+    @abstractmethod
     def get_by_barcode(self, barcode: str, business_id: UUID) -> Product | None:
         """Get product by barcode."""
         pass

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-import drf_yasg.openapi
+from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -30,6 +30,7 @@ from infrastructure.persistence.repositories import (
 )
 from presentation.serializers.inventory_serializers import (
     ProductCreateSerializer,
+    ProductListQuerySerializer,
     ProductResponseSerializer,
     ProductScanSerializer,
     ProductUpdateSerializer,
@@ -76,6 +77,7 @@ class ProductViewSet(BaseViewSet):
                 "low_stock_only": {"type": "boolean"},
                 "expired_only": {"type": "boolean"},
             },
+            additional_allowed_params=["business_id"],
         )
         filter_payload["filters"]["business_id"] = str(business_id)
         if category_id is not None:
@@ -242,6 +244,7 @@ class ProductViewSet(BaseViewSet):
         operation_summary="List products",
         operation_description="Get all products for a business with optional filters.",
         operation_id="product_list",
+        query_serializer=ProductListQuerySerializer,
         responses={
             200: ProductResponseSerializer(many=True),
             403: "Permission denied",
@@ -252,15 +255,16 @@ class ProductViewSet(BaseViewSet):
         },
         tags=["Products"],
     )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products",
-        url_name="product-list",
-    )
-    def list_products(self, request: Request, business_id: UUID) -> Response:
+    def list(self, request: Request) -> Response:
         """List all products for a business."""
         try:
+            # Validate query parameters
+            query_serializer = ProductListQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
+
             return self._list_products_for_scope(
                 request,
                 business_id=business_id,
@@ -270,7 +274,7 @@ class ProductViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Create product",
-        operation_description="Create a new product for a business.",
+        operation_description="Create a new product for a business. business_id must be provided in the request body.",
         operation_id="product_create",
         request_body=ProductCreateSerializer,
         responses={
@@ -283,13 +287,7 @@ class ProductViewSet(BaseViewSet):
         },
         tags=["Products"],
     )
-    @action(
-        detail=False,
-        methods=["post"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products",
-        url_name="product-create",
-    )
-    def create_product(self, request: Request, business_id: UUID) -> Response:
+    def create(self, request: Request) -> Response:
         """Create a new product."""
         # Merge files into data for serializer
         data = request.data.copy()
@@ -301,6 +299,24 @@ class ProductViewSet(BaseViewSet):
             return self.handle_validation_error(serializer)
 
         try:
+            # Get business_id from serializer validated data
+            business_id_str = serializer.validated_data.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id is required in request body",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(str(business_id_str))
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
+
             dto = serializer.to_dto(business_id=str(business_id))
             use_case = CreateProductUseCase(
                 product_repository=ProductRepositoryImpl(),
@@ -321,7 +337,7 @@ class ProductViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get product",
-        operation_description="Get product details by ID.",
+        operation_description="Get product details by ID. business_id is retrieved from the product.",
         operation_id="product_retrieve",
         responses={
             200: ProductResponseSerializer(),
@@ -333,20 +349,24 @@ class ProductViewSet(BaseViewSet):
         },
         tags=["Products"],
     )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/(?P<product_id>[^/.]+)",
-        url_name="product-detail",
-    )
-    def get_product(self, request: Request, business_id: UUID, product_id: UUID) -> Response:
+    def retrieve(self, request: Request, pk: UUID) -> Response:
         """Get product by ID."""
         try:
+            # Get product first to retrieve business_id
+            product_repo = ProductRepositoryImpl()
+            product = product_repo.get_by_id(pk)
+            if not product:
+                return self.error(
+                    message="Product not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="PRODUCT_NOT_FOUND",
+                )
+
             use_case = GetProductUseCase(
-                product_repository=ProductRepositoryImpl(),
+                product_repository=product_repo,
                 business_domain_service=self._get_business_domain_service(),
-                product_id=product_id,
-                business_id=business_id,
+                product_id=pk,
+                business_id=product.business_id,
                 user_id=request.user.id,
             )
             product_dto = use_case.execute()
@@ -361,7 +381,7 @@ class ProductViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Update product",
-        operation_description="Update product details.",
+        operation_description="Update product details with full update (PUT). All fields should be provided. business_id is retrieved from the product.",
         operation_id="product_update",
         request_body=ProductUpdateSerializer,
         responses={
@@ -374,18 +394,19 @@ class ProductViewSet(BaseViewSet):
         },
         tags=["Products"],
     )
-    @action(
-        detail=False,
-        methods=["put"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/(?P<product_id>[^/.]+)",
-        url_name="product-update",
-    )
-    def update_product(self, request: Request, business_id: UUID, product_id: UUID) -> Response:
-        """Update product."""
-
+    def update(self, request: Request, pk: UUID) -> Response:
+        """Update product (PUT)."""
         product_repo = ProductRepositoryImpl()
-        existing_product = product_repo.get_by_id(product_id)
-        old_image_url = existing_product.image_url if existing_product else None
+        existing_product = product_repo.get_by_id(pk)
+        if not existing_product:
+            return self.error(
+                message="Product not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="PRODUCT_NOT_FOUND",
+            )
+
+        old_image_url = existing_product.image_url
+        business_id = existing_product.business_id
 
         # Merge files into data for serializer
         data = request.data.copy()
@@ -399,11 +420,11 @@ class ProductViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto(business_id=str(business_id), old_image_url=old_image_url)
             use_case = UpdateProductUseCase(
-                product_repository=ProductRepositoryImpl(),
+                product_repository=product_repo,
                 category_repository=CategoryRepositoryImpl(),
                 subcategory_repository=SubCategoryRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
-                product_id=product_id,
+                product_id=pk,
                 business_id=business_id,
                 user_id=request.user.id,
             )
@@ -419,7 +440,7 @@ class ProductViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Delete product",
-        operation_description="Delete a product.",
+        operation_description="Delete a product. business_id is retrieved from the product.",
         operation_id="product_destroy",
         responses={
             204: "Product deleted successfully",
@@ -430,20 +451,24 @@ class ProductViewSet(BaseViewSet):
         },
         tags=["Products"],
     )
-    @action(
-        detail=False,
-        methods=["delete"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/(?P<product_id>[^/.]+)",
-        url_name="product-delete",
-    )
-    def delete_product(self, request: Request, business_id: UUID, product_id: UUID) -> Response:
+    def destroy(self, request: Request, pk: UUID) -> Response:
         """Delete product."""
         try:
+            # Get product first to retrieve business_id
+            product_repo = ProductRepositoryImpl()
+            product = product_repo.get_by_id(pk)
+            if not product:
+                return self.error(
+                    message="Product not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="PRODUCT_NOT_FOUND",
+                )
+
             use_case = DeleteProductUseCase(
-                product_repository=ProductRepositoryImpl(),
+                product_repository=product_repo,
                 business_domain_service=self._get_business_domain_service(),
-                product_id=product_id,
-                business_id=business_id,
+                product_id=pk,
+                business_id=product.business_id,
                 user_id=request.user.id,
             )
             use_case.execute()
@@ -457,7 +482,7 @@ class ProductViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Scan barcode",
-        operation_description="Scan barcode to get product information. Falls back to product ID if barcode not found.",
+        operation_description="Scan barcode to get product information. Falls back to product ID if barcode not found. business_id is required in request body.",
         operation_id="product_scan_barcode",
         request_body=ProductScanSerializer,
         responses={
@@ -473,14 +498,31 @@ class ProductViewSet(BaseViewSet):
     @action(
         detail=False,
         methods=["post"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/scan-barcode",
+        url_path="scan-barcode",
         url_name="scan-barcode",
     )
-    def scan_barcode(self, request: Request, business_id: UUID) -> Response:
+    def scan_barcode(self, request: Request) -> Response:
         """Scan barcode to get product information."""
         try:
             barcode = request.data.get("barcode")
             product_id = request.data.get("product_id")  # Fallback option
+            business_id_str = request.data.get("business_id")
+
+            if not business_id_str:
+                return self.error(
+                    message="business_id is required in request body",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(business_id_str)
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
 
             if not barcode and not product_id:
                 return self.error(
@@ -532,14 +574,22 @@ class ProductViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Scan barcode (GET)",
-        operation_description="Scan barcode via GET request. Simpler for some scanner configurations.",
+        operation_description="Scan barcode via GET request. Simpler for some scanner configurations. business_id is required as query parameter.",
         operation_id="product_scan_barcode_get",
         manual_parameters=[
-            drf_yasg.openapi.Parameter(
+            openapi.Parameter(
                 "barcode",
-                drf_yasg.openapi.IN_PATH,
+                openapi.IN_PATH,
                 description="Barcode to scan",
-                type=drf_yasg.openapi.TYPE_STRING,
+                type=openapi.TYPE_STRING,
+                required=True,
+            ),
+            openapi.Parameter(
+                "business_id",
+                openapi.IN_QUERY,
+                description="Business ID (required)",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_UUID,
                 required=True,
             ),
         ],
@@ -556,10 +606,10 @@ class ProductViewSet(BaseViewSet):
     @action(
         detail=False,
         methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/products/scan-barcode/(?P<barcode>[^/.]+)",
+        url_path="scan-barcode/(?P<barcode>[^/.]+)",
         url_name="scan-barcode-get",
     )
-    def scan_barcode_get(self, request: Request, business_id: UUID, barcode: str) -> Response:
+    def scan_barcode_get(self, request: Request, barcode: str) -> Response:
         """Scan barcode via GET request (simpler for some scanner configurations)."""
         try:
             if not barcode:
@@ -567,6 +617,23 @@ class ProductViewSet(BaseViewSet):
                     message="Barcode is required",
                     status_code=status.HTTP_400_BAD_REQUEST,
                     code="MISSING_BARCODE",
+                )
+
+            business_id_str = request.query_params.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id query parameter is required",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(business_id_str)
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
                 )
 
             product_repository = ProductRepositoryImpl()

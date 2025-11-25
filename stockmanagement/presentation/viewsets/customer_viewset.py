@@ -11,7 +11,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from application.dto.credit_dto import CreditCreateDTO, CreditPaymentCreateDTO
 from application.dto.customer_list_filter_dto import CustomerListFilterDTO
+from application.use_cases.credit_use_cases import (
+    CreateCreditUseCase,
+    GetCreditPaymentsUseCase,
+    ListCreditsUseCase,
+    PayCreditUseCase,
+)
 from application.use_cases.customer_use_cases import (
     CreateCustomerUseCase,
     DeleteCustomerUseCase,
@@ -20,9 +27,12 @@ from application.use_cases.customer_use_cases import (
     UpdateCustomerUseCase,
 )
 from domain.business.services import BusinessDomainService
+from domain.credit.entities import CreditStatus
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
+    CreditPaymentRepositoryImpl,
+    CreditRepositoryImpl,
     CustomerRepositoryImpl,
 )
 from presentation.serializers.credit_serializers import (
@@ -32,6 +42,7 @@ from presentation.serializers.credit_serializers import (
 )
 from presentation.serializers.customer_serializers import (
     CustomerCreateSerializer,
+    CustomerListQuerySerializer,
     CustomerResponseSerializer,
     CustomerUpdateSerializer,
 )
@@ -54,13 +65,24 @@ class CustomerViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="List customers",
         operation_description="Get all customers for a business.",
-        responses={200: "List of customers", 403: "Permission denied"},
+        query_serializer=CustomerListQuerySerializer,
+        responses={
+            200: CustomerResponseSerializer(many=True),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Customer"],
     )
-    @action(detail=False, methods=["get"], url_path="businesses/(?P<business_id>[^/.]+)/customers")
-    def list_customers(self, request: Request, business_id: UUID) -> Response:
+    def list(self, request: Request) -> Response:
         """List all customers for a business."""
         try:
+            # Validate query parameters
+            query_serializer = CustomerListQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
+
             filter_payload = self.parse_list_filters(
                 request,
                 search_fields=["name", "email", "phone_number"],
@@ -72,6 +94,7 @@ class CustomerViewSet(BaseViewSet):
                         "choices": ["REGULAR", "WHOLESALER"],
                     },
                 },
+                additional_allowed_params=["business_id"],
             )
             filter_payload["filters"]["business_id"] = business_id
             filter_dto = CustomerListFilterDTO.from_payload(filter_payload)
@@ -109,19 +132,40 @@ class CustomerViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Create customer",
-        operation_description="Create a new customer for a business.",
+        operation_description="Create a new customer for a business. business_id must be provided in the request body.",
         request_body=CustomerCreateSerializer,
-        responses={201: "Customer created", 400: "Validation error", 403: "Permission denied"},
+        responses={
+            201: CustomerResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Customer"],
     )
-    @action(detail=False, methods=["post"], url_path="businesses/(?P<business_id>[^/.]+)/customers")
-    def create_customer(self, request: Request, business_id: UUID) -> Response:
+    def create(self, request: Request) -> Response:
         """Create a new customer."""
         serializer = CustomerCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
 
         try:
+            # Get business_id from serializer validated data
+            business_id_str = serializer.validated_data.get("business_id")
+            if not business_id_str:
+                return self.error(
+                    message="business_id is required in request body",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="MISSING_BUSINESS_ID",
+                )
+
+            try:
+                business_id = UUID(str(business_id_str))
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid business_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_BUSINESS_ID",
+                )
+
             dto = serializer.to_dto()
             use_case = CreateCustomerUseCase(
                 customer_repository=CustomerRepositoryImpl(),
@@ -155,23 +199,40 @@ class CustomerViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get customer",
-        operation_description="Get customer details by ID.",
-        responses={200: "Customer details", 403: "Permission denied", 404: "Customer not found"},
+        operation_description="Get customer details by ID. business_id is retrieved from the customer.",
+        responses={
+            200: CustomerResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Customer not found",
+        },
         tags=["Customer"],
     )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/customers/(?P<customer_id>[^/.]+)",
-    )
-    def get_customer(self, request: Request, business_id: UUID, customer_id: UUID) -> Response:
+    def retrieve(self, request: Request, pk: UUID) -> Response:
         """Get customer by ID."""
         try:
+            # Get customer first to retrieve business_id
+            customer_repo = CustomerRepositoryImpl()
+            customer = customer_repo.get_by_id(pk)
+            if not customer:
+                return self.error(
+                    message="Customer not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="CUSTOMER_NOT_FOUND",
+                )
+
+            if not customer.business_id:
+                return self.error(
+                    message="Customer has no associated business",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="NO_BUSINESS_ID",
+                )
+
             use_case = GetCustomerUseCase(
-                customer_repository=CustomerRepositoryImpl(),
+                customer_repository=customer_repo,
                 business_domain_service=self._get_business_domain_service(),
-                customer_id=customer_id,
-                business_id=business_id,
+                customer_id=pk,
+                business_id=customer.business_id,
                 user_id=request.user.id,
             )
             customer_dto = use_case.execute()
@@ -200,27 +261,35 @@ class CustomerViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Update customer",
-        operation_description="Update customer details.",
+        operation_description="Update customer details. business_id is retrieved from the customer.",
         request_body=CustomerUpdateSerializer,
-        responses={200: "Customer updated", 403: "Permission denied", 404: "Customer not found"},
+        responses={
+            200: CustomerResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Customer not found",
+        },
         tags=["Customer"],
-        method="put",
     )
-    @swagger_auto_schema(
-        operation_summary="Update customer (partial)",
-        operation_description="Partially update customer details.",
-        request_body=CustomerUpdateSerializer,
-        responses={200: "Customer updated", 403: "Permission denied", 404: "Customer not found"},
-        tags=["Customer"],
-        method="patch",
-    )
-    @action(
-        detail=False,
-        methods=["put", "patch"],
-        url_path="businesses/(?P<business_id>[^/.]+)/customers/(?P<customer_id>[^/.]+)",
-    )
-    def update_customer(self, request: Request, business_id: UUID, customer_id: UUID) -> Response:
+    def update(self, request: Request, pk: UUID) -> Response:
         """Update customer."""
+        # Get customer first to retrieve business_id
+        customer_repo = CustomerRepositoryImpl()
+        customer = customer_repo.get_by_id(pk)
+        if not customer:
+            return self.error(
+                message="Customer not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="CUSTOMER_NOT_FOUND",
+            )
+
+        if not customer.business_id:
+            return self.error(
+                message="Customer has no associated business",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="NO_BUSINESS_ID",
+            )
+
         serializer = CustomerUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
@@ -228,10 +297,10 @@ class CustomerViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto()
             use_case = UpdateCustomerUseCase(
-                customer_repository=CustomerRepositoryImpl(),
+                customer_repository=customer_repo,
                 business_domain_service=self._get_business_domain_service(),
-                customer_id=customer_id,
-                business_id=business_id,
+                customer_id=pk,
+                business_id=customer.business_id,
                 user_id=request.user.id,
             )
             customer_dto = use_case.execute(dto)
@@ -256,23 +325,40 @@ class CustomerViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="Delete customer",
-        operation_description="Delete a customer.",
-        responses={200: "Customer deleted", 403: "Permission denied", 404: "Customer not found"},
+        operation_description="Delete a customer. business_id is retrieved from the customer.",
+        responses={
+            204: "No Content",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Customer not found",
+        },
         tags=["Customer"],
     )
-    @action(
-        detail=False,
-        methods=["delete"],
-        url_path="businesses/(?P<business_id>[^/.]+)/customers/(?P<customer_id>[^/.]+)",
-    )
-    def delete_customer(self, request: Request, business_id: UUID, customer_id: UUID) -> Response:
+    def destroy(self, request: Request, pk: UUID) -> Response:
         """Delete customer."""
         try:
+            # Get customer first to retrieve business_id
+            customer_repo = CustomerRepositoryImpl()
+            customer = customer_repo.get_by_id(pk)
+            if not customer:
+                return self.error(
+                    message="Customer not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="CUSTOMER_NOT_FOUND",
+                )
+
+            if not customer.business_id:
+                return self.error(
+                    message="Customer has no associated business",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="NO_BUSINESS_ID",
+                )
+
             use_case = DeleteCustomerUseCase(
-                customer_repository=CustomerRepositoryImpl(),
+                customer_repository=customer_repo,
                 business_domain_service=self._get_business_domain_service(),
-                customer_id=customer_id,
-                business_id=business_id,
+                customer_id=pk,
+                business_id=customer.business_id,
                 user_id=request.user.id,
             )
             use_case.execute()
@@ -299,11 +385,6 @@ class CustomerViewSet(BaseViewSet):
     def create_credit(self, request: Request, pk: UUID) -> Response:
         """Create a credit for a customer."""
         try:
-            from application.use_cases.credit_use_cases import CreateCreditUseCase
-            from infrastructure.persistence.repositories import (
-                CreditRepositoryImpl,
-            )
-
             serializer = CreditCreateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
 
@@ -325,8 +406,6 @@ class CustomerViewSet(BaseViewSet):
                     status_code=status.HTTP_403_FORBIDDEN,
                     code="PERMISSION_DENIED",
                 )
-
-            from application.dto.credit_dto import CreditCreateDTO
 
             dto = CreditCreateDTO(
                 customer_id=pk,
@@ -379,10 +458,6 @@ class CustomerViewSet(BaseViewSet):
     def list_credits(self, request: Request, pk: UUID) -> Response:
         """List all credits for a customer."""
         try:
-            from application.use_cases.credit_use_cases import ListCreditsUseCase
-            from domain.credit.entities import CreditStatus
-            from infrastructure.persistence.repositories import CreditRepositoryImpl
-
             # Get customer to find business_id
             customer = CustomerRepositoryImpl().get_by_id(pk)
             if not customer:
@@ -401,8 +476,6 @@ class CustomerViewSet(BaseViewSet):
                     status_code=status.HTTP_403_FORBIDDEN,
                     code="PERMISSION_DENIED",
                 )
-
-            from shared.security.query_params_validator import QueryParamsValidator
 
             # Get and validate status filter if provided
             status_param = QueryParamsValidator.validate_enum(
@@ -465,12 +538,6 @@ class CustomerViewSet(BaseViewSet):
     def pay_credit(self, request: Request, credit_id: UUID) -> Response:
         """Pay a credit."""
         try:
-            from application.use_cases.credit_use_cases import PayCreditUseCase
-            from infrastructure.persistence.repositories import (
-                CreditPaymentRepositoryImpl,
-                CreditRepositoryImpl,
-            )
-
             serializer = CreditPaymentCreateSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
 
@@ -492,8 +559,6 @@ class CustomerViewSet(BaseViewSet):
                     status_code=status.HTTP_403_FORBIDDEN,
                     code="PERMISSION_DENIED",
                 )
-
-            from application.dto.credit_dto import CreditPaymentCreateDTO
 
             dto = CreditPaymentCreateDTO(
                 amount=serializer.validated_data["amount"],
@@ -545,12 +610,6 @@ class CustomerViewSet(BaseViewSet):
     def get_credit_payments(self, request: Request, credit_id: UUID) -> Response:
         """Get payment history for a credit."""
         try:
-            from application.use_cases.credit_use_cases import GetCreditPaymentsUseCase
-            from infrastructure.persistence.repositories import (
-                CreditPaymentRepositoryImpl,
-                CreditRepositoryImpl,
-            )
-
             # Get credit to verify access
             credit = CreditRepositoryImpl().get_by_id(credit_id)
             if not credit:

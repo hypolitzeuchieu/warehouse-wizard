@@ -9,6 +9,20 @@ from application.dto.customer_dto import (
 )
 
 
+class CustomerListQuerySerializer(serializers.Serializer):
+    """Serializer for customer list query parameters."""
+
+    business_id = serializers.UUIDField(required=True)
+    name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    customer_type = serializers.ChoiceField(
+        choices=["REGULAR", "WHOLESALER"], required=False, allow_null=True
+    )
+    search = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    page = serializers.IntegerField(required=False, min_value=1, default=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=1000, default=20)
+    order_by = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
 class CustomerCreateSerializer(serializers.Serializer):
     """Serializer for customer creation."""
 

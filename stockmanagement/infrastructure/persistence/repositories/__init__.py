@@ -16,6 +16,7 @@ from infrastructure.persistence.repositories.delivery_repositories import (
     DeliveryRepositoryImpl,
 )
 from infrastructure.persistence.repositories.finance_repositories import (
+    ExpenseAuditLogRepositoryImpl,
     ExpenseRepositoryImpl,
     FinancialSummaryRepositoryImpl,
     PayrollRepositoryImpl,
@@ -35,6 +36,8 @@ from infrastructure.persistence.repositories.otp_repositories import (
 )
 from infrastructure.persistence.repositories.sales_repositories import (
     InvoiceLineRepositoryImpl,
+    InvoiceLogRepositoryImpl,
+    InvoicePaymentRepositoryImpl,
     InvoiceRepositoryImpl,
     OrderItemRepositoryImpl,
     OrderRepositoryImpl,
@@ -63,10 +66,13 @@ __all__ = [
     # Sales repositories
     "InvoiceRepositoryImpl",
     "InvoiceLineRepositoryImpl",
+    "InvoicePaymentRepositoryImpl",
+    "InvoiceLogRepositoryImpl",
     "OrderRepositoryImpl",
     "OrderItemRepositoryImpl",
     # Finance repositories
     "ExpenseRepositoryImpl",
+    "ExpenseAuditLogRepositoryImpl",
     "SalaryRepositoryImpl",
     "PayrollRepositoryImpl",
     "FinancialSummaryRepositoryImpl",

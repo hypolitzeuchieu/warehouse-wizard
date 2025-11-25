@@ -16,8 +16,6 @@ class CustomSchemaGenerator(OpenAPISchemaGenerator):
             return super().get_operation(view, path, prefix, method, components, request)
         except AttributeError as e:
             if "has no attribute 'media_type'" in str(e):
-                # If there's an error with media_type, try to fix it
-                # This is a workaround and should be used cautiously
                 view.parser_classes = []
                 return super().get_operation(view, path, prefix, method, components, request)
             raise

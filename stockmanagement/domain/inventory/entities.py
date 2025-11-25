@@ -6,6 +6,8 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
+from django.utils import timezone
+
 
 class StockMovementType(str, Enum):
     """Stock movement type enumeration."""
@@ -92,8 +94,6 @@ class Product:
     def check_expiry(self) -> bool:
         """Check if product is expired."""
         if self.expiry_date:
-            from django.utils import timezone
-
             return timezone.now() > self.expiry_date
         return False
 

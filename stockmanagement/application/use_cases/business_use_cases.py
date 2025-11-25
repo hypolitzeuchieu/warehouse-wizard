@@ -21,6 +21,7 @@ from domain.business.services import BusinessDomainService
 from domain.users.entities import UserRole
 from domain.users.repositories import UserRepository
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
+from shared.services.qr_code_service import QRCodeService
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class CreateBusinessUseCase:
 
         if not user.is_active:
             raise ForbiddenError(
-                detail="User account is not active. Please verify your OTP first.",
+                detail="User account is not active. Please verify your Account first.",
                 code="ACCOUNT_INACTIVE",
             )
 
@@ -85,8 +86,6 @@ class CreateBusinessUseCase:
 
         # Generate and upload QR code
         try:
-            from shared.services.qr_code_service import QRCodeService
-
             qr_service = QRCodeService()
             qr_code_url = qr_service.upload_business_qr_code(business.id)
             business.qr_code_url = qr_code_url

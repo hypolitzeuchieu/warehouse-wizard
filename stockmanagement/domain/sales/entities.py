@@ -87,7 +87,7 @@ class Order:
     business_id: UUID
     customer_id: UUID
     order_number: str
-    status: str  # pending, confirmed, processing, shipped, delivered, cancelled
+    status: str
     total: Decimal
     payment_method: PaymentMethod | None
     shipping_address: str | None
@@ -108,3 +108,60 @@ class OrderItem:
     unit_price: Decimal
     line_total: Decimal
     created_at: datetime
+
+
+class InvoiceLogAction(str, Enum):
+    """Invoice log action enumeration."""
+
+    CREATED = "CREATED"
+    UPDATED = "UPDATED"
+    PAYMENT_RECEIVED = "PAYMENT_RECEIVED"
+    REFUNDED = "REFUNDED"
+    CANCELLED = "CANCELLED"
+    LINE_ADDED = "LINE_ADDED"
+    LINE_REMOVED = "LINE_REMOVED"
+    LINE_UPDATED = "LINE_UPDATED"
+    CREDIT_APPLIED = "CREDIT_APPLIED"
+    STATUS_CHANGED = "STATUS_CHANGED"
+
+
+@dataclass
+class InvoicePayment:
+    """Invoice payment entity."""
+
+    id: UUID
+    invoice_id: UUID
+    amount: Decimal
+    payment_method: PaymentMethod
+    change_amount: Decimal
+    refund_amount: Decimal
+    payment_date: datetime
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+    created_by: UUID
+    idempotency_key: UUID | None = None
+
+    def __post_init__(self) -> None:
+        """Validate payment data."""
+        if self.amount <= 0:
+            raise ValueError("Payment amount must be greater than zero")
+        if self.change_amount < 0:
+            raise ValueError("Change amount cannot be negative")
+        if self.refund_amount < 0:
+            raise ValueError("Refund amount cannot be negative")
+
+
+@dataclass
+class InvoiceLog:
+    """Invoice log entity."""
+
+    id: UUID
+    invoice_id: UUID
+    action: InvoiceLogAction
+    old_value: str | None
+    new_value: str | None
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+    created_by: UUID | None

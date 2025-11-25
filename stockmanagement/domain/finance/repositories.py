@@ -2,10 +2,13 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from domain.finance.entities import (
     Expense,
+    ExpenseAuditLog,
     ExpenseType,
     FinancialSummary,
     Payroll,
@@ -28,6 +31,11 @@ class ExpenseRepository(ABC):
         expense_type: ExpenseType | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        payment_method: str | None = None,
+        payee_type: str | None = None,
+        min_amount: Decimal | None = None,
+        max_amount: Decimal | None = None,
+        is_approved: bool | None = None,
         limit: int = 100,
     ) -> list[Expense]:
         """Get expenses for a business with optional filters."""
@@ -46,6 +54,30 @@ class ExpenseRepository(ABC):
     @abstractmethod
     def delete(self, expense_id: UUID) -> None:
         """Delete an expense."""
+        pass
+
+    @abstractmethod
+    def get_summary(
+        self,
+        business_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return aggregated summary stats for expenses."""
+        pass
+
+
+class ExpenseAuditLogRepository(ABC):
+    """Repository interface for expense audit history."""
+
+    @abstractmethod
+    def create(self, log: ExpenseAuditLog) -> ExpenseAuditLog:
+        """Persist a new audit log entry."""
+        pass
+
+    @abstractmethod
+    def list_for_expense(self, expense_id: UUID) -> list[ExpenseAuditLog]:
+        """Return audit entries for a given expense ordered descending."""
         pass
 
 
