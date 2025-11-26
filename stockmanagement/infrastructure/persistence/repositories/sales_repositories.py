@@ -3,6 +3,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from django.utils import timezone
+
 from domain.sales.entities import (
     Invoice,
     InvoiceLine,
@@ -100,9 +102,15 @@ class InvoiceRepositoryImpl(InvoiceRepository):
             query = query.filter(status=status.value)
 
         if start_date:
+            if timezone.is_naive(start_date):
+                start_date = timezone.make_aware(start_date)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
             query = query.filter(created_at__gte=start_date)
 
         if end_date:
+            if timezone.is_naive(end_date):
+                end_date = timezone.make_aware(end_date)
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
             query = query.filter(created_at__lte=end_date)
 
         invoices = query.order_by("-created_at")[:limit]
@@ -110,11 +118,6 @@ class InvoiceRepositoryImpl(InvoiceRepository):
 
     def create(self, invoice: Invoice) -> Invoice:
         """Create a new invoice."""
-        due_date = invoice.due_date
-        if due_date:
-            if isinstance(due_date, datetime):
-                due_date = due_date.date()
-
         invoice_model = InvoiceModel(
             id=invoice.id,
             business_id=invoice.business_id,
@@ -129,7 +132,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
             advance_paid=invoice.advance_paid,
             remaining_amount=invoice.remaining_amount,
             payment_method=invoice.payment_method.value,
-            due_date=due_date,
+            due_date=invoice.due_date,
             is_credit_settled=invoice.is_credit_settled,
             reason=invoice.reason,
             is_archived=invoice.is_archived,
@@ -141,11 +144,6 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         """Update an existing invoice."""
         invoice_model = InvoiceModel.objects.get(id=invoice.id)
 
-        due_date = invoice.due_date
-        if due_date:
-            if isinstance(due_date, datetime):
-                due_date = due_date.date()
-
         invoice_model.status = invoice.status.value
         invoice_model.total = invoice.total
         invoice_model.tax = invoice.tax
@@ -153,7 +151,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         invoice_model.advance_paid = invoice.advance_paid
         invoice_model.remaining_amount = invoice.remaining_amount
         invoice_model.payment_method = invoice.payment_method.value
-        invoice_model.due_date = due_date
+        invoice_model.due_date = invoice.due_date
         invoice_model.is_credit_settled = invoice.is_credit_settled
         invoice_model.reason = invoice.reason
         invoice_model.is_archived = invoice.is_archived
@@ -407,10 +405,11 @@ class InvoicePaymentRepositoryImpl(InvoicePaymentRepository):
         end_date: datetime | None = None,
         limit: int = 100,
     ) -> list[InvoicePayment]:
-        """Get all payments for a business."""
-        query = InvoicePaymentModel.objects.filter(invoice__business_id=business_id).select_related(
-            "invoice", "created_by"
-        )
+        """Get all payments for a business (excluding payments from archived invoices)."""
+        query = InvoicePaymentModel.objects.filter(
+            invoice__business_id=business_id,
+            invoice__is_archived=False,
+        ).select_related("invoice", "created_by")
 
         if start_date:
             query = query.filter(payment_date__gte=start_date)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -13,7 +13,7 @@ from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from application.dto.report_dto import ReportResponseDTO
+from application.dto.report_dto import ReportCreateDTO, ReportResponseDTO
 from application.use_cases.inventory_use_cases import (
     GenerateInventoryReportUseCase,
     GenerateStockReportUseCase,
@@ -45,7 +45,7 @@ def _serialize_report_payload(payload: dict) -> dict:
     """Serialize payload to JSON-friendly types."""
 
     def _serialize(value):
-        if isinstance(value, datetime | date):
+        if isinstance(value, datetime):
             return value.isoformat()
         if isinstance(value, Decimal):
             return str(value)
@@ -146,12 +146,8 @@ class GenerateAndSaveReportUseCase:
         product_repository,
         stock_movement_repository,
         business_domain_service: BusinessDomainService,
-        business_id: UUID,
+        report_dto: ReportCreateDTO,
         user_id: UUID,
-        report_type: str,
-        format: str = "html",
-        start_date: datetime | None = None,
-        end_date: datetime | None = None,
         user_repository: UserRepository | None = None,
     ) -> None:
         """Initialize use case."""
@@ -161,15 +157,24 @@ class GenerateAndSaveReportUseCase:
         self.product_repository = product_repository
         self.stock_movement_repository = stock_movement_repository
         self.business_domain_service = business_domain_service
-        self.business_id = business_id
+        self.business_id = report_dto.business_id
         self.user_id = user_id
-        self.report_type = ReportType(report_type)
-        self.format = ReportFormat(format)
-        self.start_date = start_date
-        self.end_date = end_date
+        self.report_type = ReportType(report_dto.report_type)
+        self.format = ReportFormat(report_dto.format)
+        self.start_date = self._ensure_timezone_aware(report_dto.start_date)
+        self.end_date = self._ensure_timezone_aware(report_dto.end_date)
         self.business = None
         self.user_repository = user_repository
         self.generated_by_label: str | None = None
+
+    @staticmethod
+    def _ensure_timezone_aware(dt: datetime | None) -> datetime | None:
+        """Ensure datetime is timezone-aware."""
+        if dt is None:
+            return None
+        if timezone.is_naive(dt):
+            return timezone.make_aware(dt)
+        return dt
 
     @transaction.atomic
     def execute(self) -> ReportResponseDTO:
@@ -229,7 +234,7 @@ class GenerateAndSaveReportUseCase:
             serialized_payload = _serialize_report_payload(report_payload)
             business_snapshot = _business_snapshot_from_entity(self.business)
 
-            updated_metadata: dict[str, Any] = dict(report.metadata) if report.metadata else {}
+            updated_metadata: dict[str, Any] = report.metadata or {}
             updated_metadata["payload"] = serialized_payload
             updated_metadata["business_snapshot"] = business_snapshot
             if self.generated_by_label:
@@ -257,7 +262,7 @@ class GenerateAndSaveReportUseCase:
                 status_code=500,
             ) from e
 
-    def _generate_sales_report(self) -> dict:
+    def _generate_sales_report(self) -> bytes | str | dict:
         """Generate sales report content."""
         use_case = GenerateSalesReportUseCase(
             invoice_repository=self.invoice_repository,
@@ -325,7 +330,7 @@ class GenerateAndSaveReportUseCase:
         }
         return self._prepare_report_payload(payload)
 
-    def _generate_inventory_report(self) -> dict:
+    def _generate_inventory_report(self) -> bytes | str | dict:
         """Generate inventory report content."""
         use_case = GenerateInventoryReportUseCase(
             product_repository=self.product_repository,
@@ -379,7 +384,7 @@ class GenerateAndSaveReportUseCase:
         }
         return self._prepare_report_payload(payload)
 
-    def _generate_stock_report(self) -> dict:
+    def _generate_stock_report(self) -> bytes | str | dict:
         """Generate stock report content."""
         use_case = GenerateStockReportUseCase(
             stock_movement_repository=self.stock_movement_repository,
@@ -583,8 +588,10 @@ class DownloadReportUseCase:
                 timestamp_str = created_at.strftime("%Y%m%d_%H%M%S")
             else:
                 timestamp_str = "report"
+
+            content: bytes | str
             if report.format == ReportFormat.PDF:
-                content: bytes | str = _generate_pdf_from_html(html_content)
+                content = _generate_pdf_from_html(html_content)
                 content_type = "application/pdf"
                 filename = f"{report.report_type.value}_report_{timestamp_str}.pdf"
             else:

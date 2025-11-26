@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from django.db import transaction
@@ -1442,7 +1442,7 @@ class GenerateInventoryReportUseCase:
             )
 
             # Group by movement type
-            movements_by_type: dict[str, dict[str, int | set[UUID]]] = {}
+            movements_by_type: dict[str, dict[str, Any]] = {}
             for movement in movements:
                 movement_type = movement.movement_type.value
                 if movement_type not in movements_by_type:
@@ -1451,14 +1451,9 @@ class GenerateInventoryReportUseCase:
                         "number_of_movements": 0,
                         "products_affected": set(),
                     }
-                movement_data = movements_by_type[movement_type]
-                movement_data["total_quantity"] = (
-                    cast(int, movement_data["total_quantity"]) + movement.quantity
-                )
-                movement_data["number_of_movements"] = (
-                    cast(int, movement_data["number_of_movements"]) + 1
-                )
-                cast(set[UUID], movement_data["products_affected"]).add(movement.product_id)
+                movements_by_type[movement_type]["total_quantity"] += movement.quantity
+                movements_by_type[movement_type]["number_of_movements"] += 1
+                movements_by_type[movement_type]["products_affected"].add(movement.product_id)
 
             # Convert to DTOs
             for movement_type, data in movements_by_type.items():
@@ -1550,7 +1545,7 @@ class GenerateStockReportUseCase:
         # Calculate movement metrics
         stock_movements_in = 0
         stock_movements_out = 0
-        movements_by_type: dict[str, dict[str, int | set[UUID]]] = {}
+        movements_by_type: dict[str, dict[str, Any]] = {}
 
         for movement in movements:
             movement_type = movement.movement_type.value
@@ -1566,14 +1561,9 @@ class GenerateStockReportUseCase:
                     "number_of_movements": 0,
                     "products_affected": set(),
                 }
-            movement_data = movements_by_type[movement_type]
-            movement_data["total_quantity"] = (
-                cast(int, movement_data["total_quantity"]) + movement.quantity
-            )
-            movement_data["number_of_movements"] = (
-                cast(int, movement_data["number_of_movements"]) + 1
-            )
-            cast(set[UUID], movement_data["products_affected"]).add(movement.product_id)
+            movements_by_type[movement_type]["total_quantity"] += movement.quantity
+            movements_by_type[movement_type]["number_of_movements"] += 1
+            movements_by_type[movement_type]["products_affected"].add(movement.product_id)
 
         net_stock_change = stock_movements_in - stock_movements_out
 

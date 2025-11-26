@@ -1,7 +1,7 @@
 """Sales DTOs."""
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -30,7 +30,7 @@ class InvoiceCreateDTO:
     advance_paid: Decimal = Decimal("0.00")
     payment_method: str = "cash"
     is_credit: bool = False
-    due_date: datetime | date | None = None
+    due_date: datetime | None = None
     reason: str | None = None
     is_archived: bool = False
 
@@ -44,7 +44,7 @@ class InvoiceUpdateDTO:
     total_discount: Decimal | None = None
     advance_paid: Decimal | None = None
     payment_method: str | None = None
-    due_date: datetime | date | None = None
+    due_date: datetime | None = None
     is_credit_settled: bool | None = None
     reason: str | None = None
     is_archived: bool | None = None
@@ -86,10 +86,11 @@ class InvoiceResponseDTO:
     customer_name: str | None = None
     customer_id: UUID | None = None
     cashier_name: str | None = None
-    due_date: datetime | date | None = None
+    due_date: datetime | None = None
     reason: str | None = None
     is_archived: bool = False
     lines: list[InvoiceLineResponseDTO] | None = None
+    refund_amount: Decimal | None = None
 
 
 @dataclass

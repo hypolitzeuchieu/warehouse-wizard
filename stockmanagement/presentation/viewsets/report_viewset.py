@@ -1,0 +1,216 @@
+"""Report ViewSet for managing reports."""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from django.http import HttpResponse
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+
+from application.use_cases.report_use_cases import (
+    DeleteReportUseCase,
+    DownloadReportUseCase,
+    GenerateAndSaveReportUseCase,
+    ListReportsUseCase,
+)
+from domain.business.services import BusinessDomainService
+from infrastructure.persistence.repositories import (
+    BusinessMemberRepositoryImpl,
+    BusinessRepositoryImpl,
+    InvoiceLineRepositoryImpl,
+    InvoiceRepositoryImpl,
+    ProductRepositoryImpl,
+    ReportRepositoryImpl,
+    StockMovementRepositoryImpl,
+    UserRepositoryImpl,
+)
+from presentation.serializers.report_serializers import (
+    ReportListQuerySerializer,
+    ReportResponseSerializer,
+    SalesReportQuerySerializer,
+)
+from shared.security.query_params_validator import QueryParamsValidator
+from shared.views.base_viewset import BaseViewSet
+
+
+class ReportViewSet(BaseViewSet):
+    """ViewSet for report management."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_business_domain_service(self) -> BusinessDomainService:
+        """Get business domain service instance."""
+        return BusinessDomainService(
+            business_repository=BusinessRepositoryImpl(),
+            business_member_repository=BusinessMemberRepositoryImpl(),
+        )
+
+    @swagger_auto_schema(
+        operation_summary="List reports",
+        operation_description="List generated reports for a business within an optional date range.",
+        query_serializer=ReportListQuerySerializer,
+        responses={
+            200: ReportResponseSerializer(many=True),
+            400: "Bad Request",
+            403: "Permission denied",
+        },
+        tags=["Reports"],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="history",
+    )
+    def list_reports(self, request: Request) -> Response:
+        """List stored reports for a business."""
+        serializer = ReportListQuerySerializer(data=request.query_params)
+        if not serializer.is_valid():
+            return self.handle_validation_error(serializer)
+
+        business_id = serializer.validated_data["business_id"]
+        if not self._get_business_domain_service().user_has_access(business_id, request.user.id):
+            return self.error(
+                message="You don't have access to this business",
+                status_code=status.HTTP_403_FORBIDDEN,
+                code="PERMISSION_DENIED",
+            )
+
+        try:
+            use_case = ListReportsUseCase(
+                report_repository=ReportRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
+                business_id=business_id,
+                user_id=request.user.id,
+                report_type=serializer.validated_data.get("report_type"),
+                status=serializer.validated_data.get("status"),
+                start_date=serializer.validated_data.get("start_date"),
+                end_date=serializer.validated_data.get("end_date"),
+                limit=QueryParamsValidator.MAX_PAGE_SIZE,
+            )
+            reports = use_case.execute()
+
+            return self.paginated_response(
+                request=request,
+                queryset=reports,
+                serializer_class=ReportResponseSerializer,
+                message="Reports retrieved successfully",
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Generate and save report",
+        operation_description="Generate a report (sales, inventory, or stock) for a business within a date range and save it.",
+        query_serializer=SalesReportQuerySerializer,
+        responses={
+            201: ReportResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            500: "Internal server error",
+        },
+        tags=["Reports"],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="generate",
+    )
+    def generate_report(self, request: Request) -> Response:
+        """Generate and save a report (sales, inventory, or stock) for a business."""
+        try:
+            query_serializer = SalesReportQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            report_dto = query_serializer.to_dto()
+
+            use_case = GenerateAndSaveReportUseCase(
+                report_repository=ReportRepositoryImpl(),
+                invoice_repository=InvoiceRepositoryImpl(),
+                invoice_line_repository=InvoiceLineRepositoryImpl(),
+                product_repository=ProductRepositoryImpl(),
+                stock_movement_repository=StockMovementRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
+                report_dto=report_dto,
+                user_id=request.user.id,
+                user_repository=UserRepositoryImpl(),
+            )
+            report_dto = use_case.execute()
+
+            return self.success(
+                message="Report generated successfully. Use the report ID to download it.",
+                data=ReportResponseSerializer.from_dto(report_dto),
+                status_code=status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Download report",
+        operation_description="Download a previously generated report by its ID.",
+        responses={
+            200: openapi.Response(
+                "Report file (PDF/HTML/JSON)",
+                schema=openapi.Schema(type=openapi.TYPE_FILE),
+            ),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Report not found",
+        },
+        tags=["Reports"],
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="download",
+    )
+    def download_report(self, request: Request, pk: UUID) -> Response:
+        """Download a report by ID."""
+        try:
+            use_case = DownloadReportUseCase(
+                report_repository=ReportRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
+                report_id=pk,
+                user_id=request.user.id,
+            )
+            content, content_type, filename = use_case.execute()
+
+            if isinstance(content, bytes):
+                response = HttpResponse(content, content_type=content_type)
+            else:
+                response = HttpResponse(content, content_type=content_type)
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Delete report",
+        operation_description="Delete a previously generated report by its ID.",
+        responses={
+            204: "Report deleted",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Report not found",
+        },
+        tags=["Reports"],
+    )
+    def destroy(self, request: Request, pk: UUID) -> Response:
+        """Delete a report by ID."""
+        try:
+            use_case = DeleteReportUseCase(
+                report_repository=ReportRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
+                report_id=pk,
+                user_id=request.user.id,
+            )
+            use_case.execute()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return self.handle_exception(e)

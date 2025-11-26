@@ -16,16 +16,6 @@ from rest_framework.response import Response
 
 from application.dto.invoice_list_filter_dto import InvoiceListFilterDTO
 from application.dto.sales_dto import PaymentResponseDTO
-from application.use_cases.inventory_use_cases import (
-    GenerateInventoryReportUseCase,
-    GenerateStockReportUseCase,
-)
-from application.use_cases.report_use_cases import (
-    DeleteReportUseCase,
-    DownloadReportUseCase,
-    GenerateAndSaveReportUseCase,
-    ListReportsUseCase,
-)
 from application.use_cases.sales_use_cases import (
     ApplyCreditToInvoiceUseCase,
     ArchiveInvoiceUseCase,
@@ -33,7 +23,6 @@ from application.use_cases.sales_use_cases import (
     CreateInvoiceUseCase,
     DeleteInvoiceUseCase,
     GenerateInvoiceReceiptUseCase,
-    GenerateSalesReportUseCase,
     GetInvoiceUseCase,
     ListInvoicesUseCase,
     ListPaymentsUseCase,
@@ -57,7 +46,6 @@ from infrastructure.persistence.repositories import (
     InvoiceRepositoryImpl,
     NotificationRepositoryImpl,
     ProductRepositoryImpl,
-    ReportRepositoryImpl,
     StockMovementRepositoryImpl,
     UserRepositoryImpl,
 )
@@ -77,9 +65,6 @@ from presentation.serializers.sales_serializers import (
     ProductSearchSerializer,
     RefundCreateSerializer,
     RefundResponseSerializer,
-    ReportListQuerySerializer,
-    ReportResponseSerializer,
-    SalesReportQuerySerializer,
 )
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
@@ -151,8 +136,8 @@ class SalesViewSet(BaseViewSet):
                         "type": "enum",
                         "choices": ["PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
                     },
-                    "start_date": {"type": "date"},
-                    "end_date": {"type": "date"},
+                    "start_date": {"type": "datetime"},
+                    "end_date": {"type": "datetime"},
                 },
                 additional_allowed_params=["business_id"],
             )
@@ -226,8 +211,8 @@ class SalesViewSet(BaseViewSet):
                         "type": "enum",
                         "choices": ["PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
                     },
-                    "start_date": {"type": "date"},
-                    "end_date": {"type": "date"},
+                    "start_date": {"type": "datetime"},
+                    "end_date": {"type": "datetime"},
                 },
                 additional_allowed_params=["business_id"],
             )
@@ -331,6 +316,7 @@ class SalesViewSet(BaseViewSet):
             use_case = GetInvoiceUseCase(
                 invoice_repository=InvoiceRepositoryImpl(),
                 invoice_line_repository=InvoiceLineRepositoryImpl(),
+                invoice_payment_repository=InvoicePaymentRepositoryImpl(),
                 product_repository=ProductRepositoryImpl(),
                 user_repository=UserRepositoryImpl(),
                 invoice_id=pk,
@@ -931,7 +917,6 @@ class SalesViewSet(BaseViewSet):
             return self.handle_validation_error(serializer)
 
         try:
-            # Get business_id from serializer validated data
             business_id_str = serializer.validated_data.get("business_id")
             if not business_id_str:
                 return self.error(
@@ -1050,411 +1035,5 @@ class SalesViewSet(BaseViewSet):
                     status_code=status.HTTP_400_BAD_REQUEST,
                     code="RECEIPT_NOT_GENERATED",
                 )
-        except Exception as e:
-            return self.handle_exception(e)
-
-    @swagger_auto_schema(
-        operation_summary="List reports",
-        operation_description="List generated reports for a business within an optional date range.",
-        query_serializer=ReportListQuerySerializer,
-        responses={
-            200: ReportResponseSerializer(many=True),
-            400: "Bad Request",
-            403: "Permission denied",
-        },
-        tags=["Sales"],
-    )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="reports/history",
-    )
-    def list_reports(self, request: Request) -> Response:
-        """List stored reports for a business."""
-        serializer = ReportListQuerySerializer(data=request.query_params)
-        if not serializer.is_valid():
-            return self.handle_validation_error(serializer)
-
-        business_id = serializer.validated_data["business_id"]
-        if not self._get_business_domain_service().user_has_access(business_id, request.user.id):
-            return self.error(
-                message="You don't have access to this business",
-                status_code=status.HTTP_403_FORBIDDEN,
-                code="PERMISSION_DENIED",
-            )
-
-        try:
-            use_case = ListReportsUseCase(
-                report_repository=ReportRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
-                business_id=business_id,
-                user_id=request.user.id,
-                report_type=serializer.validated_data.get("report_type"),
-                status=serializer.validated_data.get("status"),
-                start_date=serializer.validated_data.get("start_date"),
-                end_date=serializer.validated_data.get("end_date"),
-                limit=QueryParamsValidator.MAX_PAGE_SIZE,
-            )
-            reports = use_case.execute()
-
-            return self.paginated_response(
-                request=request,
-                queryset=reports,
-                serializer_class=ReportResponseSerializer,
-                message="Reports retrieved successfully",
-            )
-        except Exception as e:
-            return self.handle_exception(e)
-
-    @swagger_auto_schema(
-        operation_summary="Generate and save report",
-        operation_description="Generate a report (sales, inventory, or stock) for a business within a date range and save it.",
-        query_serializer=SalesReportQuerySerializer,
-        responses={
-            201: ReportResponseSerializer(),
-            400: "Bad Request",
-            403: "Permission denied",
-            500: "Internal server error",
-        },
-        tags=["Sales"],
-    )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="reports",
-        url_name="reports",
-    )
-    def generate_report(self, request: Request) -> Response:
-        """Generate and save a report (sales, inventory, or stock) for a business."""
-        try:
-            query_serializer = SalesReportQuerySerializer(data=request.query_params)
-            if not query_serializer.is_valid():
-                return self.handle_validation_error(query_serializer)
-
-            business_id = query_serializer.validated_data["business_id"]
-            start_date = query_serializer.validated_data.get("start_date")
-            end_date = query_serializer.validated_data.get("end_date")
-            report_type = query_serializer.validated_data.get("report_type", "sales")
-            output_format = query_serializer.validated_data.get("output_format", "html")
-
-            use_case = GenerateAndSaveReportUseCase(
-                report_repository=ReportRepositoryImpl(),
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                stock_movement_repository=StockMovementRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
-                business_id=business_id,
-                user_id=request.user.id,
-                report_type=report_type,
-                format=output_format,
-                start_date=start_date,
-                end_date=end_date,
-                user_repository=UserRepositoryImpl(),
-            )
-            report_dto = use_case.execute()
-
-            return self.success(
-                message="Report generated successfully. Use the report ID to download it.",
-                data=ReportResponseSerializer.from_dto(report_dto),
-                status_code=status.HTTP_201_CREATED,
-            )
-        except Exception as e:
-            return self.handle_exception(e)
-
-    def _old_generate_report(self, request: Request) -> Response:
-        """OLD: Generate report (sales, inventory, or stock) for a business."""
-        try:
-            # Validate query parameters
-            query_serializer = SalesReportQuerySerializer(data=request.query_params)
-            if not query_serializer.is_valid():
-                return self.handle_validation_error(query_serializer)
-
-            business_id = query_serializer.validated_data["business_id"]
-            start_date = query_serializer.validated_data.get("start_date")
-            end_date = query_serializer.validated_data.get("end_date")
-            report_type = query_serializer.validated_data.get("report_type", "sales")
-
-            if report_type == "sales":
-                sales_use_case = GenerateSalesReportUseCase(
-                    invoice_repository=InvoiceRepositoryImpl(),
-                    invoice_line_repository=InvoiceLineRepositoryImpl(),
-                    product_repository=ProductRepositoryImpl(),
-                    business_domain_service=self._get_business_domain_service(),
-                    business_id=business_id,
-                    user_id=request.user.id,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                report_dto = sales_use_case.execute()
-            elif report_type == "inventory":
-                inventory_use_case = GenerateInventoryReportUseCase(
-                    product_repository=ProductRepositoryImpl(),
-                    stock_movement_repository=StockMovementRepositoryImpl(),
-                    business_domain_service=self._get_business_domain_service(),
-                    business_id=business_id,
-                    user_id=request.user.id,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                report_dto = inventory_use_case.execute()
-
-                report_data = {
-                    "business_id": str(report_dto.business_id),
-                    "period_start": (
-                        report_dto.period_start.isoformat() if report_dto.period_start else None
-                    ),
-                    "period_end": (
-                        report_dto.period_end.isoformat() if report_dto.period_end else None
-                    ),
-                    "total_products": report_dto.total_products,
-                    "total_inventory_value": str(report_dto.total_inventory_value),
-                    "low_stock_products": report_dto.low_stock_products,
-                    "expired_products": report_dto.expired_products,
-                    "products_on_promotion": report_dto.products_on_promotion,
-                    "products": [
-                        {
-                            "product_id": str(p.product_id),
-                            "product_name": p.product_name,
-                            "current_quantity": p.current_quantity,
-                            "min_quantity": p.min_quantity,
-                            "unit_price": str(p.unit_price),
-                            "total_value": str(p.total_value),
-                            "is_low_stock": p.is_low_stock,
-                            "is_expired": p.is_expired,
-                            "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
-                        }
-                        for p in report_dto.products
-                    ],
-                    "stock_movements_summary": [
-                        {
-                            "movement_type": s.movement_type,
-                            "total_quantity": s.total_quantity,
-                            "number_of_movements": s.number_of_movements,
-                            "products_affected": s.products_affected,
-                        }
-                        for s in report_dto.stock_movements_summary
-                    ],
-                    "generated_at": report_dto.generated_at.isoformat(),
-                }
-
-                return self.success(
-                    message="Inventory report generated successfully",
-                    data=report_data,
-                    status_code=status.HTTP_200_OK,
-                )
-            elif report_type == "stock":
-                stock_use_case = GenerateStockReportUseCase(
-                    product_repository=ProductRepositoryImpl(),
-                    stock_movement_repository=StockMovementRepositoryImpl(),
-                    business_domain_service=self._get_business_domain_service(),
-                    business_id=business_id,
-                    user_id=request.user.id,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                report_dto = stock_use_case.execute()
-
-                # Convert to response format
-                report_data = {
-                    "business_id": str(report_dto.business_id),
-                    "period_start": report_dto.period_start.isoformat(),
-                    "period_end": report_dto.period_end.isoformat(),
-                    "current_stock_value": str(report_dto.current_stock_value),
-                    "stock_movements_in": report_dto.stock_movements_in,
-                    "stock_movements_out": report_dto.stock_movements_out,
-                    "net_stock_change": report_dto.net_stock_change,
-                    "products_by_stock_level": {
-                        "low": [
-                            {
-                                "product_id": str(p.product_id),
-                                "product_name": p.product_name,
-                                "current_quantity": p.current_quantity,
-                                "min_quantity": p.min_quantity,
-                                "unit_price": str(p.unit_price),
-                                "total_value": str(p.total_value),
-                                "is_low_stock": p.is_low_stock,
-                                "is_expired": p.is_expired,
-                                "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
-                            }
-                            for p in report_dto.products_by_stock_level["low"]
-                        ],
-                        "normal": [
-                            {
-                                "product_id": str(p.product_id),
-                                "product_name": p.product_name,
-                                "current_quantity": p.current_quantity,
-                                "min_quantity": p.min_quantity,
-                                "unit_price": str(p.unit_price),
-                                "total_value": str(p.total_value),
-                                "is_low_stock": p.is_low_stock,
-                                "is_expired": p.is_expired,
-                                "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
-                            }
-                            for p in report_dto.products_by_stock_level["normal"]
-                        ],
-                        "high": [
-                            {
-                                "product_id": str(p.product_id),
-                                "product_name": p.product_name,
-                                "current_quantity": p.current_quantity,
-                                "min_quantity": p.min_quantity,
-                                "unit_price": str(p.unit_price),
-                                "total_value": str(p.total_value),
-                                "is_low_stock": p.is_low_stock,
-                                "is_expired": p.is_expired,
-                                "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
-                            }
-                            for p in report_dto.products_by_stock_level["high"]
-                        ],
-                    },
-                    "stock_movements_by_type": [
-                        {
-                            "movement_type": s.movement_type,
-                            "total_quantity": s.total_quantity,
-                            "number_of_movements": s.number_of_movements,
-                            "products_affected": s.products_affected,
-                        }
-                        for s in report_dto.stock_movements_by_type
-                    ],
-                    "generated_at": report_dto.generated_at.isoformat(),
-                }
-
-                return self.success(
-                    message="Stock report generated successfully",
-                    data=report_data,
-                    status_code=status.HTTP_200_OK,
-                )
-            else:
-                return self.error(
-                    message=f"Invalid report_type: {report_type}. Must be 'sales', 'inventory', or 'stock'",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    code="INVALID_REPORT_TYPE",
-                )
-
-            # Convert to response format
-            report_data = {
-                "business_id": str(report_dto.business_id),
-                "period_start": report_dto.period_start.isoformat(),
-                "period_end": report_dto.period_end.isoformat(),
-                "total_revenue": str(report_dto.total_revenue),
-                "total_invoices": report_dto.total_invoices,
-                "total_items_sold": report_dto.total_items_sold,
-                "average_invoice_value": str(report_dto.average_invoice_value),
-                "sales_by_payment_method": [
-                    {
-                        "payment_method": item.payment_method,
-                        "total_amount": str(item.total_amount),
-                        "number_of_invoices": item.number_of_invoices,
-                    }
-                    for item in report_dto.sales_by_payment_method
-                ],
-                "sales_by_status": [
-                    {
-                        "status": item.status,
-                        "total_amount": str(item.total_amount),
-                        "number_of_invoices": item.number_of_invoices,
-                    }
-                    for item in report_dto.sales_by_status
-                ],
-                "top_products": [
-                    {
-                        "product_id": str(item.product_id),
-                        "product_name": item.product_name,
-                        "total_quantity_sold": item.total_quantity_sold,
-                        "total_revenue": str(item.total_revenue),
-                        "number_of_sales": item.number_of_sales,
-                    }
-                    for item in report_dto.top_products
-                ],
-                "top_customers": [
-                    {
-                        "customer_id": str(item.customer_id) if item.customer_id else None,
-                        "customer_name": item.customer_name,
-                        "total_purchases": str(item.total_purchases),
-                        "number_of_invoices": item.number_of_invoices,
-                    }
-                    for item in report_dto.top_customers
-                ],
-                "generated_at": report_dto.generated_at.isoformat(),
-            }
-
-            return self.success(
-                message="Sales report generated successfully",
-                data=report_data,
-                status_code=status.HTTP_200_OK,
-            )
-        except Exception as e:
-            return self.handle_exception(e)
-
-    @swagger_auto_schema(
-        operation_summary="Download report",
-        operation_description="Download a previously generated report by its ID.",
-        responses={
-            200: openapi.Response(
-                "Report file (PDF/HTML/JSON)",
-                schema=openapi.Schema(type=openapi.TYPE_FILE),
-            ),
-            400: "Bad Request",
-            403: "Permission denied",
-            404: "Report not found",
-        },
-        tags=["Sales"],
-    )
-    @action(
-        detail=True,
-        methods=["get"],
-        url_path="download",
-    )
-    def download_report(self, request: Request, pk: UUID) -> Response:
-        """Download a report by ID."""
-        try:
-            use_case = DownloadReportUseCase(
-                report_repository=ReportRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
-                report_id=pk,
-                user_id=request.user.id,
-            )
-            content, content_type, filename = use_case.execute()
-
-            if isinstance(content, bytes):
-                response = HttpResponse(content, content_type=content_type)
-            else:
-                response = HttpResponse(content, content_type=content_type)
-            response["Content-Disposition"] = f'attachment; filename="{filename}"'
-            return response
-        except Exception as e:
-            return self.handle_exception(e)
-
-    @swagger_auto_schema(
-        operation_summary="Delete report",
-        operation_description="Delete a previously generated report by its ID.",
-        responses={
-            204: "Report deleted",
-            400: "Bad Request",
-            403: "Permission denied",
-            404: "Report not found",
-        },
-        tags=["Sales"],
-    )
-    @action(
-        detail=True,
-        methods=["delete"],
-        url_path="delete-report",
-    )
-    def delete_report(self, request: Request, pk: UUID) -> Response:
-        """Delete a report by ID."""
-        try:
-            use_case = DeleteReportUseCase(
-                report_repository=ReportRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
-                report_id=pk,
-                user_id=request.user.id,
-            )
-            use_case.execute()
-            return self.success(
-                message="Report deleted successfully",
-                status_code=status.HTTP_204_NO_CONTENT,
-            )
         except Exception as e:
             return self.handle_exception(e)

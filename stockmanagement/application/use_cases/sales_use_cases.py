@@ -1,9 +1,9 @@
 """Sales use cases."""
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from django.db import transaction
@@ -92,6 +92,26 @@ def _get_product_name(product_repository: ProductRepository | None, product_id: 
         return None
     product = product_repository.get_by_id(product_id)
     return product.name if product else None
+
+
+def _calculate_refund_amount(advance_paid: Decimal, total: Decimal) -> Decimal | None:
+    """
+    Calculate refund amount from invoice data.
+
+    Refund amount = advance_paid - total (if advance_paid > total)
+    This is the amount to be returned to the customer after deducting what is owed.
+
+    Args:
+        advance_paid: Amount paid by customer
+        total: Total amount due
+
+    Returns:
+        Refund amount if overpaid, None otherwise
+    """
+    if advance_paid > total:
+        refund = advance_paid - total
+        return refund.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return None
 
 
 def _payment_to_response_dto(
@@ -345,13 +365,6 @@ class CreateInvoiceUseCase:
                     status_code=400,
                 )
 
-        if (
-            due_date is not None
-            and isinstance(due_date, date)
-            and not isinstance(due_date, datetime)
-        ):
-            due_date = datetime.combine(due_date, datetime.min.time())
-
         return is_credit, due_date, reason
 
     def _determine_invoice_status(
@@ -383,21 +396,19 @@ class CreateInvoiceUseCase:
         self,
         is_credit: bool,
         status: InvoiceStatus,
-        dto_due_date: datetime | date | None,
+        dto_due_date: datetime | None,
         dto_reason: str | None,
-    ) -> tuple[date | None, str | None]:
+    ) -> tuple[datetime | None, str | None]:
         """
         Prepare due_date and reason for invoices with CREDIT status.
-        Converts datetime to date if necessary.
         """
         if status == InvoiceStatus.CREDIT:
             if not dto_due_date:
-                due_date = (timezone.now() + timedelta(days=30)).date()
+                due_date = (timezone.now() + timedelta(days=15)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
             else:
-                if isinstance(dto_due_date, datetime):
-                    due_date = dto_due_date.date()
-                else:
-                    due_date = dto_due_date
+                due_date = dto_due_date
 
             if not dto_reason or not dto_reason.strip():
                 if is_credit:
@@ -409,8 +420,6 @@ class CreateInvoiceUseCase:
 
             return due_date, reason
 
-        if dto_due_date and isinstance(dto_due_date, datetime):
-            return dto_due_date.date(), dto_reason
         return dto_due_date, dto_reason
 
     def _create_invoice(
@@ -424,18 +433,11 @@ class CreateInvoiceUseCase:
         advance_paid: Decimal,
         remaining_amount: Decimal,
         total_discount: Decimal,
-        due_date: date | datetime | None,
+        due_date: datetime | None,
         reason: str | None,
     ) -> Invoice:
         """Create and persist invoice entity."""
         invoice_number = self.invoice_repository.get_next_invoice_number(self.business_id)
-
-        normalized_due_date = None
-        if due_date:
-            if isinstance(due_date, datetime):
-                normalized_due_date = due_date.date()
-            else:
-                normalized_due_date = due_date
 
         invoice = Invoice(
             id=uuid4(),
@@ -453,7 +455,7 @@ class CreateInvoiceUseCase:
                 remaining_amount if status == InvoiceStatus.CREDIT else Decimal("0.00")
             ),
             payment_method=PaymentMethod(dto.payment_method),
-            due_date=normalized_due_date,
+            due_date=due_date,
             is_credit_settled=False,
             created_at=timezone.now(),
             updated_at=timezone.now(),
@@ -488,7 +490,6 @@ class CreateInvoiceUseCase:
             invoice_line = self.invoice_line_repository.create(invoice_line)
             invoice_lines.append(invoice_line)
 
-            # Update stock
             self.inventory_domain_service.record_stock_exit(
                 business_id=self.business_id,
                 product_id=line_data["product"].id,
@@ -497,7 +498,6 @@ class CreateInvoiceUseCase:
                 reason=f"Invoice {invoice.number}",
             )
 
-            # Check and notify low stock
             self._check_and_notify_low_stock(line_data["product"].id, invoice.number)
 
         return invoice_lines
@@ -528,14 +528,12 @@ class CreateInvoiceUseCase:
         self,
         invoice: Invoice,
         final_total: Decimal,
-        due_date: date | datetime | None,
+        due_date: datetime | None,
         advance_paid: Decimal = Decimal("0.00"),
     ) -> None:
         """Create credit record for credit invoice."""
         if due_date is None:
             credit_due_date = timezone.now() + timedelta(days=15)
-        elif isinstance(due_date, date) and not isinstance(due_date, datetime):
-            credit_due_date = timezone.make_aware(datetime.combine(due_date, datetime.min.time()))
         else:
             credit_due_date = due_date
 
@@ -650,6 +648,8 @@ class CreateInvoiceUseCase:
                 )
             )
 
+        refund_amount = _calculate_refund_amount(invoice.advance_paid, invoice.total)
+
         return InvoiceResponseDTO(
             id=invoice.id,
             business_id=invoice.business_id,
@@ -672,6 +672,7 @@ class CreateInvoiceUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=refund_amount,
         )
 
 
@@ -682,6 +683,7 @@ class GetInvoiceUseCase:
         self,
         invoice_repository: InvoiceRepository,
         invoice_line_repository: InvoiceLineRepository,
+        invoice_payment_repository: InvoicePaymentRepository,
         product_repository: ProductRepository,
         user_repository: UserRepository,
         invoice_id: UUID,
@@ -689,6 +691,7 @@ class GetInvoiceUseCase:
         """Initialize use case."""
         self.invoice_repository = invoice_repository
         self.invoice_line_repository = invoice_line_repository
+        self.invoice_payment_repository = invoice_payment_repository
         self.product_repository = product_repository
         self.user_repository = user_repository
         self.invoice_id = invoice_id
@@ -748,6 +751,7 @@ class GetInvoiceUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -800,7 +804,6 @@ class ListInvoicesUseCase:
 
     def execute(self) -> list[InvoiceResponseDTO]:
         """Execute listing invoices."""
-        # Check if user has access to business
         if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have access to this business",
@@ -866,6 +869,7 @@ class ListInvoicesUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -951,7 +955,6 @@ class UpdateInvoiceUseCase:
                 discount=invoice.total_discount,
             )
 
-        # Update remaining amount for credit invoices
         if invoice.status == InvoiceStatus.CREDIT:
             invoice.remaining_amount = invoice.get_remaining_amount()
         else:
@@ -960,7 +963,6 @@ class UpdateInvoiceUseCase:
         invoice.updated_at = timezone.now()
         invoice = self.invoice_repository.update(invoice)
 
-        # Log the update
         log_data = InvoiceLoggingService.create_log(
             invoice_id=invoice.id,
             action=InvoiceLogAction.UPDATED,
@@ -1028,6 +1030,7 @@ class UpdateInvoiceUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -1061,7 +1064,6 @@ class PayInvoiceUseCase:
     def execute(self, dto: PaymentCreateDTO) -> tuple[InvoiceResponseDTO, PaymentResponseDTO]:
         """Execute payment processing."""
         try:
-            # Get invoice with lock to prevent race conditions on payments
             invoice = self.invoice_repository.get_by_id_for_update(self.invoice_id)
             if not invoice:
                 raise NotFoundError(
@@ -1069,14 +1071,12 @@ class PayInvoiceUseCase:
                     code="INVOICE_NOT_FOUND",
                 )
 
-            # Check for duplicate payment (idempotency)
             if dto.idempotency_key:
                 existing_payment = self.invoice_payment_repository.get_by_idempotency_key(
                     invoice_id=self.invoice_id,
                     idempotency_key=dto.idempotency_key,
                 )
                 if existing_payment:
-                    # Return existing payment (idempotent)
                     logger.info(
                         f"Duplicate payment detected with idempotency_key {dto.idempotency_key}, "
                         f"returning existing payment {existing_payment.id}"
@@ -1086,18 +1086,15 @@ class PayInvoiceUseCase:
                     payment_dto = self._to_payment_dto(existing_payment)
                     return invoice_dto, payment_dto
 
-            # Process payment
             payment_result = PaymentProcessingService.process_payment(
                 payment_amount=dto.amount,
                 invoice_total=invoice.total,
                 already_paid=invoice.advance_paid,
             )
 
-            # Update invoice
             invoice.advance_paid = payment_result["new_paid"]
             invoice.remaining_amount = payment_result["new_remaining"]
 
-            # Update status
             if payment_result["is_fully_paid"]:
                 invoice.status = InvoiceStatus.COMPLETED
                 invoice.is_credit_settled = True
@@ -1105,10 +1102,8 @@ class PayInvoiceUseCase:
             invoice.updated_at = timezone.now()
             invoice = self.invoice_repository.update(invoice)
 
-            # Validate invoice integrity after update
             InvoiceIntegrityService.validate_invoice_integrity(invoice)
 
-            # Create payment record
             payment_date = dto.payment_date or timezone.now()
             payment = InvoicePayment(
                 id=uuid4(),
@@ -1126,13 +1121,11 @@ class PayInvoiceUseCase:
             )
             payment = self.invoice_payment_repository.create(payment)
 
-            # Update credit if invoice is linked to a credit
             if invoice.customer_id:
                 credits = self.credit_repository.get_by_customer(
                     customer_id=invoice.customer_id,
                     business_id=invoice.business_id,
                 )
-                # Find credit linked to this invoice
                 for credit in credits:
                     if credit.invoice_id == invoice.id:
                         credit.paid_amount += payment_result["amount_applied"]
@@ -1142,7 +1135,6 @@ class PayInvoiceUseCase:
                         self.credit_repository.update(credit)
                         break
 
-            # Log the payment
             log_data = InvoiceLoggingService.create_log(
                 invoice_id=invoice.id,
                 action=InvoiceLogAction.PAYMENT_RECEIVED,
@@ -1261,7 +1253,6 @@ class CancelInvoiceUseCase:
                 status_code=400,
             )
 
-        # Restore stock for all lines
         lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
         for line in lines:
             self.inventory_domain_service.record_stock_entry(
@@ -1272,7 +1263,6 @@ class CancelInvoiceUseCase:
                 reason=f"Cancellation of Invoice {invoice.number}",
             )
 
-        # Cancel associated credit if exists
         if invoice.customer_id:
             credits = self.credit_repository.get_by_customer(
                 customer_id=invoice.customer_id,
@@ -1285,14 +1275,12 @@ class CancelInvoiceUseCase:
                     self.credit_repository.update(credit)
                     break
 
-        # Update invoice
         old_status = invoice.status.value
         invoice.status = InvoiceStatus.CANCELLED
         invoice.reason = reason or "Invoice cancelled"
         invoice.updated_at = timezone.now()
         invoice = self.invoice_repository.update(invoice)
 
-        # Log the cancellation
         log_data = InvoiceLoggingService.create_log(
             invoice_id=invoice.id,
             action=InvoiceLogAction.CANCELLED,
@@ -1359,6 +1347,7 @@ class CancelInvoiceUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -1407,7 +1396,6 @@ class ArchiveInvoiceUseCase:
         invoice.updated_at = timezone.now()
         invoice = self.invoice_repository.update(invoice)
 
-        # Log archive action
         log_data = InvoiceLoggingService.create_log(
             invoice_id=invoice.id,
             action=InvoiceLogAction.ARCHIVED,
@@ -1474,6 +1462,7 @@ class ArchiveInvoiceUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -1764,6 +1753,7 @@ class DeleteInvoiceLineUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -1951,6 +1941,7 @@ class ApplyCreditToInvoiceUseCase:
             is_archived=invoice.is_archived,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
         )
 
 
@@ -2009,20 +2000,17 @@ class SearchProductsForSaleUseCase:
 
     def execute(self, query: str, limit: int = 20) -> list[ProductSearchResponseDTO]:
         """Execute product search."""
-        # Get all products for business
         products = self.product_repository.get_by_business(business_id=self.business_id)
 
-        # Filter by query (name or barcode)
         query_lower = query.lower()
         filtered_products = []
         for product in products:
             if (
                 query_lower in product.name.lower()
                 or (product.barcode and query_lower in product.barcode.lower())
-            ) and product.quantity > 0:  # Only products in stock
+            ) and product.quantity > 0:
                 filtered_products.append(product)
 
-        # Sort by relevance (exact match first, then by name)
         filtered_products.sort(
             key=lambda p: (
                 (
@@ -2034,7 +2022,6 @@ class SearchProductsForSaleUseCase:
             )
         )
 
-        # Limit results
         filtered_products = filtered_products[:limit]
 
         return [
@@ -2045,8 +2032,8 @@ class SearchProductsForSaleUseCase:
                 unit_price=product.get_current_price(),
                 promo_price=product.promo_price,
                 quantity=product.quantity,
-                category_name=None,  # Could be added if needed
-                subcategory_name=None,  # Could be added if needed
+                category_name=None,
+                subcategory_name=None,
             )
             for product in filtered_products
         ]
@@ -2089,8 +2076,8 @@ class ScanBarcodeForSaleUseCase:
             unit_price=product.get_current_price(),
             promo_price=product.promo_price,
             quantity=product.quantity,
-            category_name=None,  # Could be added if needed
-            subcategory_name=None,  # Could be added if needed
+            category_name=None,
+            subcategory_name=None,
             is_available=product.quantity > 0,
         )
 
@@ -2125,14 +2112,12 @@ class GenerateInvoiceReceiptUseCase:
 
     def execute(self) -> ReceiptResponseDTO:
         """Execute receipt generation."""
-        # Validate user access
         if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have access to this business",
                 code="PERMISSION_DENIED",
             )
 
-        # Get invoice
         invoice = self.invoice_repository.get_by_id(self.invoice_id)
         if not invoice or invoice.business_id != self.business_id:
             raise NotFoundError(
@@ -2140,10 +2125,8 @@ class GenerateInvoiceReceiptUseCase:
                 code="INVOICE_NOT_FOUND",
             )
 
-        # Get invoice lines
         invoice_lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
 
-        # Get business
         business = self.business_repository.get_by_id(self.business_id)
         if not business:
             raise NotFoundError(
@@ -2151,7 +2134,6 @@ class GenerateInvoiceReceiptUseCase:
                 code="BUSINESS_NOT_FOUND",
             )
 
-        # Get product names for invoice lines
         invoice_lines_with_names = []
         for line in invoice_lines:
             product = self.product_repository.get_by_id(line.product_id)
@@ -2182,13 +2164,11 @@ class GenerateInvoiceReceiptUseCase:
             cashier_name=cashier_name,
         )
 
-        # Render template
         receipt_html = render_to_string(
             "receipts/invoice_receipt.html",
             receipt_data,
         )
 
-        # Generate PDF if requested
         receipt_pdf = None
         if self.format == "pdf":
             try:
@@ -2241,14 +2221,12 @@ class GenerateSalesReportUseCase:
     @transaction.atomic
     def execute(self) -> SalesReportDTO:
         """Execute sales report generation."""
-        # Validate user access
         if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have access to this business",
                 code="PERMISSION_DENIED",
             )
 
-        # Validate and normalize date range
         try:
             start_date, end_date = DateRangeValidationService.validate_date_range(
                 start_date=self.start_date,
@@ -2262,30 +2240,25 @@ class GenerateSalesReportUseCase:
                 status_code=400,
             ) from e
 
-        # Get invoices for the period
         invoices = self.invoice_repository.get_by_business(
             business_id=self.business_id,
-            status=None,  # All statuses
+            status=None,
             start_date=start_date,
             end_date=end_date,
-            limit=10000,  # Large limit for reports
+            limit=10000,
         )
 
-        # Calculate totals
         total_revenue = Decimal("0.00")
         total_invoices = len(invoices)
         total_items_sold = 0
         sales_by_payment_method: dict[str, dict[str, Decimal | int]] = {}
         sales_by_status: dict[str, dict[str, Decimal | int]] = {}
-        product_sales: dict[UUID, dict[str, Decimal | int | str | UUID]] = {}
-        customer_sales: dict[UUID | None, dict[str, Decimal | int | str | UUID | None]] = {}
+        product_sales: dict[UUID, dict[str, Any]] = {}
+        customer_sales: dict[UUID | None, dict[str, Any]] = {}
 
-        # Process each invoice
         for invoice in invoices:
-            # Revenue
             total_revenue += invoice.total
 
-            # Payment method breakdown
             payment_method = invoice.payment_method.value
             if payment_method not in sales_by_payment_method:
                 sales_by_payment_method[payment_method] = {
@@ -2295,7 +2268,6 @@ class GenerateSalesReportUseCase:
             sales_by_payment_method[payment_method]["total_amount"] += invoice.total
             sales_by_payment_method[payment_method]["number_of_invoices"] += 1
 
-            # Status breakdown
             status = invoice.status.value
             if status not in sales_by_status:
                 sales_by_status[status] = {
@@ -2305,7 +2277,6 @@ class GenerateSalesReportUseCase:
             sales_by_status[status]["total_amount"] += invoice.total
             sales_by_status[status]["number_of_invoices"] += 1
 
-            # Customer breakdown
             customer_id = invoice.customer_id
             customer_name = invoice.customer_name or "Walk-in Customer"
             if customer_id not in customer_sales:
@@ -2315,18 +2286,13 @@ class GenerateSalesReportUseCase:
                     "total_purchases": Decimal("0.00"),
                     "number_of_invoices": 0,
                 }
-            customer_data = customer_sales[customer_id]
-            customer_data["total_purchases"] = (
-                cast(Decimal, customer_data["total_purchases"]) + invoice.total
-            )
-            customer_data["number_of_invoices"] = cast(int, customer_data["number_of_invoices"]) + 1
+            customer_sales[customer_id]["total_purchases"] += invoice.total
+            customer_sales[customer_id]["number_of_invoices"] += 1
 
-            # Get invoice lines
             invoice_lines = self.invoice_line_repository.get_by_invoice(invoice.id)
             for line in invoice_lines:
                 total_items_sold += line.quantity
 
-                # Product breakdown
                 if line.product_id not in product_sales:
                     product = self.product_repository.get_by_id(line.product_id)
                     product_name = product.name if product else f"Product {line.product_id}"
@@ -2337,21 +2303,14 @@ class GenerateSalesReportUseCase:
                         "total_revenue": Decimal("0.00"),
                         "number_of_sales": 0,
                     }
-                product_data = product_sales[line.product_id]
-                product_data["total_quantity_sold"] = (
-                    cast(int, product_data["total_quantity_sold"]) + line.quantity
-                )
-                product_data["total_revenue"] = (
-                    cast(Decimal, product_data["total_revenue"]) + line.line_total
-                )
-                product_data["number_of_sales"] = cast(int, product_data["number_of_sales"]) + 1
+                product_sales[line.product_id]["total_quantity_sold"] += line.quantity
+                product_sales[line.product_id]["total_revenue"] += line.line_total
+                product_sales[line.product_id]["number_of_sales"] += 1
 
-        # Calculate average invoice value
         average_invoice_value = (
             total_revenue / total_invoices if total_invoices > 0 else Decimal("0.00")
         )
 
-        # Convert to DTOs
         sales_by_payment_method_dtos = [
             SalesByPaymentMethodDTO(
                 payment_method=method,
@@ -2370,7 +2329,6 @@ class GenerateSalesReportUseCase:
             for status, data in sales_by_status.items()
         ]
 
-        # Top products (sorted by revenue)
         top_products = sorted(
             [
                 TopProductReportDTO(
@@ -2384,9 +2342,7 @@ class GenerateSalesReportUseCase:
             ],
             key=lambda x: x.total_revenue,
             reverse=True,
-        )[
-            :10
-        ]  # Top 10
+        )[:10]
 
         top_customers = sorted(
             [

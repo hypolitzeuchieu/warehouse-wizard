@@ -1,7 +1,7 @@
 """Sales domain entities."""
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -43,7 +43,7 @@ class Invoice:
     advance_paid: Decimal
     remaining_amount: Decimal
     payment_method: PaymentMethod
-    due_date: datetime | date | None
+    due_date: datetime | None
     is_credit_settled: bool
     created_at: datetime
     updated_at: datetime
