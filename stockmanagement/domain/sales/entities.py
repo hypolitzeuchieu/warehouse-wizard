@@ -1,7 +1,7 @@
 """Sales domain entities."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -13,7 +13,6 @@ class InvoiceStatus(str, Enum):
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
     CREDIT = "CREDIT"
-    PENDING = "PENDING"
 
 
 class PaymentMethod(str, Enum):
@@ -40,19 +39,20 @@ class Invoice:
     status: InvoiceStatus
     total: Decimal
     tax: Decimal
-    discount: Decimal
+    total_discount: Decimal
     advance_paid: Decimal
     remaining_amount: Decimal
     payment_method: PaymentMethod
-    due_date: datetime | None
+    due_date: datetime | date | None
     is_credit_settled: bool
     created_at: datetime
     updated_at: datetime
     reason: str | None = None
+    is_archived: bool = False
 
     def calculate_total(self) -> Decimal:
         """Calculate total amount."""
-        return self.total + self.tax - self.discount
+        return self.total + self.tax - self.total_discount
 
     def get_remaining_amount(self) -> Decimal:
         """Get remaining amount to be paid."""
@@ -123,6 +123,7 @@ class InvoiceLogAction(str, Enum):
     LINE_UPDATED = "LINE_UPDATED"
     CREDIT_APPLIED = "CREDIT_APPLIED"
     STATUS_CHANGED = "STATUS_CHANGED"
+    ARCHIVED = "ARCHIVED"
 
 
 @dataclass

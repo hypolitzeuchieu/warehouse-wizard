@@ -160,7 +160,7 @@ class Salary(BaseModel):
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.01"))],
     )
-    currency = models.CharField(max_length=10, default="USD")
+    currency = models.CharField(max_length=10, default="Fcfa")
     payment_frequency = models.CharField(
         max_length=20, choices=PAYMENT_FREQUENCY_CHOICES, default="monthly"
     )
@@ -212,7 +212,7 @@ class Payroll(BaseModel):
         db_table = "payrolls"
         verbose_name = "Payroll"
         verbose_name_plural = "Payrolls"
-        ordering = ["-updated_at"]  # Use BaseModel ordering
+        ordering = ["-updated_at"]
         indexes = [
             models.Index(fields=["business", "-updated_at"]),
             models.Index(fields=["user", "-updated_at"]),

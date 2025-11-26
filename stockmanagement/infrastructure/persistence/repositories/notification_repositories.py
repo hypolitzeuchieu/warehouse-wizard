@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from django.db.models import Q
 from django.utils import timezone
 
 from domain.notifications.entities import (
@@ -78,9 +79,29 @@ class NotificationRepositoryImpl(NotificationRepository):
 
     def mark_all_as_read(self, user_id: UUID) -> None:
         """Mark all notifications as read for a user."""
-        NotificationModel.objects.filter(user_id=user_id, status="UNREAD").update(
-            status="READ", read_at=timezone.now()
-        )
+
+        NotificationModel.objects.filter(
+            (Q(user_id=user_id) | Q(user__isnull=True)) & Q(status="UNREAD")
+        ).update(status="READ", read_at=timezone.now())
+
+    def get_by_user_with_broadcast(
+        self,
+        user_id: UUID,
+        status: NotificationStatus | None = None,
+        limit: int = 100,
+    ) -> list[Notification]:
+        """Get notifications for a user including broadcast notifications (user=None)."""
+        from django.db.models import Q
+
+        query = NotificationModel.objects.filter(
+            Q(user_id=user_id) | Q(user__isnull=True)
+        ).select_related("business", "user")
+
+        if status:
+            query = query.filter(status=status.value)
+
+        notifications = query.order_by("-created_at")[:limit]
+        return [self._to_entity(notification) for notification in notifications]
 
     def _to_entity(self, notification_model: NotificationModel) -> Notification:
         """Convert Django model to domain entity."""

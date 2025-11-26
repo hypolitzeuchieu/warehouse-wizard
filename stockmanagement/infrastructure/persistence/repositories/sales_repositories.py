@@ -84,11 +84,17 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         limit: int = 100,
+        archived_only: bool = False,
     ) -> list[Invoice]:
         """Get invoices for a business with optional filters."""
         query = InvoiceModel.objects.filter(business_id=business_id).select_related(
             "customer", "cashier"
         )
+
+        if archived_only:
+            query = query.filter(is_archived=True)
+        else:
+            query = query.filter(is_archived=False)
 
         if status:
             query = query.filter(status=status.value)
@@ -104,6 +110,11 @@ class InvoiceRepositoryImpl(InvoiceRepository):
 
     def create(self, invoice: Invoice) -> Invoice:
         """Create a new invoice."""
+        due_date = invoice.due_date
+        if due_date:
+            if isinstance(due_date, datetime):
+                due_date = due_date.date()
+
         invoice_model = InvoiceModel(
             id=invoice.id,
             business_id=invoice.business_id,
@@ -114,13 +125,14 @@ class InvoiceRepositoryImpl(InvoiceRepository):
             status=invoice.status.value,
             total=invoice.total,
             tax=invoice.tax,
-            discount=invoice.discount,
+            total_discount=invoice.total_discount,
             advance_paid=invoice.advance_paid,
             remaining_amount=invoice.remaining_amount,
             payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
+            due_date=due_date,
             is_credit_settled=invoice.is_credit_settled,
             reason=invoice.reason,
+            is_archived=invoice.is_archived,
         )
         invoice_model.save()
         return self._to_entity(invoice_model)
@@ -128,16 +140,23 @@ class InvoiceRepositoryImpl(InvoiceRepository):
     def update(self, invoice: Invoice) -> Invoice:
         """Update an existing invoice."""
         invoice_model = InvoiceModel.objects.get(id=invoice.id)
+
+        due_date = invoice.due_date
+        if due_date:
+            if isinstance(due_date, datetime):
+                due_date = due_date.date()
+
         invoice_model.status = invoice.status.value
         invoice_model.total = invoice.total
         invoice_model.tax = invoice.tax
-        invoice_model.discount = invoice.discount
+        invoice_model.total_discount = invoice.total_discount
         invoice_model.advance_paid = invoice.advance_paid
         invoice_model.remaining_amount = invoice.remaining_amount
         invoice_model.payment_method = invoice.payment_method.value
-        invoice_model.due_date = invoice.due_date
+        invoice_model.due_date = due_date
         invoice_model.is_credit_settled = invoice.is_credit_settled
         invoice_model.reason = invoice.reason
+        invoice_model.is_archived = invoice.is_archived
         invoice_model.save()
         return self._to_entity(invoice_model)
 
@@ -149,6 +168,10 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         if last_invoice:
             return last_invoice.number + 1
         return 1
+
+    def delete(self, invoice_id: UUID) -> None:
+        """Permanently delete an invoice (hard delete)."""
+        InvoiceModel.objects.filter(id=invoice_id).delete()
 
     def _to_entity(self, invoice_model: InvoiceModel) -> Invoice:
         """Convert Django model to domain entity."""
@@ -162,7 +185,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
             status=InvoiceStatus(invoice_model.status),
             total=invoice_model.total,
             tax=invoice_model.tax,
-            discount=invoice_model.discount,
+            total_discount=invoice_model.total_discount,
             advance_paid=invoice_model.advance_paid,
             remaining_amount=invoice_model.remaining_amount,
             payment_method=PaymentMethod(invoice_model.payment_method),
@@ -171,6 +194,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
             created_at=invoice_model.created_at,
             updated_at=invoice_model.updated_at,
             reason=invoice_model.reason,
+            is_archived=invoice_model.is_archived,
         )
 
 

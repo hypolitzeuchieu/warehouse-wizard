@@ -41,6 +41,7 @@ class InvoiceRepository(ABC):
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         limit: int = 100,
+        archived_only: bool = False,
     ) -> list[Invoice]:
         """Get invoices for a business with optional filters."""
         pass
@@ -58,6 +59,11 @@ class InvoiceRepository(ABC):
     @abstractmethod
     def get_next_invoice_number(self, business_id: UUID) -> int:
         """Get next invoice number for a business."""
+        pass
+
+    @abstractmethod
+    def delete(self, invoice_id: UUID) -> None:
+        """Permanently delete an invoice (hard delete)."""
         pass
 
 

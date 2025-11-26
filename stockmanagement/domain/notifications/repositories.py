@@ -48,3 +48,13 @@ class NotificationRepository(ABC):
     def mark_all_as_read(self, user_id: UUID) -> None:
         """Mark all notifications as read for a user."""
         pass
+
+    @abstractmethod
+    def get_by_user_with_broadcast(
+        self,
+        user_id: UUID,
+        status: NotificationStatus | None = None,
+        limit: int = 100,
+    ) -> list[Notification]:
+        """Get notifications for a user including broadcast notifications (user=None)."""
+        pass

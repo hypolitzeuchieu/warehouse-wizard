@@ -18,6 +18,7 @@ class InvoiceListFilterDTO(BaseListFilterDTO):
     status: str | None = None
     start_date: datetime | None = None
     end_date: datetime | None = None
+    archived_only: bool = False
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> InvoiceListFilterDTO:
@@ -37,4 +38,5 @@ class InvoiceListFilterDTO(BaseListFilterDTO):
             status=filters.get("status"),
             start_date=filters.get("start_date"),
             end_date=filters.get("end_date"),
+            archived_only=filters.get("archived_only", False),
         )

@@ -22,6 +22,8 @@ __all__ = [
     "InvoiceLine",
     "Order",
     "OrderItem",
+    # Report models
+    "Report",
     # Finance models
     "Expense",
     "Salary",

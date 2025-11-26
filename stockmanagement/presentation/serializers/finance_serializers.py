@@ -203,7 +203,7 @@ class SalaryCreateSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
-    currency = serializers.CharField(max_length=10, default="USD", required=False)
+    currency = serializers.CharField(max_length=10, default="Fcfa", required=False)
     payment_frequency = serializers.ChoiceField(
         choices=["daily", "weekly", "monthly"], default="monthly", required=False
     )
@@ -222,7 +222,7 @@ class SalaryCreateSerializer(serializers.Serializer):
         return SalaryCreateDTO(
             user_id=self.validated_data["user_id"],
             amount=self.validated_data["amount"],
-            currency=self.validated_data.get("currency", "USD"),
+            currency=self.validated_data.get("currency", "Fcfa"),
             payment_frequency=self.validated_data.get("payment_frequency", "monthly"),
             deductions=self.validated_data.get("deductions", 0.00),
             bonuses=self.validated_data.get("bonuses", 0.00),
@@ -264,7 +264,7 @@ class SalaryPromotionSerializer(serializers.Serializer):
     new_amount = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
-    currency = serializers.CharField(max_length=10, default="USD", required=False)
+    currency = serializers.CharField(max_length=10, default="Fcfa", required=False)
     payment_frequency = serializers.ChoiceField(
         choices=["daily", "weekly", "monthly"], default="monthly", required=False
     )
@@ -281,7 +281,7 @@ class SalaryPromotionSerializer(serializers.Serializer):
         """Convert to DTO."""
         return SalaryPromotionDTO(
             new_amount=self.validated_data["new_amount"],
-            currency=self.validated_data.get("currency", "USD"),
+            currency=self.validated_data.get("currency", "Fcfa"),
             payment_frequency=self.validated_data.get("payment_frequency", "monthly"),
             deductions=self.validated_data.get("deductions", 0.00),
             bonuses=self.validated_data.get("bonuses", 0.00),
@@ -332,6 +332,7 @@ class ExpenseResponseSerializer(serializers.Serializer):
     reason = serializers.CharField()
     reason_details = serializers.CharField(allow_blank=True, required=False)
     user_id = serializers.UUIDField()
+    user_name = serializers.CharField(allow_blank=True, required=False)
     approved_by = serializers.UUIDField(allow_null=True, required=False)
     is_approved = serializers.BooleanField()
     payment_method = serializers.CharField()
@@ -353,6 +354,7 @@ class ExpenseResponseSerializer(serializers.Serializer):
                 "reason": dto.reason,
                 "reason_details": dto.reason_details,
                 "user_id": dto.user_id,
+                "user_name": dto.user_name or "",
                 "approved_by": dto.approved_by,
                 "is_approved": dto.is_approved,
                 "payment_method": dto.payment_method,

@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
+from django.utils import timezone
+
 
 class NotificationType(str, Enum):
     """Notification type enumeration."""
@@ -43,8 +45,9 @@ class Notification:
 
     def mark_as_read(self) -> None:
         """Mark notification as read."""
+
         self.status = NotificationStatus.READ
-        self.read_at = datetime.utcnow()
+        self.read_at = timezone.now()
 
     def archive(self) -> None:
         """Archive notification."""

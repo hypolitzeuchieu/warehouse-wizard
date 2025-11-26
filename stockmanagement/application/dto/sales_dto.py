@@ -1,7 +1,7 @@
 """Sales DTOs."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -21,7 +21,6 @@ class InvoiceCreateDTO:
 
     customer_name: str | None = None
     customer_id: UUID | None = None
-    # Fields for creating a new customer during sale
     customer_email: str | None = None
     customer_phone: str | None = None
     customer_address: str | None = None
@@ -30,8 +29,10 @@ class InvoiceCreateDTO:
     tax: Decimal = Decimal("0.00")
     advance_paid: Decimal = Decimal("0.00")
     payment_method: str = "cash"
-    due_date: datetime | None = None
+    is_credit: bool = False
+    due_date: datetime | date | None = None
     reason: str | None = None
+    is_archived: bool = False
 
 
 @dataclass
@@ -40,12 +41,13 @@ class InvoiceUpdateDTO:
 
     status: str | None = None
     tax: Decimal | None = None
-    discount: Decimal | None = None
+    total_discount: Decimal | None = None
     advance_paid: Decimal | None = None
     payment_method: str | None = None
-    due_date: datetime | None = None
+    due_date: datetime | date | None = None
     is_credit_settled: bool | None = None
     reason: str | None = None
+    is_archived: bool | None = None
 
 
 @dataclass
@@ -74,7 +76,7 @@ class InvoiceResponseDTO:
     status: str
     total: Decimal
     tax: Decimal
-    discount: Decimal
+    total_discount: Decimal
     advance_paid: Decimal
     remaining_amount: Decimal
     payment_method: str
@@ -84,8 +86,9 @@ class InvoiceResponseDTO:
     customer_name: str | None = None
     customer_id: UUID | None = None
     cashier_name: str | None = None
-    due_date: datetime | None = None
+    due_date: datetime | date | None = None
     reason: str | None = None
+    is_archived: bool = False
     lines: list[InvoiceLineResponseDTO] | None = None
 
 
@@ -179,6 +182,7 @@ class PaymentResponseDTO:
     updated_at: datetime
     notes: str | None = None
     created_by: UUID | None = None
+    created_by_name: str | None = None
 
 
 @dataclass
@@ -248,7 +252,76 @@ class BarcodeScanResponseDTO:
 
 @dataclass
 class CreditApplicationDTO:
-    """DTO for applying credit to invoice."""
+    """DTO for applying credit payment to invoice."""
 
-    credit_id: UUID
-    amount: Decimal | None = None  # If None, apply full credit amount
+    amount: Decimal
+    payment_method: str = "cash"
+
+
+@dataclass
+class ReceiptResponseDTO:
+    """DTO for invoice receipt response."""
+
+    invoice_id: UUID
+    invoice_number: int
+    receipt_html: str | None = None
+    receipt_pdf: bytes | None = None
+    qr_code_url: str | None = None
+    format: str = "html"
+
+
+@dataclass
+class TopProductReportDTO:
+    """DTO for top product in sales report."""
+
+    product_id: UUID
+    product_name: str
+    total_quantity_sold: int
+    total_revenue: Decimal
+    number_of_sales: int
+
+
+@dataclass
+class TopCustomerReportDTO:
+    """DTO for top customer in sales report."""
+
+    customer_id: UUID | None
+    customer_name: str
+    total_purchases: Decimal
+    number_of_invoices: int
+
+
+@dataclass
+class SalesByPaymentMethodDTO:
+    """DTO for sales breakdown by payment method."""
+
+    payment_method: str
+    total_amount: Decimal
+    number_of_invoices: int
+
+
+@dataclass
+class SalesByStatusDTO:
+    """DTO for sales breakdown by status."""
+
+    status: str
+    total_amount: Decimal
+    number_of_invoices: int
+
+
+@dataclass
+class SalesReportDTO:
+    """DTO for sales report."""
+
+    business_id: UUID
+    period_start: datetime
+    period_end: datetime
+    total_revenue: Decimal
+    total_invoices: int
+    total_items_sold: int
+    average_invoice_value: Decimal
+    sales_by_payment_method: list[SalesByPaymentMethodDTO]
+    sales_by_status: list[SalesByStatusDTO]
+    top_products: list[TopProductReportDTO]
+    top_customers: list[TopCustomerReportDTO]
+    generated_at: datetime

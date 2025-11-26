@@ -86,6 +86,21 @@ def get_logging_config(debug: bool = False) -> dict:
             "level": "INFO",
         },
         "loggers": {
+            "fontTools": {
+                "level": "WARNING",
+                "handlers": ["console", "file"],
+                "propagate": False,
+            },
+            "fontTools.subset": {
+                "level": "WARNING",
+                "handlers": ["console", "file"],
+                "propagate": False,
+            },
+            "weasyprint": {
+                "level": "WARNING",
+                "handlers": ["console", "file"],
+                "propagate": False,
+            },
             "django": {
                 "handlers": ["console", "file"],
                 "level": "INFO",

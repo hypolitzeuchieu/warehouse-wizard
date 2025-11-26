@@ -49,6 +49,7 @@ class ExpenseResponseDTO:
     reason: str
     reason_details: str | None
     user_id: UUID
+    user_name: str | None
     approved_by: UUID | None
     is_approved: bool
     payment_method: str

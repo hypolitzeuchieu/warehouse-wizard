@@ -1,6 +1,7 @@
 """Inventory domain repositories (interfaces)."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from uuid import UUID
 
 from domain.inventory.entities import (
@@ -164,6 +165,18 @@ class StockMovementRepository(ABC):
         limit: int = 100,
     ) -> list[StockMovement]:
         """Get stock movements for a business."""
+        pass
+
+    @abstractmethod
+    def get_by_business_period(
+        self,
+        business_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        movement_type: StockMovementType | None = None,
+        limit: int = 10000,
+    ) -> list[StockMovement]:
+        """Get stock movements for a business within a date range."""
         pass
 
     @abstractmethod
