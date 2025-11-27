@@ -265,7 +265,7 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BEAT_SCHEDULE = {
     "check-expired-products": {
         "task": "tasks.inventory_tasks.check_expired_products",
-        "schedule": crontab(hour=0, minute=0),
+        "schedule": crontab(minute=0),
     },
 }
 

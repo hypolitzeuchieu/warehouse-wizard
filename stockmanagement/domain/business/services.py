@@ -56,3 +56,7 @@ class BusinessDomainService:
     def user_has_access(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user has access to business (owner or member)."""
         return self.business_repository.user_has_access(business_id, user_id)
+
+    def get_business(self, business_id: UUID):
+        """Get business entity by ID."""
+        return self.business_repository.get_by_id(business_id)

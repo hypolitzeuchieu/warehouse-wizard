@@ -385,6 +385,29 @@ class StockMovementRepositoryImpl(StockMovementRepository):
         movements = query.order_by("-created_at")[:limit]
         return [self._to_entity(movement) for movement in movements]
 
+    def get_by_business_period(
+        self,
+        business_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        movement_type: StockMovementType | None = None,
+        limit: int = 10000,
+    ) -> list[StockMovement]:
+        """Get stock movements for a business within a date range."""
+        query = StockMovementModel.objects.filter(business_id=business_id).select_related(
+            "product", "user"
+        )
+
+        if start_date:
+            query = query.filter(created_at__gte=start_date)
+        if end_date:
+            query = query.filter(created_at__lte=end_date)
+        if movement_type:
+            query = query.filter(movement_type=movement_type.value)
+
+        movements = query.order_by("-created_at")[:limit]
+        return [self._to_entity(movement) for movement in movements]
+
     def create(self, movement: StockMovement) -> StockMovement:
         """Create a new stock movement."""
         movement_model = StockMovementModel(

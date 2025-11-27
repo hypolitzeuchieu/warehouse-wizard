@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import io
 import logging
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, TypedDict
 from uuid import UUID
 
+from django.template.loader import render_to_string
+from django.utils import timezone
+
 from domain.sales.entities import Invoice, InvoiceLine, InvoiceLogAction
 
 logger = logging.getLogger(__name__)
+
+try:
+    from weasyprint import HTML
+
+    WEASYPRINT_AVAILABLE = True
+except ImportError:
+    WEASYPRINT_AVAILABLE = False
+    logger.warning("WeasyPrint not available. PDF generation will not work.")
 
 
 class PaymentProcessingResult(TypedDict):
@@ -214,23 +227,19 @@ class InvoiceCalculationService:
         discrepancies = []
         recalculated_values = {}
 
-        # Recalculate subtotal from lines
         recalculated_subtotal = InvoiceCalculationService.calculate_subtotal(lines)
         recalculated_values["subtotal"] = recalculated_subtotal
 
-        # Recalculate tax
-        recalculated_tax = invoice.tax  # Tax is provided, not calculated from rate
+        recalculated_tax = invoice.tax
         recalculated_values["tax"] = recalculated_tax
 
-        # Recalculate final total
         recalculated_total = InvoiceCalculationService.calculate_final_total(
             subtotal=recalculated_subtotal,
             tax=recalculated_tax,
-            discount=invoice.discount,
+            discount=invoice.total_discount,
         )
         recalculated_values["total"] = recalculated_total
 
-        # Validate line totals
         for line in lines:
             recalculated_line_total = InvoiceCalculationService.calculate_line_total(
                 unit_price=line.unit_price,
@@ -247,7 +256,6 @@ class InvoiceCalculationService:
                     }
                 )
 
-        # Validate invoice total
         if abs(recalculated_total - invoice.total) > Decimal("0.01"):
             discrepancies.append(
                 {
@@ -257,7 +265,6 @@ class InvoiceCalculationService:
                 }
             )
 
-        # Validate remaining amount for credit invoices
         if invoice.status.value == "CREDIT":
             recalculated_remaining = invoice.get_remaining_amount()
             if abs(recalculated_remaining - invoice.remaining_amount) > Decimal("0.01"):
@@ -319,20 +326,19 @@ class InvoiceCalculationService:
 class WholesalePricingService:
     """Service for calculating wholesale prices."""
 
-    # Default wholesale discount percentage (can be configured per business)
-    DEFAULT_WHOLESALE_DISCOUNT = Decimal("10.00")  # 10% discount
+    DEFAULT_WHOLESALE_DISCOUNT = Decimal("0.00")
 
     @staticmethod
     def calculate_wholesale_price(
         regular_price: Decimal,
-        discount_percentage: Decimal | None = None,
+        discount_amount: Decimal | None = None,
     ) -> Decimal:
         """
         Calculate wholesale price from regular price.
 
         Args:
             regular_price: Regular price for the product
-            discount_percentage: Wholesale discount percentage (default: 10%)
+            discount_amount: Wholesale discount amount in currency (default: 0.00)
 
         Returns:
             Wholesale price
@@ -340,17 +346,25 @@ class WholesalePricingService:
         if regular_price <= 0:
             raise ValueError("Regular price must be greater than zero")
 
-        discount = discount_percentage or WholesalePricingService.DEFAULT_WHOLESALE_DISCOUNT
+        discount = discount_amount or WholesalePricingService.DEFAULT_WHOLESALE_DISCOUNT
 
-        if discount < 0 or discount > 100:
-            raise ValueError(f"Discount percentage must be between 0 and 100, got {discount}")
+        if discount < 0:
+            raise ValueError(f"Discount amount cannot be negative, got {discount}")
 
-        wholesale_price = regular_price * (1 - discount / Decimal("100.00"))
+        if discount > regular_price:
+            raise ValueError(
+                f"Discount amount ({discount}) cannot exceed regular price ({regular_price})"
+            )
+
+        wholesale_price = regular_price - discount
         wholesale_price = wholesale_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        if wholesale_price < Decimal("0.00"):
+            wholesale_price = Decimal("0.00")
 
         logger.debug(
             f"Wholesale price calculated: regular={regular_price}, "
-            f"discount={discount}%, wholesale={wholesale_price}"
+            f"discount={discount} (amount), wholesale={wholesale_price}"
         )
 
         return wholesale_price
@@ -367,7 +381,7 @@ class WholesalePricingService:
         Args:
             regular_price: Regular price for the product
             is_wholesaler: Whether the customer is a wholesaler
-            wholesale_discount: Wholesale discount percentage (optional)
+            wholesale_discount: Wholesale discount amount in currency (optional)
 
         Returns:
             Price for the customer
@@ -375,7 +389,7 @@ class WholesalePricingService:
         if is_wholesaler:
             return WholesalePricingService.calculate_wholesale_price(
                 regular_price=regular_price,
-                discount_percentage=wholesale_discount,
+                discount_amount=wholesale_discount,
             )
         return regular_price
 
@@ -680,3 +694,165 @@ class InvoiceLoggingService:
             "description": description,
             "user_id": user_id,
         }
+
+
+class DateRangeValidationService:
+    """Service for validating date ranges securely."""
+
+    @staticmethod
+    def validate_date_range(
+        start_date: datetime | None,
+        end_date: datetime | None,
+        allow_future: bool = False,
+    ) -> tuple[datetime, datetime]:
+        """
+        Validate and normalize date range.
+
+        Args:
+            start_date: Start date (optional, defaults to 30 days ago)
+            end_date: End date (optional, defaults to today)
+            allow_future: Allow future dates (default: False)
+
+        Returns:
+            Tuple of (validated_start_date, validated_end_date)
+
+        Raises:
+            ValueError: If date range is invalid
+        """
+        now = timezone.now()
+        # Default to last 30 days if not provided
+        if start_date is None:
+            start_date = now - timedelta(days=7)
+        if end_date is None:
+            end_date = now
+
+        # Normalize to start/end of day
+        if isinstance(start_date, datetime):
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        if isinstance(end_date, datetime):
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # Validate start < end
+        if start_date > end_date:
+            raise ValueError(f"Start date ({start_date}) cannot be after end date ({end_date})")
+
+        if not allow_future:
+            today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            if start_date > today_end:
+                raise ValueError(f"Start date ({start_date}) cannot be in the future")
+            if end_date > today_end:
+                raise ValueError(f"End date ({end_date}) cannot be in the future")
+
+        return start_date, end_date
+
+
+class ReceiptGenerationService:
+    """Service for generating invoice receipts with business QR code."""
+
+    @staticmethod
+    def prepare_receipt_data(
+        invoice: Invoice,
+        invoice_lines: list[dict[str, Any] | InvoiceLine],
+        business_name: str,
+        business_qr_code_url: str | None = None,
+        business_address: str | None = None,
+        business_phone: str | None = None,
+        business_email: str | None = None,
+        cashier_name: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Prepare receipt data for template rendering.
+
+        Args:
+            invoice: Invoice entity
+            invoice_lines: List of invoice lines
+            business_name: Business name
+            business_qr_code_url: Business QR code URL (optional)
+            business_address: Business address (optional)
+            business_phone: Business phone (optional)
+            business_email: Business email (optional)
+            cashier_name: Cashier name (optional)
+
+        Returns:
+            Dictionary with receipt data
+        """
+        return {
+            "invoice": {
+                "id": str(invoice.id),
+                "number": invoice.number,
+                "customer_name": invoice.customer_name or "Walk-in Customer",
+                "status": invoice.status.value,
+                "created_at": invoice.created_at,
+                "total": invoice.total,
+                "tax": invoice.tax,
+                "total_discount": invoice.total_discount,
+                "advance_paid": invoice.advance_paid,
+                "remaining_amount": invoice.remaining_amount,
+                "payment_method": invoice.payment_method.value,
+                "change_amount": max(
+                    Decimal("0.00"),
+                    invoice.advance_paid - invoice.total,
+                ),
+            },
+            "business": {
+                "name": business_name,
+                "address": business_address,
+                "phone": business_phone,
+                "email": business_email,
+                "qr_code_url": business_qr_code_url,
+            },
+            "cashier": {
+                "name": cashier_name or "Cashier",
+            },
+            "lines": [
+                {
+                    "product_name": (
+                        line["product_name"]
+                        if isinstance(line, dict)
+                        else f"Product {line.product_id}"
+                    ),
+                    "quantity": line["quantity"] if isinstance(line, dict) else line.quantity,
+                    "unit_price": (
+                        line["unit_price"] if isinstance(line, dict) else line.unit_price
+                    ),
+                    "discount": line["discount"] if isinstance(line, dict) else line.discount,
+                    "line_total": (
+                        line["line_total"] if isinstance(line, dict) else line.line_total
+                    ),
+                }
+                for line in invoice_lines
+            ],
+            "generated_at": timezone.now(),
+        }
+
+    @staticmethod
+    def generate_pdf_receipt(receipt_data: dict[str, Any]) -> bytes:
+        """
+        Generate PDF receipt from receipt data.
+
+        Args:
+            receipt_data: Receipt data dictionary
+
+        Returns:
+            PDF file as bytes
+
+        Raises:
+            ValueError: If WeasyPrint is not available
+        """
+        if not WEASYPRINT_AVAILABLE:
+            raise ValueError("Generating PDF service unavailable.")
+
+        # Render HTML template
+        html_content = render_to_string("receipts/invoice_receipt.html", receipt_data)
+
+        # Convert HTML to PDF
+        try:
+            pdf_buffer = io.BytesIO()
+            HTML(string=html_content).write_pdf(pdf_buffer)
+            pdf_buffer.seek(0)
+            pdf_bytes = pdf_buffer.read()
+            logger.info("PDF receipt generated successfully")
+            return pdf_bytes
+        except Exception as e:
+            logger.error(f"Error generating PDF receipt: {str(e)}")
+            raise

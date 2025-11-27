@@ -13,6 +13,7 @@ from presentation.viewsets.finance_viewset import FinanceViewSet
 from presentation.viewsets.inventory_viewset import InventoryViewSet
 from presentation.viewsets.notification_viewset import NotificationViewSet
 from presentation.viewsets.product_viewset import ProductViewSet
+from presentation.viewsets.report_viewset import ReportViewSet
 from presentation.viewsets.sales_viewset import SalesViewSet
 from presentation.viewsets.subcategory_viewset import SubCategoryViewSet
 
@@ -29,6 +30,7 @@ router.register(r"products", ProductViewSet, basename="product")
 router.register(r"sales", SalesViewSet, basename="sales")
 router.register(r"customers", CustomerViewSet, basename="customer")
 router.register(r"finance", FinanceViewSet, basename="finance")
+router.register(r"reports", ReportViewSet, basename="report")
 
 urlpatterns = [
     # Authentication endpoints

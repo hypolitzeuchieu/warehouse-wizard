@@ -1,6 +1,5 @@
 """Django models module - imports all models for auto-discovery."""
 
-# Import all models so Django can discover them
 from infrastructure.persistence.models.business_models import (  # noqa: F401
     Business,
     BusinessMember,
@@ -25,6 +24,7 @@ from infrastructure.persistence.models.inventory_models import (  # noqa: F401
 from infrastructure.persistence.models.notification_models import Notification  # noqa: F401
 from infrastructure.persistence.models.otp_models import OTP  # noqa: F401
 from infrastructure.persistence.models.password_reset_models import PasswordResetToken  # noqa: F401
+from infrastructure.persistence.models.report_models import Report  # noqa: F401
 from infrastructure.persistence.models.sales_models import (  # noqa: F401
     Invoice,
     InvoiceLine,

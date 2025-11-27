@@ -156,3 +156,61 @@ class StockMovementResponseDTO:
     product_name: str | None = None
     reason: str | None = None
     user_name: str | None = None
+
+
+@dataclass
+class ProductStockInfoDTO:
+    """DTO for product stock information in reports."""
+
+    product_id: UUID
+    product_name: str
+    current_quantity: int
+    min_quantity: int
+    unit_price: Decimal
+    total_value: Decimal
+    is_low_stock: bool
+    is_expired: bool
+    expiry_date: datetime | None
+
+
+@dataclass
+class StockMovementSummaryDTO:
+    """DTO for stock movement summary."""
+
+    movement_type: str
+    total_quantity: int
+    number_of_movements: int
+    products_affected: int
+
+
+@dataclass
+class InventoryReportDTO:
+    """DTO for inventory report."""
+
+    business_id: UUID
+    period_start: datetime | None
+    period_end: datetime | None
+    total_products: int
+    total_inventory_value: Decimal
+    low_stock_products: int
+    expired_products: int
+    products_on_promotion: int
+    products: list[ProductStockInfoDTO]
+    stock_movements_summary: list[StockMovementSummaryDTO]
+    generated_at: datetime
+
+
+@dataclass
+class StockReportDTO:
+    """DTO for stock report."""
+
+    business_id: UUID
+    period_start: datetime
+    period_end: datetime
+    current_stock_value: Decimal
+    stock_movements_in: int
+    stock_movements_out: int
+    net_stock_change: int
+    products_by_stock_level: dict[str, list[ProductStockInfoDTO]]
+    stock_movements_by_type: list[StockMovementSummaryDTO]
+    generated_at: datetime

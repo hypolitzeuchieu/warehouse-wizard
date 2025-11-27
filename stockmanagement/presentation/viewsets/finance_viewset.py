@@ -36,6 +36,7 @@ from infrastructure.persistence.repositories import (
     ExpenseAuditLogRepositoryImpl,
     ExpenseRepositoryImpl,
     SalaryRepositoryImpl,
+    UserRepositoryImpl,
 )
 from presentation.serializers.finance_serializers import (
     ExpenseCreateSerializer,
@@ -62,6 +63,37 @@ class FinanceViewSet(BaseViewSet):
             business_repository=BusinessRepositoryImpl(),
             business_member_repository=BusinessMemberRepositoryImpl(),
         )
+
+    def _resolve_user_name(self, user_id: UUID | None) -> str | None:
+        """Resolve user name from repository with caching."""
+        if not user_id:
+            return None
+        if not hasattr(self, "_expense_user_cache"):
+            self._expense_user_cache = {}
+        cache: dict[UUID, str | None] = self._expense_user_cache
+        if user_id in cache:
+            return cache[user_id]
+        if not hasattr(self, "_expense_user_repo"):
+            self._expense_user_repo = UserRepositoryImpl()
+        user_repo: UserRepositoryImpl = self._expense_user_repo
+        user = user_repo.get_by_id(user_id)
+        name = None
+        if user:
+            name = (
+                getattr(user, "full_name", None)
+                or getattr(user, "name", None)
+                or getattr(user, "email", None)
+            )
+        cache[user_id] = name
+        return name
+
+    def _attach_expense_user_names(self, expenses) -> None:
+        """Attach user_name to expense DTOs."""
+        if isinstance(expenses, list):
+            for dto in expenses:
+                dto.user_name = self._resolve_user_name(dto.user_id)
+        else:
+            expenses.user_name = self._resolve_user_name(expenses.user_id)
 
     @swagger_auto_schema(
         operation_summary="List expenses",
@@ -178,6 +210,8 @@ class FinanceViewSet(BaseViewSet):
             )
             expenses = use_case.execute()
 
+            self._attach_expense_user_names(expenses)
+
             expenses = self.apply_filtering_to_items(
                 expenses,
                 filter_payload,
@@ -222,6 +256,7 @@ class FinanceViewSet(BaseViewSet):
                 user_id=request.user.id,
             )
             expense_dto = use_case.execute(dto)
+            self._attach_expense_user_names(expense_dto)
 
             response_payload = ExpenseResponseSerializer.from_dto(expense_dto)
             return self.success(
@@ -264,6 +299,7 @@ class FinanceViewSet(BaseViewSet):
                 user_id=request.user.id,
             )
             expense_dto = use_case.execute()
+            self._attach_expense_user_names(expense_dto)
 
             response_payload = ExpenseResponseSerializer.from_dto(expense_dto)
             return self.success(
@@ -313,6 +349,7 @@ class FinanceViewSet(BaseViewSet):
                 user_id=request.user.id,
             )
             expense_dto = use_case.execute(dto)
+            self._attach_expense_user_names(expense_dto)
 
             response_payload = ExpenseResponseSerializer.from_dto(expense_dto)
             return self.success(

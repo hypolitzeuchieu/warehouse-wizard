@@ -29,6 +29,7 @@ dependencies = [
     "django-redis>=5.4.0",
     "colorlog>=6.8.0",
     "twilio>=9.0.0",
+    "weasyprint>=66.0",
 ]
 
 [project.optional-dependencies]

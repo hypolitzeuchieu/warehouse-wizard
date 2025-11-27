@@ -1,19 +1,27 @@
 """Inventory use cases."""
 
 import logging
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
+from django.db import transaction
 from django.utils import timezone
 
 from application.dto.inventory_dto import (
     CategoryCreateDTO,
     CategoryResponseDTO,
     CategoryUpdateDTO,
+    InventoryReportDTO,
     ProductCreateDTO,
     ProductResponseDTO,
+    ProductStockInfoDTO,
     ProductUpdateDTO,
     StockMovementCreateDTO,
     StockMovementResponseDTO,
+    StockMovementSummaryDTO,
+    StockReportDTO,
     SubCategoryCreateDTO,
     SubCategoryResponseDTO,
     SubCategoryUpdateDTO,
@@ -23,21 +31,28 @@ from domain.inventory.entities import (
     Category,
     Product,
     StockMovement,
+    StockMovementType,
     SubCategory,
 )
 from domain.inventory.repositories import (
     CategoryRepository,
     ProductRepository,
+    StockMovementRepository,
     SubCategoryRepository,
 )
 from domain.inventory.services import InventoryDomainService
 from domain.notifications.services import NotificationDomainService
+from domain.sales.services import DateRangeValidationService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
     NotificationRepositoryImpl,
 )
-from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
+from shared.exceptions.specific import (
+    BadRequestError,
+    ForbiddenError,
+    NotFoundError,
+)
 from shared.services.barcode_service import BarcodeService
 from shared.services.s3_service import S3Service
 
@@ -1319,3 +1334,294 @@ class NotifyExpiringProductsUseCase:
                 f"Failed to create notifications for product {product.id}: {str(e)}",
                 exc_info=True,
             )
+
+
+class GenerateInventoryReportUseCase:
+    """
+    Use case for generating inventory report.
+
+    Inventory Report = État actuel de l'inventaire (snapshot)
+    - Liste de tous les produits avec quantités actuelles
+    - Valeur totale de l'inventaire
+    - Produits en rupture de stock
+    - Produits expirés
+    - Produits en promotion
+    """
+
+    def __init__(
+        self,
+        product_repository: ProductRepository,
+        stock_movement_repository: StockMovementRepository,
+        business_domain_service: BusinessDomainService,
+        business_id: UUID,
+        user_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> None:
+        """Initialize use case."""
+        self.product_repository = product_repository
+        self.stock_movement_repository = stock_movement_repository
+        self.business_domain_service = business_domain_service
+        self.business_id = business_id
+        self.user_id = user_id
+        self.start_date = start_date
+        self.end_date = end_date
+
+    @transaction.atomic
+    def execute(self) -> InventoryReportDTO:
+        """Execute inventory report generation."""
+        # Validate user access
+        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this business",
+                code="PERMISSION_DENIED",
+            )
+
+        # Validate and normalize date range (optional for inventory report)
+        period_start = None
+        period_end = None
+        if self.start_date or self.end_date:
+            try:
+                period_start, period_end = DateRangeValidationService.validate_date_range(
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    allow_future=False,
+                )
+            except ValueError as e:
+                raise BadRequestError(
+                    detail=f"Invalid date range: {str(e)}",
+                    code="INVALID_DATE_RANGE",
+                ) from e
+
+        # Get all products for the business (current state)
+        products = self.product_repository.get_by_business(business_id=self.business_id)
+
+        # Calculate inventory metrics
+        total_products = len(products)
+        total_inventory_value = Decimal("0.00")
+        low_stock_products = 0
+        expired_products = 0
+        products_on_promotion = 0
+        product_stock_infos: list[ProductStockInfoDTO] = []
+
+        for product in products:
+            # Calculate product value
+            product_value = Decimal(str(product.quantity)) * product.get_current_price()
+            total_inventory_value += product_value
+
+            # Count metrics
+            if product.is_low_stock():
+                low_stock_products += 1
+            if product.is_expired:
+                expired_products += 1
+            if product.on_promotion:
+                products_on_promotion += 1
+
+            # Create product stock info
+            product_stock_infos.append(
+                ProductStockInfoDTO(
+                    product_id=product.id,
+                    product_name=product.name,
+                    current_quantity=product.quantity,
+                    min_quantity=product.min_quantity,
+                    unit_price=product.get_current_price(),
+                    total_value=product_value,
+                    is_low_stock=product.is_low_stock(),
+                    is_expired=product.is_expired,
+                    expiry_date=product.expiry_date,
+                )
+            )
+
+        # Get stock movements summary for the period (if dates provided)
+        stock_movements_summary: list[StockMovementSummaryDTO] = []
+        if period_start and period_end:
+            movements = self.stock_movement_repository.get_by_business_period(
+                business_id=self.business_id,
+                start_date=period_start,
+                end_date=period_end,
+            )
+
+            # Group by movement type
+            movements_by_type: dict[str, dict[str, Any]] = {}
+            for movement in movements:
+                movement_type = movement.movement_type.value
+                if movement_type not in movements_by_type:
+                    movements_by_type[movement_type] = {
+                        "total_quantity": 0,
+                        "number_of_movements": 0,
+                        "products_affected": set(),
+                    }
+                movements_by_type[movement_type]["total_quantity"] += movement.quantity
+                movements_by_type[movement_type]["number_of_movements"] += 1
+                movements_by_type[movement_type]["products_affected"].add(movement.product_id)
+
+            # Convert to DTOs
+            for movement_type, data in movements_by_type.items():
+                stock_movements_summary.append(
+                    StockMovementSummaryDTO(
+                        movement_type=movement_type,
+                        total_quantity=data["total_quantity"],
+                        number_of_movements=data["number_of_movements"],
+                        products_affected=len(data["products_affected"]),
+                    )
+                )
+
+        return InventoryReportDTO(
+            business_id=self.business_id,
+            period_start=period_start,
+            period_end=period_end,
+            total_products=total_products,
+            total_inventory_value=total_inventory_value,
+            low_stock_products=low_stock_products,
+            expired_products=expired_products,
+            products_on_promotion=products_on_promotion,
+            products=product_stock_infos,
+            stock_movements_summary=stock_movements_summary,
+            generated_at=timezone.now(),
+        )
+
+
+class GenerateStockReportUseCase:
+    """
+    Use case for generating stock report.
+
+    Stock Report = Mouvements de stock sur une période (historique)
+    - Entrées de stock (ENTRY)
+    - Sorties de stock (EXIT)
+    - Ajustements (ADJUSTMENT)
+    - Mouvements nets
+    - Historique des mouvements
+    """
+
+    def __init__(
+        self,
+        product_repository: ProductRepository,
+        stock_movement_repository: StockMovementRepository,
+        business_domain_service: BusinessDomainService,
+        business_id: UUID,
+        user_id: UUID,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> None:
+        """Initialize use case."""
+        self.product_repository = product_repository
+        self.stock_movement_repository = stock_movement_repository
+        self.business_domain_service = business_domain_service
+        self.business_id = business_id
+        self.user_id = user_id
+        self.start_date = start_date
+        self.end_date = end_date
+
+    @transaction.atomic
+    def execute(self) -> StockReportDTO:
+        """Execute stock report generation."""
+        # Validate user access
+        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have access to this business",
+                code="PERMISSION_DENIED",
+            )
+
+        # Validate and normalize date range (required for stock report)
+        try:
+            start_date, end_date = DateRangeValidationService.validate_date_range(
+                start_date=self.start_date,
+                end_date=self.end_date,
+                allow_future=False,
+            )
+        except ValueError as e:
+            raise BadRequestError(
+                detail=f"Invalid date range: {str(e)}",
+                code="INVALID_DATE_RANGE",
+            ) from e
+
+        # Get stock movements for the period
+        movements = self.stock_movement_repository.get_by_business_period(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        # Calculate movement metrics
+        stock_movements_in = 0
+        stock_movements_out = 0
+        movements_by_type: dict[str, dict[str, Any]] = {}
+
+        for movement in movements:
+            movement_type = movement.movement_type.value
+
+            if movement_type == StockMovementType.ENTRY.value:
+                stock_movements_in += movement.quantity
+            elif movement_type == StockMovementType.EXIT.value:
+                stock_movements_out += movement.quantity
+
+            if movement_type not in movements_by_type:
+                movements_by_type[movement_type] = {
+                    "total_quantity": 0,
+                    "number_of_movements": 0,
+                    "products_affected": set(),
+                }
+            movements_by_type[movement_type]["total_quantity"] += movement.quantity
+            movements_by_type[movement_type]["number_of_movements"] += 1
+            movements_by_type[movement_type]["products_affected"].add(movement.product_id)
+
+        net_stock_change = stock_movements_in - stock_movements_out
+
+        # Get current stock value
+        products = self.product_repository.get_by_business(business_id=self.business_id)
+        current_stock_value = sum(
+            Decimal(str(p.quantity)) * p.get_current_price() for p in products
+        )
+
+        # Group products by stock level
+        products_by_stock_level: dict[str, list[ProductStockInfoDTO]] = {
+            "low": [],
+            "normal": [],
+            "high": [],
+        }
+
+        for product in products:
+            product_value = Decimal(str(product.quantity)) * product.get_current_price()
+            product_info = ProductStockInfoDTO(
+                product_id=product.id,
+                product_name=product.name,
+                current_quantity=product.quantity,
+                min_quantity=product.min_quantity,
+                unit_price=product.get_current_price(),
+                total_value=product_value,
+                is_low_stock=product.is_low_stock(),
+                is_expired=product.is_expired,
+                expiry_date=product.expiry_date,
+            )
+
+            if product.is_low_stock():
+                products_by_stock_level["low"].append(product_info)
+            elif product.quantity > product.min_quantity * 2:
+                products_by_stock_level["high"].append(product_info)
+            else:
+                products_by_stock_level["normal"].append(product_info)
+
+        # Convert movements summary to DTOs
+        stock_movements_by_type: list[StockMovementSummaryDTO] = []
+        for movement_type, data in movements_by_type.items():
+            stock_movements_by_type.append(
+                StockMovementSummaryDTO(
+                    movement_type=movement_type,
+                    total_quantity=data["total_quantity"],
+                    number_of_movements=data["number_of_movements"],
+                    products_affected=len(data["products_affected"]),
+                )
+            )
+
+        return StockReportDTO(
+            business_id=self.business_id,
+            period_start=start_date,
+            period_end=end_date,
+            current_stock_value=current_stock_value,
+            stock_movements_in=stock_movements_in,
+            stock_movements_out=stock_movements_out,
+            net_stock_change=net_stock_change,
+            products_by_stock_level=products_by_stock_level,
+            stock_movements_by_type=stock_movements_by_type,
+            generated_at=timezone.now(),
+        )

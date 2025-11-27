@@ -12,7 +12,16 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from application.dto.notification_list_filter_dto import NotificationListFilterDTO
-from infrastructure.persistence.services.notification_service import NotificationService
+from application.use_cases.notification_use_cases import (
+    ArchiveNotificationUseCase,
+    GetNotificationUseCase,
+    GetUnreadCountUseCase,
+    ListNotificationsUseCase,
+    MarkAllNotificationsAsReadUseCase,
+    MarkNotificationAsReadUseCase,
+)
+from domain.notifications.entities import NotificationStatus
+from infrastructure.persistence.repositories import NotificationRepositoryImpl
 from presentation.serializers.notification_serializers import NotificationResponseSerializer
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
@@ -45,19 +54,15 @@ class NotificationViewSet(BaseViewSet):
             )
             filter_dto = NotificationListFilterDTO.from_payload(filter_payload)
 
-            notifications = NotificationService.get_user_notifications(
+            status_filter = NotificationStatus(filter_dto.status) if filter_dto.status else None
+
+            use_case = ListNotificationsUseCase(
+                notification_repository=NotificationRepositoryImpl(),
                 user_id=request.user.id,
-                status=filter_dto.status,
+                status=status_filter,
                 limit=QueryParamsValidator.MAX_PAGE_SIZE,
             )
-
-            # Check if error
-            if isinstance(notifications, dict) and "error" in notifications:
-                return self.error(
-                    message=notifications["error"],
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    code="NOTIFICATION_ERROR",
-                )
+            notifications = use_case.execute()
 
             notifications = self.apply_filtering_to_items(
                 notifications,
@@ -83,34 +88,23 @@ class NotificationViewSet(BaseViewSet):
     def retrieve(self, request: Request, pk: UUID) -> Response:
         """Get notification by ID."""
         try:
-            notification = NotificationService.get_notification(str(pk))
-
-            # Check if error
-            if isinstance(notification, dict) and "error" in notification:
-                return self.error(
-                    message=notification["error"],
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    code="NOTIFICATION_NOT_FOUND",
-                )
-
-            # Check if user owns this notification
-            if notification.user and notification.user.id != request.user.id:
-                return self.error(
-                    message="You don't have access to this notification",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    code="PERMISSION_DENIED",
-                )
+            use_case = GetNotificationUseCase(
+                notification_repository=NotificationRepositoryImpl(),
+                notification_id=pk,
+                user_id=request.user.id,
+            )
+            notification = use_case.execute()
 
             data = {
                 "id": str(notification.id),
-                "notification_type": notification.notification_type,
+                "notification_type": notification.notification_type.value,
                 "title": notification.title,
                 "message": notification.message,
                 "related_entity_type": notification.related_entity_type,
                 "related_entity_id": (
                     str(notification.related_entity_id) if notification.related_entity_id else None
                 ),
-                "status": notification.status,
+                "status": notification.status.value,
                 "read_at": notification.read_at.isoformat() if notification.read_at else None,
                 "created_at": notification.created_at.isoformat(),
             }
@@ -133,23 +127,12 @@ class NotificationViewSet(BaseViewSet):
     def mark_read(self, request: Request, pk: UUID) -> Response:
         """Mark a notification as read."""
         try:
-            result = NotificationService.mark_as_read(str(pk))
-
-            # Check if error
-            if isinstance(result, dict) and "error" in result:
-                return self.error(
-                    message=result["error"],
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    code="NOTIFICATION_NOT_FOUND",
-                )
-
-            # Check if user owns this notification
-            if result.user and result.user.id != request.user.id:
-                return self.error(
-                    message="You don't have access to this notification",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    code="PERMISSION_DENIED",
-                )
+            use_case = MarkNotificationAsReadUseCase(
+                notification_repository=NotificationRepositoryImpl(),
+                notification_id=pk,
+                user_id=request.user.id,
+            )
+            use_case.execute()
 
             return self.success(
                 message="Notification marked as read",
@@ -168,15 +151,11 @@ class NotificationViewSet(BaseViewSet):
     def mark_all_read(self, request: Request) -> Response:
         """Mark all notifications as read."""
         try:
-            count = NotificationService.mark_all_as_read(request.user.id)
-
-            # Check if error
-            if isinstance(count, dict) and "error" in count:
-                return self.error(
-                    message=count["error"],
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    code="NOTIFICATION_ERROR",
-                )
+            use_case = MarkAllNotificationsAsReadUseCase(
+                notification_repository=NotificationRepositoryImpl(),
+                user_id=request.user.id,
+            )
+            count = use_case.execute()
 
             return self.success(
                 message=f"{count} notification(s) marked as read",
@@ -196,33 +175,12 @@ class NotificationViewSet(BaseViewSet):
     def archive_notification(self, request: Request, pk: UUID) -> Response:
         """Archive a notification."""
         try:
-            notification = NotificationService.get_notification(str(pk))
-
-            # Check if error
-            if isinstance(notification, dict) and "error" in notification:
-                return self.error(
-                    message=notification["error"],
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    code="NOTIFICATION_NOT_FOUND",
-                )
-
-            # Check if user owns this notification
-            if notification.user and notification.user.id != request.user.id:
-                return self.error(
-                    message="You don't have access to this notification",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    code="PERMISSION_DENIED",
-                )
-
-            result = NotificationService.archive_notification(str(pk))
-
-            # Check if error
-            if isinstance(result, dict) and "error" in result:
-                return self.error(
-                    message=result["error"],
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    code="NOTIFICATION_NOT_FOUND",
-                )
+            use_case = ArchiveNotificationUseCase(
+                notification_repository=NotificationRepositoryImpl(),
+                notification_id=pk,
+                user_id=request.user.id,
+            )
+            use_case.execute()
 
             return self.success(
                 message="Notification archived successfully",
@@ -241,19 +199,11 @@ class NotificationViewSet(BaseViewSet):
     def unread_count(self, request: Request) -> Response:
         """Get count of unread notifications."""
         try:
-            notifications = NotificationService.get_user_notifications(
-                user_id=request.user.id, status="UNREAD"
+            use_case = GetUnreadCountUseCase(
+                notification_repository=NotificationRepositoryImpl(),
+                user_id=request.user.id,
             )
-
-            # Check if error
-            if isinstance(notifications, dict) and "error" in notifications:
-                return self.error(
-                    message=notifications["error"],
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    code="NOTIFICATION_ERROR",
-                )
-
-            count = len(notifications) if hasattr(notifications, "__len__") else 0
+            count = use_case.execute()
 
             return self.success(
                 message="Unread count retrieved successfully",

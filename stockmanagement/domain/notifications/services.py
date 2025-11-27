@@ -205,6 +205,88 @@ class NotificationDomainService:
         logger.info(f"Created {len(notifications)} notifications for expired product {product_id}")
         return notifications
 
+    def notify_low_stock(
+        self,
+        product_id: UUID,
+        product_name: str,
+        business_id: UUID,
+        current_quantity: int,
+        min_quantity: int,
+    ) -> list[Notification]:
+        """
+        Create notifications for business owner and managers about low stock product.
+
+        Args:
+            product_id: ID of the product with low stock
+            product_name: Name of the product
+            business_id: ID of the business that owns the product
+            current_quantity: Current stock quantity
+            min_quantity: Minimum required quantity
+
+        Returns:
+            List of created notifications
+        """
+        notifications: list[Notification] = []
+
+        # Get business to find owner
+        business = self.business_repository.get_by_id(business_id)
+        if not business:
+            logger.warning(f"Business {business_id} not found for low stock notification")
+            return notifications
+
+        # Check for recent notifications to avoid duplicates
+        if self._has_recent_notification(
+            product_id=product_id,
+            business_id=business_id,
+            notification_type=NotificationType.CRITICAL_STOCK,
+            hours_threshold=24,
+        ):
+            logger.info(
+                f"Recent notification already exists for low stock product {product_id}, skipping"
+            )
+            return notifications
+
+        # Create message
+        message = (
+            f"⚠️ Stock critique: Le produit '{product_name}' "
+            f"est en rupture de stock. Quantité actuelle: {current_quantity}, "
+            f"Minimum requis: {min_quantity}. "
+            f"Veuillez réapprovisionner rapidement."
+        )
+        title = f"Rupture de stock: {product_name}"
+
+        # Notify owner
+        if business.owner_id:
+            notification = self._create_notification(
+                user_id=business.owner_id,
+                business_id=business_id,
+                notification_type=NotificationType.CRITICAL_STOCK,
+                title=title,
+                message=message,
+                related_entity_type="product",
+                related_entity_id=product_id,
+            )
+            notifications.append(notification)
+
+        # Notify managers
+        managers = self.business_member_repository.get_managers(business_id)
+        for manager in managers:
+            notification = self._create_notification(
+                user_id=manager.user_id,
+                business_id=business_id,
+                notification_type=NotificationType.CRITICAL_STOCK,
+                title=title,
+                message=message,
+                related_entity_type="product",
+                related_entity_id=product_id,
+            )
+            notifications.append(notification)
+
+        logger.info(
+            f"Created {len(notifications)} notifications for low stock product {product_id}"
+        )
+        return notifications
+
     def _create_notification(
         self,
         user_id: UUID,

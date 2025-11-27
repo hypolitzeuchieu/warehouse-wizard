@@ -34,6 +34,9 @@ from infrastructure.persistence.repositories.notification_repositories import (
 from infrastructure.persistence.repositories.otp_repositories import (
     OTPRepositoryImpl,
 )
+from infrastructure.persistence.repositories.report_repositories import (
+    ReportRepositoryImpl,
+)
 from infrastructure.persistence.repositories.sales_repositories import (
     InvoiceLineRepositoryImpl,
     InvoiceLogRepositoryImpl,
@@ -70,6 +73,8 @@ __all__ = [
     "InvoiceLogRepositoryImpl",
     "OrderRepositoryImpl",
     "OrderItemRepositoryImpl",
+    # Report repositories
+    "ReportRepositoryImpl",
     # Finance repositories
     "ExpenseRepositoryImpl",
     "ExpenseAuditLogRepositoryImpl",
