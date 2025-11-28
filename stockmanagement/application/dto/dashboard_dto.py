@@ -86,11 +86,118 @@ class DashboardSummaryDTO:
     """DTO for complete dashboard summary."""
 
     business_id: UUID
-    period: str  # today, week, month, year
+    period_start: datetime
+    period_end: datetime
     revenue: RevenueMetricsDTO
     expenses: ExpenseMetricsDTO
     profit: ProfitMetricsDTO
     inventory: InventoryMetricsDTO
     customers: CustomerMetricsDTO
     top_products: list[TopProductDTO]
+    generated_at: datetime
+
+
+@dataclass
+class DailyMetricsDTO:
+    """DTO for daily metrics."""
+
+    date: datetime
+    complete_revenue: Decimal
+    credit_revenue: Decimal
+    total_revenue: Decimal
+    profit: Decimal
+    gross_profit: Decimal
+    net_profit: Decimal
+    total_sales: int
+    total_expenses: Decimal
+    credit_outstanding: Decimal
+
+
+@dataclass
+class TopCategoryDTO:
+    """DTO for top category."""
+
+    category_id: UUID
+    category_name: str
+    total_revenue: Decimal
+    total_quantity_sold: int
+    number_of_sales: int
+
+
+@dataclass
+class RecentSaleDTO:
+    """DTO for recent sale."""
+
+    invoice_id: UUID
+    invoice_number: int
+    customer_name: str | None
+    total: Decimal
+    status: str
+    created_at: datetime
+
+
+@dataclass
+class ProductStatisticsDTO:
+    """DTO for product statistics."""
+
+    product_id: UUID
+    product_name: str
+    date: datetime
+    quantity_sold: int
+    revenue: Decimal
+    cost: Decimal
+    profit: Decimal
+    margin_percentage: Decimal
+
+
+@dataclass
+class ProductMarginDTO:
+    """DTO for product margin."""
+
+    product_id: UUID
+    product_name: str
+    total_quantity_sold: int
+    total_revenue: Decimal
+    total_cost: Decimal
+    total_profit: Decimal
+    margin_percentage: Decimal
+
+
+@dataclass
+class PeriodTotalsDTO:
+    """DTO for period totals."""
+
+    total_revenue: Decimal
+    total_sales: int
+    credit_outstanding: Decimal
+    total_expenses: Decimal
+    gross_profit: Decimal
+    net_profit: Decimal
+
+
+@dataclass
+class SalesPerformanceDTO:
+    """DTO for sales performance summary."""
+
+    credit_revenue: Decimal
+    total_revenue: Decimal
+    complete_revenue: Decimal
+    profit: Decimal
+
+
+@dataclass
+class DashboardDailyResponseDTO:
+    """DTO for daily dashboard response."""
+
+    business_id: UUID
+    period_start: datetime
+    period_end: datetime
+    totals: PeriodTotalsDTO
+    daily_data: list[DailyMetricsDTO]
+    sales_performance: SalesPerformanceDTO
+    top_products: list[TopProductDTO]
+    top_categories: list[TopCategoryDTO]
+    recent_sales: list[RecentSaleDTO]
+    product_statistics: dict[str, list[ProductStatisticsDTO]]
+    product_margins: list[ProductMarginDTO]
     generated_at: datetime

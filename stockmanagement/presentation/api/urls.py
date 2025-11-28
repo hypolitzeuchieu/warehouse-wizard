@@ -9,6 +9,7 @@ from presentation.views import (
 from presentation.viewsets.business_viewset import BusinessViewSet
 from presentation.viewsets.category_viewset import CategoryViewSet
 from presentation.viewsets.customer_viewset import CustomerViewSet
+from presentation.viewsets.dashboard_viewset import DashboardViewSet
 from presentation.viewsets.finance_viewset import FinanceViewSet
 from presentation.viewsets.inventory_viewset import InventoryViewSet
 from presentation.viewsets.notification_viewset import NotificationViewSet
@@ -22,6 +23,7 @@ app_name = "api"
 # Create router for ViewSets
 router = DefaultRouter()
 router.register(r"businesses", BusinessViewSet, basename="business")
+router.register(r"dashboard", DashboardViewSet, basename="dashboard")
 router.register(r"notifications", NotificationViewSet, basename="notification")
 router.register(r"inventory", InventoryViewSet, basename="inventory")
 router.register(r"categories", CategoryViewSet, basename="category")

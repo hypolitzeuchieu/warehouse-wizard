@@ -24,23 +24,15 @@ from application.use_cases.business_use_cases import (
     RemoveBusinessMemberUseCase,
     UpdateBusinessUseCase,
 )
-from application.use_cases.dashboard_use_cases import GetDashboardSummaryUseCase
 from application.use_cases.inventory_use_cases import (
     ListCategoriesUseCase,
     ListSubCategoriesUseCase,
 )
 from domain.business.services import BusinessDomainService
-from domain.dashboard.services import DashboardMetricsService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
     CategoryRepositoryImpl,
-    CreditRepositoryImpl,
-    ExpenseRepositoryImpl,
-    InvoiceLineRepositoryImpl,
-    InvoiceRepositoryImpl,
-    PayrollRepositoryImpl,
-    ProductRepositoryImpl,
     SubCategoryRepositoryImpl,
     UserRepositoryImpl,
 )
@@ -55,7 +47,6 @@ from presentation.serializers.inventory_serializers import (
     CategoryResponseSerializer,
     SubCategoryResponseSerializer,
 )
-from shared.security import QueryParamsValidator
 from shared.services import QRCodeService
 from shared.views.base_viewset import BaseViewSet
 
@@ -502,123 +493,6 @@ class BusinessViewSet(BaseViewSet):
                 message=str(e),
                 status_code=status.HTTP_400_BAD_REQUEST,
                 code="INVALID_QR_CODE",
-            )
-        except Exception as e:
-            return self.handle_exception(e)
-
-    @swagger_auto_schema(
-        operation_summary="Get dashboard summary",
-        operation_description="Get complete dashboard summary with all metrics for a business.",
-        responses={200: "Dashboard summary", 403: "Permission denied"},
-        tags=["Business"],
-    )
-    @action(
-        detail=True,
-        methods=["get"],
-        url_path="dashboard",
-    )
-    def get_dashboard(self, request: Request, pk: UUID) -> Response:
-        """Get dashboard summary for a business."""
-        try:
-
-            # Check if user has access to business
-            if not self._get_business_domain_service().user_has_access(pk, request.user.id):
-                return self.error(
-                    message="You don't have access to this business",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    code="PERMISSION_DENIED",
-                )
-            # Get and validate period from query params
-            period = QueryParamsValidator.validate_enum(
-                request.query_params.get("period", "month"),
-                allowed_values=["day", "week", "month", "year"],
-                param_name="period",
-            )
-
-            # Create dashboard metrics service
-            metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
-                business_id=pk,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
-            )
-
-            use_case = GetDashboardSummaryUseCase(
-                dashboard_metrics_service=metrics_service,
-                business_domain_service=self._get_business_domain_service(),
-                business_id=pk,
-                user_id=request.user.id,
-                period=period,
-            )
-            dashboard_dto = use_case.execute()
-
-            return self.success(
-                message="Dashboard summary retrieved successfully",
-                data={
-                    "business_id": str(dashboard_dto.business_id),
-                    "period": dashboard_dto.period,
-                    "revenue": {
-                        "total_revenue": str(dashboard_dto.revenue.total_revenue),
-                        "revenue_today": str(dashboard_dto.revenue.revenue_today),
-                        "revenue_this_week": str(dashboard_dto.revenue.revenue_this_week),
-                        "revenue_this_month": str(dashboard_dto.revenue.revenue_this_month),
-                        "revenue_this_year": str(dashboard_dto.revenue.revenue_this_year),
-                        "average_order_value": str(dashboard_dto.revenue.average_order_value),
-                        "total_orders": dashboard_dto.revenue.total_orders,
-                        "orders_today": dashboard_dto.revenue.orders_today,
-                        "orders_this_week": dashboard_dto.revenue.orders_this_week,
-                        "orders_this_month": dashboard_dto.revenue.orders_this_month,
-                    },
-                    "expenses": {
-                        "total_expenses": str(dashboard_dto.expenses.total_expenses),
-                        "expenses_today": str(dashboard_dto.expenses.expenses_today),
-                        "expenses_this_week": str(dashboard_dto.expenses.expenses_this_week),
-                        "expenses_this_month": str(dashboard_dto.expenses.expenses_this_month),
-                        "expenses_this_year": str(dashboard_dto.expenses.expenses_this_year),
-                        "salary_expenses": str(dashboard_dto.expenses.salary_expenses),
-                        "other_expenses": str(dashboard_dto.expenses.other_expenses),
-                    },
-                    "profit": {
-                        "total_profit": str(dashboard_dto.profit.total_profit),
-                        "profit_today": str(dashboard_dto.profit.profit_today),
-                        "profit_this_week": str(dashboard_dto.profit.profit_this_week),
-                        "profit_this_month": str(dashboard_dto.profit.profit_this_month),
-                        "profit_margin_percentage": str(
-                            dashboard_dto.profit.profit_margin_percentage
-                        ),
-                    },
-                    "inventory": {
-                        "total_products": dashboard_dto.inventory.total_products,
-                        "low_stock_products": dashboard_dto.inventory.low_stock_products,
-                        "expired_products": dashboard_dto.inventory.expired_products,
-                        "total_inventory_value": str(dashboard_dto.inventory.total_inventory_value),
-                        "products_on_promotion": dashboard_dto.inventory.products_on_promotion,
-                    },
-                    "customers": {
-                        "total_customers": dashboard_dto.customers.total_customers,
-                        "new_customers_today": dashboard_dto.customers.new_customers_today,
-                        "new_customers_this_week": dashboard_dto.customers.new_customers_this_week,
-                        "new_customers_this_month": dashboard_dto.customers.new_customers_this_month,
-                        "active_customers": dashboard_dto.customers.active_customers,
-                        "total_credit_amount": str(dashboard_dto.customers.total_credit_amount),
-                        "overdue_credit_amount": str(dashboard_dto.customers.overdue_credit_amount),
-                    },
-                    "top_products": [
-                        {
-                            "product_id": str(p.product_id),
-                            "product_name": p.product_name,
-                            "total_sold": p.total_sold,
-                            "total_revenue": str(p.total_revenue),
-                            "quantity_available": p.quantity_available,
-                        }
-                        for p in dashboard_dto.top_products
-                    ],
-                    "generated_at": dashboard_dto.generated_at.isoformat(),
-                },
-                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)
