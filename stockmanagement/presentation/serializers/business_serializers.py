@@ -11,13 +11,23 @@ from application.dto.business_dto import (
     BusinessResponseDTO,
     BusinessUpdateDTO,
 )
+from presentation.serializers.user_serializers import validate_password_strength
 
 
 class BusinessCreateSerializer(serializers.Serializer):
     """Serializer for business creation."""
 
     name = serializers.CharField(max_length=255, required=True)
-    unique_name = serializers.CharField(max_length=100, required=True)
+    unique_name = serializers.RegexField(
+        regex=r"^[a-z0-9-]+$",
+        max_length=100,
+        required=True,
+        min_length=3,
+        error_messages={
+            "invalid": "Unique name can only contain lowercase letters, numbers, and hyphens"
+        },
+        help_text="Unique identifier for the business (lowercase, alphanumeric, hyphens only)",
+    )
     description = serializers.CharField(required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
     phone_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
@@ -64,16 +74,50 @@ class BusinessUpdateSerializer(serializers.Serializer):
 class BusinessMemberCreateSerializer(serializers.Serializer):
     """Serializer for adding business member."""
 
-    user_id = serializers.UUIDField(required=True)
+    user_id = serializers.UUIDField(required=False, allow_null=True)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    phone_number = serializers.CharField(
+        max_length=30, required=False, allow_blank=True, allow_null=True
+    )
+    name = serializers.CharField(max_length=150, required=False, allow_blank=True, allow_null=True)
+    password = serializers.CharField(
+        write_only=True, min_length=8, required=False, allow_blank=True, allow_null=True
+    )
     role = serializers.ChoiceField(
-        choices=["manager", "cashier", "stock_keeper", "delivery"],
+        choices=["manager", "cashier", "stock_keeper", "delivery", "partner", "wholesaler"],
         required=True,
     )
+
+    def validate(self, attrs):
+        """Validate serializer data."""
+        user_id = attrs.get("user_id")
+        email = attrs.get("email")
+        phone_number = attrs.get("phone_number")
+        name = attrs.get("name")
+
+        if not user_id and not email and not phone_number:
+            raise serializers.ValidationError(
+                "Either user_id or email/phone_number must be provided"
+            )
+
+        if not user_id and not name:
+            raise serializers.ValidationError("Name is required when creating a new user")
+
+        if attrs.get("role") == "owner":
+            raise serializers.ValidationError("Cannot create a member with owner role")
+        if attrs.get("password"):
+            attrs["password"] = validate_password_strength(attrs.get("password"))
+
+        return attrs
 
     def to_dto(self) -> BusinessMemberCreateDTO:
         """Convert to DTO."""
         return BusinessMemberCreateDTO(
-            user_id=self.validated_data["user_id"],
+            user_id=self.validated_data.get("user_id"),
+            email=self.validated_data.get("email"),
+            phone_number=self.validated_data.get("phone_number"),
+            name=self.validated_data.get("name"),
+            password=self.validated_data.get("password"),
             role=self.validated_data["role"],
         )
 
@@ -137,7 +181,8 @@ class BusinessMemberSerializer(serializers.Serializer):
             }
         )
         serializer.is_valid(raise_exception=True)
-        return serializer.data
+        data = serializer.data
+        return data
 
 
 class BusinessResponseSerializer(serializers.Serializer):

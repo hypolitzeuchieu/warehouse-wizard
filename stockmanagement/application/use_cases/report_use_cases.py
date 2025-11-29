@@ -179,11 +179,32 @@ class GenerateAndSaveReportUseCase:
     @transaction.atomic
     def execute(self) -> ReportResponseDTO:
         """Execute report generation and saving."""
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        if self.report_type == ReportType.SALES:
+            if not self.business_domain_service.can_generate_sales_report(
+                self.business_id, self.user_id
+            ):
+                raise ForbiddenError(
+                    detail="You don't have permission to generate sales reports for this business",
+                    code="PERMISSION_DENIED",
+                )
+        elif self.report_type == ReportType.INVENTORY:
+            if not self.business_domain_service.can_generate_inventory_report(
+                self.business_id, self.user_id
+            ):
+                raise ForbiddenError(
+                    detail="You don't have permission to generate inventory reports for this business",
+                    code="PERMISSION_DENIED",
+                )
+        elif self.report_type == ReportType.STOCK:
+            if not self.business_domain_service.can_generate_stock_report(
+                self.business_id, self.user_id
+            ):
+                raise ForbiddenError(
+                    detail="You don't have permission to generate stock reports for this business",
+                    code="PERMISSION_DENIED",
+                )
+        else:
+            raise ValueError(f"Unknown report type: {self.report_type}")
 
         self._ensure_date_range()
         self.generated_by_label = self._get_generated_by_label()

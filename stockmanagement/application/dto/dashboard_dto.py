@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 
@@ -201,3 +202,136 @@ class DashboardDailyResponseDTO:
     product_statistics: dict[str, list[ProductStatisticsDTO]]
     product_margins: list[ProductMarginDTO]
     generated_at: datetime
+
+
+@dataclass
+class TrendsDTO:
+    """DTO for trends comparison."""
+
+    previous_period_start: datetime
+    previous_period_end: datetime
+    current_value: Decimal
+    previous_value: Decimal
+    change_amount: Decimal
+    change_percentage: Decimal
+    trend_direction: str
+
+
+@dataclass
+class ProductInfoDTO:
+    """DTO for product information."""
+
+    product_id: UUID
+    product_name: str
+    category_id: UUID
+    category_name: str
+    subcategory_id: UUID | None
+    subcategory_name: str | None
+
+
+@dataclass
+class TopCustomerDTO:
+    """DTO for top customer."""
+
+    customer_id: UUID | None
+    customer_name: str
+    total_purchases: int
+    total_revenue: Decimal
+
+
+@dataclass
+class ProductDetailStatisticsDTO:
+    """DTO for detailed product statistics."""
+
+    product: ProductInfoDTO
+    period_start: datetime
+    period_end: datetime
+    totals: dict[str, Decimal | int]
+    daily_data: list[ProductStatisticsDTO]
+    trends: dict[str, TrendsDTO]
+    top_customers: list[TopCustomerDTO]
+
+
+@dataclass
+class CategoryInfoDTO:
+    """DTO for category information."""
+
+    category_id: UUID
+    category_name: str
+
+
+@dataclass
+class CategoryStatisticsDTO:
+    """DTO for category statistics."""
+
+    category: CategoryInfoDTO
+    period_start: datetime
+    period_end: datetime
+    totals: dict[str, Decimal | int]
+    top_products: list[TopProductDTO]
+    daily_data: list[dict[str, Any]]
+    trends: dict[str, TrendsDTO]
+
+
+@dataclass
+class SubCategoryInfoDTO:
+    """DTO for subcategory information."""
+
+    subcategory_id: UUID
+    subcategory_name: str
+    category_id: UUID
+    category_name: str
+
+
+@dataclass
+class SubCategoryStatisticsDTO:
+    """DTO for subcategory statistics."""
+
+    subcategory: SubCategoryInfoDTO
+    period_start: datetime
+    period_end: datetime
+    totals: dict[str, Decimal | int]
+    top_products: list[TopProductDTO]
+    daily_data: list[dict[str, Any]]
+    trends: dict[str, TrendsDTO]
+
+
+@dataclass
+class CashierInfoDTO:
+    """DTO for cashier information."""
+
+    cashier_id: UUID
+    cashier_name: str
+    cashier_email: str
+    phone_number: str | None
+    avatar_url: str | None
+    role: str
+    is_active: bool
+    joined_at: datetime
+    left_at: datetime | None
+
+
+@dataclass
+class CashierDailyDataDTO:
+    """DTO for cashier daily data."""
+
+    date: datetime
+    total_sales: int
+    total_revenue: Decimal
+    total_quantity_sold: int
+    average_sale_value: Decimal
+    customers_served: int
+
+
+@dataclass
+class CashierStatisticsDTO:
+    """DTO for cashier statistics."""
+
+    cashier: CashierInfoDTO
+    period_start: datetime
+    period_end: datetime
+    totals: dict[str, Decimal | int]
+    lifetime_totals: dict[str, Decimal | int]
+    daily_data: list[CashierDailyDataDTO]
+    trends: dict[str, TrendsDTO]
+    ranking: int | None

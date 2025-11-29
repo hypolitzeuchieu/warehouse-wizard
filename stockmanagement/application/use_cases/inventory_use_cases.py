@@ -167,7 +167,7 @@ class CreateCategoryUseCase:
         self.user_id = user_id
 
     def execute(self, dto: CategoryCreateDTO) -> CategoryResponseDTO:
-        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+        if not self.business_domain_service.can_create_inventory(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have permission to create categories for this business",
                 code="PERMISSION_DENIED",
@@ -242,7 +242,7 @@ class UpdateCategoryUseCase:
         if not category:
             raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.can_user_manage_members(
+        if not self.business_domain_service.can_create_inventory(
             category.business_id, self.user_id
         ):
             raise ForbiddenError(
@@ -287,7 +287,7 @@ class DeleteCategoryUseCase:
         if not category:
             raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.can_user_manage_members(
+        if not self.business_domain_service.can_create_inventory(
             category.business_id, self.user_id
         ):
             raise ForbiddenError(
@@ -348,7 +348,7 @@ class CreateSubCategoryUseCase:
         self.user_id = user_id
 
     def execute(self, dto: SubCategoryCreateDTO) -> SubCategoryResponseDTO:
-        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+        if not self.business_domain_service.can_create_inventory(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have permission to create subcategories for this business",
                 code="PERMISSION_DENIED",
@@ -442,7 +442,7 @@ class UpdateSubCategoryUseCase:
         if not subcategory:
             raise NotFoundError(detail="Subcategory not found", code="SUBCATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.can_user_manage_members(
+        if not self.business_domain_service.can_create_inventory(
             subcategory.business_id, self.user_id
         ):
             raise ForbiddenError(
@@ -487,7 +487,7 @@ class DeleteSubCategoryUseCase:
         if not subcategory:
             raise NotFoundError(detail="Subcategory not found", code="SUBCATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.can_user_manage_members(
+        if not self.business_domain_service.can_create_inventory(
             subcategory.business_id, self.user_id
         ):
             raise ForbiddenError(
@@ -506,6 +506,7 @@ class CreateProductUseCase:
         product_repository: ProductRepository,
         category_repository: CategoryRepository,
         subcategory_repository: SubCategoryRepository,
+        business_domain_service: BusinessDomainService,
         business_id: UUID,
         user_id: UUID,
     ) -> None:
@@ -513,12 +514,18 @@ class CreateProductUseCase:
         self.product_repository = product_repository
         self.category_repository = category_repository
         self.subcategory_repository = subcategory_repository
+        self.business_domain_service = business_domain_service
         self.business_id = business_id
         self.user_id = user_id
 
     def execute(self, dto: ProductCreateDTO) -> ProductResponseDTO:
         """Execute product creation."""
-        # Validate category exists
+        if not self.business_domain_service.can_modify_products(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to create products for this business",
+                code="PERMISSION_DENIED",
+            )
+
         category = self.category_repository.get_by_id(dto.category_id)
         if not category:
             logger.error(f"Category {dto.category_id} not found in database")
@@ -997,10 +1004,10 @@ class UpdateProductUseCase:
 
     def execute(self, dto: ProductUpdateDTO) -> ProductResponseDTO:
         """Execute product update."""
-        # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+        # Check if user can modify products
+        if not self.business_domain_service.can_modify_products(self.business_id, self.user_id):
             raise ForbiddenError(
-                detail="You don't have access to this business",
+                detail="You don't have permission to modify products for this business",
                 code="PERMISSION_DENIED",
             )
 
@@ -1150,10 +1157,10 @@ class DeleteProductUseCase:
 
     def execute(self) -> None:
         """Execute product deletion."""
-        # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+        # Check if user can modify products
+        if not self.business_domain_service.can_modify_products(self.business_id, self.user_id):
             raise ForbiddenError(
-                detail="You don't have access to this business",
+                detail="You don't have permission to delete products for this business",
                 code="PERMISSION_DENIED",
             )
 

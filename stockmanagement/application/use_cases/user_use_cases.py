@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID, uuid4
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.tokens import RefreshToken as JWTRefreshToken
@@ -282,13 +283,6 @@ class LoginUseCase:
                 status_code=403,
             )
 
-        if not user_model.email_verified:
-            raise BaseAPIException(
-                detail="Please verify your email/phone with OTP first.",
-                code="EMAIL_NOT_VERIFIED",
-                status_code=403,
-            )
-
         self.user_domain_service.start_session(
             user_id=user_model.id,
             device_id=dto.device_id,
@@ -348,7 +342,7 @@ class LoginUseCase:
                 created_at=user_model.created_at,
                 updated_at=user_model.updated_at,
             ),
-            expires_in=3600,  # 1 hour
+            expires_in=int(settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60),
         )
 
 
@@ -400,13 +394,19 @@ class RefreshTokenUseCase:
             )
 
         user = self.user_repository.get_by_id(refresh_token.user_id)
-        if not user or not user.is_active:
+        if not user:
             raise BaseAPIException(
-                detail="User not found or inactive",
+                detail="User not found",
                 code="USER_NOT_FOUND",
                 status_code=404,
             )
 
+        if not user.is_active:
+            raise BaseAPIException(
+                detail="Your account has been disabled. Please contact support.",
+                code="ACCOUNT_DISABLED",
+                status_code=403,
+            )
         try:
             JWTBlacklistService.blacklist_tokens_from_refresh_token(
                 refresh_token_string=dto.refresh_token,
@@ -429,7 +429,7 @@ class RefreshTokenUseCase:
         return RefreshTokenResponseDTO(
             access_token=tokens["access"],
             refresh_token=tokens["refresh"],
-            expires_in=3600,  # 1 hour
+            expires_in=int(settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60),
         )
 
 

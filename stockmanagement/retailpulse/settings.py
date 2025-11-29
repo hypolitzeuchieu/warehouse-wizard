@@ -134,21 +134,21 @@ if DEBUG:
     MIDDLEWARE.insert(5, "debug_toolbar.middleware.DebugToolbarMiddleware")
 
 # CORS settings
-CORS_ALLOWED_ALL_ORIGINS = True  # ⚠️ False in production
+CORS_ALLOWED_ALL_ORIGINS = os.getenv("CORS_ALLOWED_ALL_ORIGINS", "False").lower() == "true"
 CORS_ALLOWED_ORIGINS = [
-    os.getenv("FRONTEND_URL"),
-]
+    origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()
+] or ([os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else [])
 CORS_ORIGIN_ALLOW_ALL = False
 CORS_EXPOSE_HEADERS = ["Content-Type", "X-CSRFToken", "X-Refresh-Token"]
 CORS_ALLOW_CREDENTIALS = True
 
 # CSRF settings
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SECURE = False  # ⚠️ True in production HTTPS
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "False").lower() == "true"
 
 # Session settings
-SESSION_COOKIE_SECURE = False  # ⚠️ True in production HTTPS
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "False").lower() == "true"
 SESSION_COOKIE_SAMESITE = "Lax"
 
 # Security settings
@@ -157,8 +157,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
-SECURE_SSL_REDIRECT = False  # ⚠️ True in production HTTPS
-
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "False").lower() == "true"
 ROOT_URLCONF = "retailpulse.urls"
 
 TEMPLATES = [

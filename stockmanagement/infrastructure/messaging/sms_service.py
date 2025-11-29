@@ -104,3 +104,40 @@ class SMSService:
         except Exception as e:
             logger.error(f"Failed to send welcome SMS to {phone_number}: {str(e)}")
             return False
+
+    @staticmethod
+    def send_member_credentials_sms(
+        phone_number: str,
+        username: str,
+        password: str,
+        business_name: str,
+        role: str,
+        email: str | None = None,
+    ) -> bool:
+        """Send member credentials via SMS."""
+        try:
+            message = (
+                f"Hello {username},\n\n" f"You've been added as {role} to {business_name}.\n\n"
+            )
+
+            if email:
+                message += f"Email: {email}\n"
+
+            message += (
+                f"Password: {password}\n\n"
+                f"Please login and change your password.\n\n"
+                f"If you didn't expect this, contact support."
+            )
+
+            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            client.messages.create(
+                body=message,
+                from_=settings.TWILIO_PHONE_NUMBER,
+                to=phone_number,
+            )
+
+            logger.info(f"Member credentials SMS sent to {phone_number}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send member credentials SMS to {phone_number}: {str(e)}")
+            return False

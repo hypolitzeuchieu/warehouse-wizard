@@ -315,6 +315,7 @@ class BusinessViewSet(BaseViewSet):
                 business_repository=BusinessRepositoryImpl(),
                 business_member_repository=BusinessMemberRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
+                user_repository=UserRepositoryImpl(),
                 business_id=pk,
                 user_id=request.user.id,
             )
@@ -322,8 +323,14 @@ class BusinessViewSet(BaseViewSet):
 
             member_data = BusinessMemberSerializer.from_dto(member_dto)
 
+            user_created = not dto.user_id and (dto.email or dto.phone_number)
+
+            message = "Business member added successfully"
+            if user_created:
+                message += ". Credentials have been sent to the member via email/SMS."
+
             return self.success(
-                message="Business member added successfully",
+                message=message,
                 data=member_data,
                 status_code=status.HTTP_201_CREATED,
             )
@@ -430,6 +437,7 @@ class BusinessViewSet(BaseViewSet):
         """Remove a member from the business."""
         try:
             use_case = RemoveBusinessMemberUseCase(
+                business_repository=BusinessRepositoryImpl(),
                 business_member_repository=BusinessMemberRepositoryImpl(),
                 business_domain_service=self._get_business_domain_service(),
                 business_id=pk,

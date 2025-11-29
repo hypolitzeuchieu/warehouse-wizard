@@ -18,10 +18,15 @@ from domain.business.repositories import (
     BusinessRepository,
 )
 from domain.business.services import BusinessDomainService
-from domain.users.entities import UserRole
+from domain.users.entities import AuthMethod, User, UserRole
 from domain.users.repositories import UserRepository
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
 from shared.services.qr_code_service import QRCodeService
+from shared.utils.password_generator import generate_secure_password
+from tasks.member_tasks import (
+    send_member_credentials_email_task,
+    send_member_credentials_sms_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +61,12 @@ class CreateBusinessUseCase:
                 code="ACCOUNT_INACTIVE",
             )
 
-        # Check if unique_name already exists
+        if not user.email_verified:
+            raise BadRequestError(
+                detail="User account is not verified. Please verify your Account before creating a business.",
+                code="ACCOUNT_NOT_VERIFIED",
+            )
+
         existing = self.business_repository.get_by_unique_name(dto.unique_name)
         if existing:
             raise BadRequestError(
@@ -64,7 +74,6 @@ class CreateBusinessUseCase:
                 code="UNIQUE_NAME_EXISTS",
             )
 
-        # Create business entity
         business = Business(
             id=uuid4(),
             name=dto.name,
@@ -74,7 +83,7 @@ class CreateBusinessUseCase:
             address=dto.address,
             phone_number=dto.phone_number,
             email=dto.email,
-            qr_code_url=None,  # Will be generated later
+            qr_code_url=None,
             logo_url=None,
             is_active=True,
             created_at=timezone.now(),
@@ -83,8 +92,11 @@ class CreateBusinessUseCase:
         )
 
         business = self.business_repository.create(business)
+        logger.info(
+            f"Business created - business_id: {business.id}, "
+            f"unique_name: {business.unique_name}, owner_id: {self.owner_id}"
+        )
 
-        # Generate and upload QR code
         try:
             qr_service = QRCodeService()
             qr_code_url = qr_service.upload_business_qr_code(business.id)
@@ -93,9 +105,7 @@ class CreateBusinessUseCase:
             logger.info(f"QR code generated and uploaded for business {business.id}")
         except Exception as e:
             logger.warning(f"Failed to generate QR code for business {business.id}: {str(e)}")
-            # Continue without QR code - it can be generated later
 
-        # Change user role to OWNER if not already
         if user.role != UserRole.OWNER:
             user.role = UserRole.OWNER
             user.updated_at = timezone.now()
@@ -141,7 +151,6 @@ class UpdateBusinessUseCase:
 
     def execute(self, dto: BusinessUpdateDTO) -> BusinessResponseDTO:
         """Execute business update."""
-        # Check permissions
         business = self.business_repository.get_by_id(self.business_id)
         if not business:
             raise NotFoundError(
@@ -155,7 +164,6 @@ class UpdateBusinessUseCase:
                 code="PERMISSION_DENIED",
             )
 
-        # Update business
         if dto.name is not None:
             business.name = dto.name
         if dto.description is not None:
@@ -213,7 +221,6 @@ class DeleteBusinessUseCase:
 
     def execute(self) -> None:
         """Execute business deletion."""
-        # Check permissions (only owner can delete)
         if not self.business_domain_service.can_user_delete_business(
             self.business_id, self.user_id
         ):
@@ -224,9 +231,258 @@ class DeleteBusinessUseCase:
 
         self.business_repository.delete(self.business_id)
 
+        logger.info(
+            f"Business deleted - business_id: {self.business_id}, " f"deleted_by: {self.user_id}"
+        )
+
 
 class AddBusinessMemberUseCase:
     """Use case for adding a business member."""
+
+    def __init__(
+        self,
+        business_repository: BusinessRepository,
+        business_member_repository: BusinessMemberRepository,
+        business_domain_service: BusinessDomainService,
+        user_repository: UserRepository,
+        business_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Initialize use case."""
+        self.business_repository = business_repository
+        self.business_member_repository = business_member_repository
+        self.business_domain_service = business_domain_service
+        self.user_repository = user_repository
+        self.business_id = business_id
+        self.user_id = user_id
+
+    def execute(self, dto: BusinessMemberCreateDTO) -> BusinessMemberResponseDTO:
+        """Execute adding business member."""
+        business = self.business_repository.get_by_id(self.business_id)
+        if not business:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
+        if not business.is_active:
+            raise ForbiddenError(
+                detail="Business is not active",
+                code="BUSINESS_NOT_ACTIVE",
+            )
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to add members",
+                code="PERMISSION_DENIED",
+            )
+
+        if dto.role == "owner":
+            raise BadRequestError(
+                detail="Cannot create a member with owner role",
+                code="INVALID_ROLE",
+            )
+
+        if dto.role == "manager":
+            if not self.business_domain_service.can_user_manage_managers(
+                self.business_id, self.user_id
+            ):
+                raise ForbiddenError(
+                    detail="Only the owner can add managers",
+                    code="PERMISSION_DENIED",
+                )
+
+        target_user = None
+        user_created = False
+        generated_password = None
+
+        if dto.user_id:
+            target_user = self.user_repository.get_by_id(dto.user_id)
+            if not target_user:
+                raise NotFoundError(
+                    detail="User not found",
+                    code="USER_NOT_FOUND",
+                )
+            if not target_user.email_verified:
+                raise BadRequestError(
+                    detail="User account is not verified",
+                    code="USER_NOT_VERIFIED",
+                )
+        else:
+            if dto.email:
+                target_user = self.user_repository.get_by_email(dto.email)
+            elif dto.phone_number:
+                target_user = self.user_repository.get_by_phone_number(dto.phone_number)
+
+            if target_user:
+                if not target_user.email_verified:
+                    raise BadRequestError(
+                        detail="User account is not verified",
+                        code="USER_NOT_VERIFIED",
+                    )
+            if target_user.role == UserRole.OWNER:
+                raise BadRequestError(
+                    detail="Business owners cannot be added as members",
+                    code="OWNER_CANNOT_BE_MEMBER",
+                )
+            if not target_user.is_active:
+                raise BadRequestError(
+                    detail="User account is not active",
+                    code="USER_NOT_ACTIVE",
+                )
+
+            else:
+                if not dto.name:
+                    raise BadRequestError(
+                        detail="Name is required when creating a new user",
+                        code="NAME_REQUIRED",
+                    )
+
+                generated_password = dto.password or generate_secure_password()
+
+                name = dto.name
+
+                target_user = User(
+                    id=uuid4(),
+                    email=dto.email,
+                    name=name,
+                    phone_number=dto.phone_number,
+                    role=UserRole.CUSTOMER,
+                    is_active=True,
+                    email_verified=True,
+                    is_staff=False,
+                    is_superuser=False,
+                    last_login=None,
+                    created_at=timezone.now(),
+                    updated_at=timezone.now(),
+                    address=None,
+                    avatar_url=None,
+                    auth_method=AuthMethod.EMAIL_PASSWORD if dto.email else AuthMethod.PHONE_OTP,
+                )
+
+                target_user = self.user_repository.create(target_user, password=generated_password)
+                user_created = True
+
+        existing_members = self.business_member_repository.get_business_members(
+            self.business_id, active_only=True
+        )
+        if any(member.user_id == target_user.id for member in existing_members):
+            raise BadRequestError(
+                detail="User is already a member of this business",
+                code="USER_ALREADY_MEMBER",
+            )
+
+        user_businesses = self.business_member_repository.get_user_businesses(target_user.id)
+        if user_businesses:
+            raise BadRequestError(
+                detail="User is already a member of another business. A user can only be a member of one business.",
+                code="USER_ALREADY_MEMBER_OF_OTHER_BUSINESS",
+            )
+
+        member = BusinessMember(
+            id=uuid4(),
+            business_id=self.business_id,
+            user_id=target_user.id,
+            role=dto.role,
+            is_active=True,
+            joined_at=timezone.now(),
+            left_at=None,
+            created_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+
+        member = self.business_member_repository.create(member)
+
+        if user_created and generated_password:
+            business = self.business_repository.get_by_id(self.business_id)
+            business_name = business.name if business else "the business"
+
+            credentials_sent = False
+            logger.info(
+                f"Business member added - member_id: {member.id}, "
+                f"user_id: {target_user.id}, business_id: {self.business_id}, "
+                f"role: {dto.role}, added_by: {self.user_id}, user_created: {user_created}"
+            )
+
+            if target_user.email:
+                try:
+                    send_member_credentials_email_task.delay(
+                        email=target_user.email,
+                        username=target_user.name,
+                        password=generated_password,
+                        business_name=business_name,
+                        role=dto.role,
+                    )
+                    logger.info(
+                        f"Member credentials email task queued for {target_user.email} "
+                        f"(user_id: {target_user.id}, business_id: {self.business_id})"
+                    )
+                    credentials_sent = True
+                except ConnectionError as celery_error:
+                    logger.error(
+                        f"Failed to queue member credentials email task for {target_user.email}: "
+                        f"{str(celery_error)}. Please ensure Celery worker is running.",
+                        exc_info=True,
+                        extra={
+                            "user_id": str(target_user.id),
+                            "business_id": str(self.business_id),
+                            "email": target_user.email,
+                        },
+                    )
+
+            if not credentials_sent and target_user.phone_number:
+                try:
+                    send_member_credentials_sms_task.delay(
+                        phone_number=target_user.phone_number,
+                        username=target_user.name,
+                        password=generated_password,
+                        business_name=business_name,
+                        role=dto.role,
+                        email=target_user.email,
+                    )
+                    logger.info(
+                        f"Member credentials SMS task queued for {target_user.phone_number} "
+                        f"(user_id: {target_user.id}, business_id: {self.business_id})"
+                    )
+                    credentials_sent = True
+                except ConnectionError as celery_error:
+                    logger.error(
+                        f"Failed to queue member credentials SMS task for {target_user.phone_number}: "
+                        f"{str(celery_error)}. Please ensure Celery worker is running.",
+                        exc_info=True,
+                        extra={
+                            "user_id": str(target_user.id),
+                            "business_id": str(self.business_id),
+                            "phone_number": target_user.phone_number,
+                        },
+                    )
+
+            if not credentials_sent:
+                logger.warning(
+                    f"Could not send credentials to user {target_user.id} - "
+                    f"no email or phone number available or Celery not available"
+                )
+
+        return self._to_dto(member, credentials=None)
+
+    def _to_dto(
+        self, member: BusinessMember, credentials: dict | None = None
+    ) -> BusinessMemberResponseDTO:
+        """Convert business member entity to DTO."""
+        return BusinessMemberResponseDTO(
+            id=member.id,
+            business_id=member.business_id,
+            user_id=member.user_id,
+            role=member.role,
+            is_active=member.is_active,
+            joined_at=member.joined_at,
+            left_at=member.left_at,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+            credentials=credentials,
+        )
+
+
+class RemoveBusinessMemberUseCase:
+    """Use case for removing a business member."""
 
     def __init__(
         self,
@@ -243,94 +499,37 @@ class AddBusinessMemberUseCase:
         self.business_id = business_id
         self.user_id = user_id
 
-    def execute(self, dto: BusinessMemberCreateDTO) -> BusinessMemberResponseDTO:
-        """Execute adding business member."""
-        # Check permissions
-        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have permission to add members",
-                code="PERMISSION_DENIED",
-            )
-
-        # Check if user is already a member
-        existing_members = self.business_member_repository.get_business_members(
-            self.business_id, active_only=True
-        )
-        if any(member.user_id == dto.user_id for member in existing_members):
-            raise BadRequestError(
-                detail="User is already a member of this business",
-                code="USER_ALREADY_MEMBER",
-            )
-
-        # Validate role - only owner can add managers
-        if dto.role == "manager":
-            if not self.business_domain_service.can_user_manage_managers(
-                self.business_id, self.user_id
-            ):
-                raise ForbiddenError(
-                    detail="Only the owner can add managers",
-                    code="PERMISSION_DENIED",
-                )
-
-        # Create business member
-        member = BusinessMember(
-            id=uuid4(),
-            business_id=self.business_id,
-            user_id=dto.user_id,
-            role=dto.role,
-            is_active=True,
-            joined_at=timezone.now(),
-            left_at=None,
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-        )
-
-        member = self.business_member_repository.create(member)
-        return self._to_dto(member)
-
-    def _to_dto(self, member: BusinessMember) -> BusinessMemberResponseDTO:
-        """Convert business member entity to DTO."""
-        return BusinessMemberResponseDTO(
-            id=member.id,
-            business_id=member.business_id,
-            user_id=member.user_id,
-            role=member.role,
-            is_active=member.is_active,
-            joined_at=member.joined_at,
-            left_at=member.left_at,
-            created_at=member.created_at,
-            updated_at=member.updated_at,
-        )
-
-
-class RemoveBusinessMemberUseCase:
-    """Use case for removing a business member."""
-
-    def __init__(
-        self,
-        business_member_repository: BusinessMemberRepository,
-        business_domain_service: BusinessDomainService,
-        business_id: UUID,
-        user_id: UUID,
-    ) -> None:
-        """Initialize use case."""
-        self.business_member_repository = business_member_repository
-        self.business_domain_service = business_domain_service
-        self.business_id = business_id
-        self.user_id = user_id
-
     def execute(self, member_id: UUID) -> None:
         """Execute removing business member."""
-        # Check permissions
         if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have permission to remove members",
                 code="PERMISSION_DENIED",
             )
+        business = self.business_repository.get_by_id(self.business_id)
+        if not business:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
+        if not business.is_active:
+            raise BadRequestError(
+                detail="Cannot remove members from an inactive business",
+                code="BUSINESS_INACTIVE",
+            )
 
-        # Check if member is a manager - only owner can remove managers
         member = self.business_member_repository.get_by_id(member_id)
-        if member and member.is_manager():
+        if not member:
+            raise NotFoundError(
+                detail="Member not found",
+                code="MEMBER_NOT_FOUND",
+            )
+        if member.business_id != self.business_id:
+            raise ForbiddenError(
+                detail="Member does not belong to this business",
+                code="MEMBER_NOT_IN_BUSINESS",
+            )
+        if member.is_manager():
             if not self.business_domain_service.can_user_manage_managers(
                 self.business_id, self.user_id
             ):
@@ -340,6 +539,10 @@ class RemoveBusinessMemberUseCase:
                 )
 
         self.business_member_repository.remove(member_id)
+
+        logger.info(
+            f"Business member removed - member_id: {member_id}, " f"removed_by: {self.user_id}"
+        )
 
 
 class ListBusinessMembersUseCase:
@@ -431,7 +634,6 @@ class GetBusinessUseCase:
                 code="BUSINESS_NOT_FOUND",
             )
 
-        # Check if user has access
         if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
             raise ForbiddenError(
                 detail="You don't have access to this business",
@@ -476,13 +678,10 @@ class ListBusinessesUseCase:
 
     def execute(self) -> list[BusinessResponseDTO]:
         """Execute listing businesses."""
-        # Get businesses owned by user
         owned_businesses = self.business_repository.get_by_owner(self.user_id)
 
-        # Get businesses where user is a member
         member_businesses = self.business_member_repository.get_user_businesses(self.user_id)
 
-        # Combine and deduplicate
         all_businesses: list[Business] = list(owned_businesses)
         for member in member_businesses:
             business = self.business_repository.get_by_id(member.business_id)

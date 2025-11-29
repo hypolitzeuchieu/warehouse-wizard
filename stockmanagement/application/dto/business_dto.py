@@ -55,8 +55,12 @@ class BusinessResponseDTO:
 class BusinessMemberCreateDTO:
     """DTO for adding a business member."""
 
-    user_id: UUID
-    role: str  # manager, cashier, stock_keeper, delivery
+    user_id: UUID | None = None
+    email: str | None = None
+    phone_number: str | None = None
+    name: str | None = None
+    password: str | None = None
+    role: str = ""
 
 
 @dataclass
@@ -79,5 +83,6 @@ class BusinessMemberResponseDTO:
     joined_at: datetime
     created_at: datetime
     updated_at: datetime
-    user: dict | None = None  # User details
+    user: dict | None = None
     left_at: datetime | None = None
+    credentials: dict | None = None
