@@ -38,11 +38,13 @@ class CreateBusinessUseCase:
         self,
         business_repository: BusinessRepository,
         user_repository: UserRepository,
+        business_member_repository: BusinessMemberRepository,
         owner_id: UUID,
     ) -> None:
         """Initialize use case."""
         self.business_repository = business_repository
         self.user_repository = user_repository
+        self.business_member_repository = business_member_repository
         self.owner_id = owner_id
 
     def execute(self, dto: BusinessCreateDTO) -> BusinessResponseDTO:
@@ -65,6 +67,13 @@ class CreateBusinessUseCase:
             raise BadRequestError(
                 detail="User account is not verified. Please verify your Account before creating a business.",
                 code="ACCOUNT_NOT_VERIFIED",
+            )
+
+        user_businesses = self.business_member_repository.get_user_businesses(self.owner_id)
+        if user_businesses:
+            raise BadRequestError(
+                detail="You cannot create a business while being a member of another business. Please leave your current business first.",
+                code="MEMBER_CANNOT_CREATE_BUSINESS",
             )
 
         existing = self.business_repository.get_by_unique_name(dto.unique_name)

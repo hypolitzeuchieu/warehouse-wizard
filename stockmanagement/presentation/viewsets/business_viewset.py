@@ -134,6 +134,7 @@ class BusinessViewSet(BaseViewSet):
             use_case = CreateBusinessUseCase(
                 business_repository=BusinessRepositoryImpl(),
                 user_repository=UserRepositoryImpl(),
+                business_member_repository=BusinessMemberRepositoryImpl(),
                 owner_id=request.user.id,
             )
             business_dto = use_case.execute(dto)
