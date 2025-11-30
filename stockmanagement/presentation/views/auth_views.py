@@ -537,6 +537,10 @@ def google_callback_view(request: Request) -> Response:
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_REFRESH_TOKEN_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_REFRESH_TOKEN_PERIOD,
+)
 def refresh_token_view(request: Request) -> Response:
     """Refresh token endpoint."""
     helper = FunctionalViewHelper(request)

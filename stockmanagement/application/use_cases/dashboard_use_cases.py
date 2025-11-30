@@ -150,8 +150,8 @@ class GetDashboardSummaryUseCase:
             end_date=end_date,
         )
         profit_metrics_data = self.dashboard_metrics_service.calculate_profit_metrics(
-            revenue_metrics=revenue_metrics_data,
-            expense_metrics=expense_metrics_data,
+            start_date=start_date,
+            end_date=end_date,
         )
         inventory_metrics_data = self.dashboard_metrics_service.calculate_inventory_metrics()
         customer_metrics_data = self.dashboard_metrics_service.calculate_customer_metrics()
@@ -324,13 +324,12 @@ class GetDashboardDailyUseCase:
 
         start_date, end_date = self._validate_and_normalize_dates()
 
-        daily_metrics_raw = self.dashboard_metrics_service.calculate_daily_metrics(
+        self.dashboard_metrics_service.calculate_daily_metrics(
             start_date=start_date,
             end_date=end_date,
         )
 
         daily_metrics = self.dashboard_metrics_service.calculate_daily_profits(
-            daily_metrics=daily_metrics_raw,
             start_date=start_date,
             end_date=end_date,
         )

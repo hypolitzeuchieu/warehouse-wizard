@@ -25,13 +25,15 @@ from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
     CategoryRepositoryImpl,
-    CreditRepositoryImpl,
-    ExpenseRepositoryImpl,
-    InvoiceLineRepositoryImpl,
-    InvoiceRepositoryImpl,
-    PayrollRepositoryImpl,
     ProductRepositoryImpl,
     SubCategoryRepositoryImpl,
+)
+from infrastructure.persistence.repositories.dashboard_repositories import (
+    DashboardCashierStatisticsRepositoryImpl,
+    DashboardCategoryStatisticsRepositoryImpl,
+    DashboardMetricsRepositoryImpl,
+    DashboardProductStatisticsRepositoryImpl,
+    DashboardSubCategoryStatisticsRepositoryImpl,
 )
 from presentation.serializers.dashboard_serializers import (
     CashierStatisticsQuerySerializer,
@@ -89,13 +91,12 @@ class DashboardViewSet(BaseViewSet):
 
             # Create dashboard metrics service
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetDashboardSummaryUseCase(
@@ -217,13 +218,12 @@ class DashboardViewSet(BaseViewSet):
 
             # Create dashboard metrics service
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetDashboardDailyUseCase(
@@ -393,13 +393,12 @@ class DashboardViewSet(BaseViewSet):
                 )
 
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetProductStatisticsUseCase(
@@ -519,13 +518,12 @@ class DashboardViewSet(BaseViewSet):
                 )
 
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetCategoryStatisticsUseCase(
@@ -635,13 +633,12 @@ class DashboardViewSet(BaseViewSet):
                 )
 
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetSubCategoryStatisticsUseCase(
@@ -753,13 +750,12 @@ class DashboardViewSet(BaseViewSet):
                 )
 
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetCashierStatisticsUseCase(

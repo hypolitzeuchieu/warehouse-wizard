@@ -3,37 +3,18 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from django.db import models
-from django.db.models import Count, Sum
-from django.db.models.functions import TruncDay, TruncWeek
-from django.utils import timezone
-
-from domain.credit.repositories import CreditRepository
-from domain.finance.repositories import ExpenseRepository, PayrollRepository
-from domain.inventory.repositories import ProductRepository
-from domain.sales.repositories import InvoiceLineRepository, InvoiceRepository
-from infrastructure.persistence.models.business_models import BusinessMember as BusinessMemberModel
-from infrastructure.persistence.models.credit_models import Credit as CreditModel
-from infrastructure.persistence.models.customer_models import Customer as CustomerModel
-from infrastructure.persistence.models.finance_models import Expense as ExpenseModel
-from infrastructure.persistence.models.finance_models import Payroll as PayrollModel
-from infrastructure.persistence.models.inventory_models import (
-    Category as CategoryModel,
+from domain.dashboard.repositories import (
+    DashboardCashierStatisticsRepository,
+    DashboardCategoryStatisticsRepository,
+    DashboardMetricsRepository,
+    DashboardProductStatisticsRepository,
+    DashboardSubCategoryStatisticsRepository,
 )
-from infrastructure.persistence.models.inventory_models import (
-    Product as ProductModel,
-)
-from infrastructure.persistence.models.inventory_models import (
-    SubCategory as SubCategoryModel,
-)
-from infrastructure.persistence.models.sales_models import Invoice as InvoiceModel
-from infrastructure.persistence.models.sales_models import InvoiceLine as InvoiceLineModel
-from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +24,19 @@ class DashboardMetricsService:
 
     def __init__(
         self,
-        invoice_repository: InvoiceRepository,
-        invoice_line_repository: InvoiceLineRepository,
-        product_repository: ProductRepository,
-        credit_repository: CreditRepository,
+        metrics_repository: DashboardMetricsRepository,
+        product_statistics_repository: DashboardProductStatisticsRepository,
+        category_statistics_repository: DashboardCategoryStatisticsRepository,
+        subcategory_statistics_repository: DashboardSubCategoryStatisticsRepository,
+        cashier_statistics_repository: DashboardCashierStatisticsRepository,
         business_id: UUID,
-        expense_repository: ExpenseRepository | None = None,
-        payroll_repository: PayrollRepository | None = None,
     ) -> None:
         """Initialize dashboard metrics service."""
-        self.invoice_repository = invoice_repository
-        self.invoice_line_repository = invoice_line_repository
-        self.product_repository = product_repository
-        self.credit_repository = credit_repository
-        self.expense_repository = expense_repository
-        self.payroll_repository = payroll_repository
+        self.metrics_repository = metrics_repository
+        self.product_statistics_repository = product_statistics_repository
+        self.category_statistics_repository = category_statistics_repository
+        self.subcategory_statistics_repository = subcategory_statistics_repository
+        self.cashier_statistics_repository = cashier_statistics_repository
         self.business_id = business_id
 
     def calculate_revenue_metrics(
@@ -75,79 +54,11 @@ class DashboardMetricsService:
         Returns:
             Dictionary with revenue metrics
         """
-        now = timezone.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=now.weekday())
-        month_start = today_start.replace(day=1)
-        year_start = today_start.replace(month=1, day=1)
-
-        filter_start = start_date or year_start
-        filter_end = end_date or now
-
-        base_query = InvoiceModel.objects.filter(
+        return self.metrics_repository.aggregate_revenue_metrics(
             business_id=self.business_id,
-            status="COMPLETED",
-            is_archived=False,
-            created_at__gte=filter_start,
-            created_at__lte=filter_end,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        # Total revenue and orders for the period
-        total_stats = base_query.aggregate(
-            total_revenue=Sum("total"),
-            total_orders=Count("id"),
-        )
-        total_revenue = Decimal(str(total_stats["total_revenue"] or 0))
-        total_orders = total_stats["total_orders"] or 0
-
-        # Today's metrics
-        today_stats = base_query.filter(created_at__gte=today_start).aggregate(
-            revenue_today=Sum("total"),
-            orders_today=Count("id"),
-        )
-        revenue_today = Decimal(str(today_stats["revenue_today"] or 0))
-        orders_today = today_stats["orders_today"] or 0
-
-        # This week's metrics
-        week_stats = base_query.filter(created_at__gte=week_start).aggregate(
-            revenue_this_week=Sum("total"),
-            orders_this_week=Count("id"),
-        )
-        revenue_this_week = Decimal(str(week_stats["revenue_this_week"] or 0))
-        orders_this_week = week_stats["orders_this_week"] or 0
-
-        # This month's metrics
-        month_stats = base_query.filter(created_at__gte=month_start).aggregate(
-            revenue_this_month=Sum("total"),
-            orders_this_month=Count("id"),
-        )
-        revenue_this_month = Decimal(str(month_stats["revenue_this_month"] or 0))
-        orders_this_month = month_stats["orders_this_month"] or 0
-
-        year_stats = base_query.filter(created_at__gte=year_start).aggregate(
-            revenue_this_year=Sum("total"),
-        )
-        revenue_this_year = Decimal(str(year_stats["revenue_this_year"] or 0))
-
-        average_order_value = total_revenue / total_orders if total_orders > 0 else Decimal("0.00")
-
-        logger.info(
-            f"Revenue metrics calculated for business {self.business_id}: "
-            f"total={total_revenue}, today={revenue_today}"
-        )
-
-        return {
-            "total_revenue": total_revenue,
-            "revenue_today": revenue_today,
-            "revenue_this_week": revenue_this_week,
-            "revenue_this_month": revenue_this_month,
-            "revenue_this_year": revenue_this_year,
-            "average_order_value": average_order_value,
-            "total_orders": total_orders,
-            "orders_today": orders_today,
-            "orders_this_week": orders_this_week,
-            "orders_this_month": orders_this_month,
-        }
 
     def calculate_expense_metrics(
         self,
@@ -164,143 +75,36 @@ class DashboardMetricsService:
         Returns:
             Dictionary with expense metrics
         """
-        now = timezone.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=now.weekday())
-        month_start = today_start.replace(day=1)
-        year_start = today_start.replace(month=1, day=1)
-
-        filter_start = start_date or year_start
-        filter_end = end_date or now
-
-        total_expenses = Decimal("0.00")
-        expenses_today = Decimal("0.00")
-        expenses_this_week = Decimal("0.00")
-        expenses_this_month = Decimal("0.00")
-        expenses_this_year = Decimal("0.00")
-        salary_expenses = Decimal("0.00")
-        other_expenses = Decimal("0.00")
-
-        # Get expenses using SQL aggregations
-        if self.expense_repository:
-            base_expense_query = ExpenseModel.objects.filter(
-                business_id=self.business_id,
-                created_at__gte=filter_start,
-                created_at__lte=filter_end,
-            )
-
-            total_expense_stats = base_expense_query.aggregate(total=Sum("amount"))
-            other_expenses = Decimal(str(total_expense_stats["total"] or 0))
-            total_expenses += other_expenses
-
-            today_expense = base_expense_query.filter(created_at__gte=today_start).aggregate(
-                total=Sum("amount")
-            )
-            expenses_today += Decimal(str(today_expense["total"] or 0))
-
-            week_expense = base_expense_query.filter(created_at__gte=week_start).aggregate(
-                total=Sum("amount")
-            )
-            expenses_this_week += Decimal(str(week_expense["total"] or 0))
-
-            month_expense = base_expense_query.filter(created_at__gte=month_start).aggregate(
-                total=Sum("amount")
-            )
-            expenses_this_month += Decimal(str(month_expense["total"] or 0))
-
-            year_expense = base_expense_query.filter(created_at__gte=year_start).aggregate(
-                total=Sum("amount")
-            )
-            expenses_this_year += Decimal(str(year_expense["total"] or 0))
-
-        # Get payroll expenses using SQL aggregations
-        if self.payroll_repository:
-            base_payroll_query = PayrollModel.objects.filter(
-                business_id=self.business_id,
-                payment_date__gte=filter_start,
-                payment_date__lte=filter_end,
-            )
-
-            total_payroll_stats = base_payroll_query.aggregate(total=Sum("net_amount"))
-            salary_expenses = Decimal(str(total_payroll_stats["total"] or 0))
-            total_expenses += salary_expenses
-
-            today_payroll = base_payroll_query.filter(payment_date__gte=today_start).aggregate(
-                total=Sum("net_amount")
-            )
-            expenses_today += Decimal(str(today_payroll["total"] or 0))
-
-            week_payroll = base_payroll_query.filter(payment_date__gte=week_start).aggregate(
-                total=Sum("net_amount")
-            )
-            expenses_this_week += Decimal(str(week_payroll["total"] or 0))
-
-            month_payroll = base_payroll_query.filter(payment_date__gte=month_start).aggregate(
-                total=Sum("net_amount")
-            )
-            expenses_this_month += Decimal(str(month_payroll["total"] or 0))
-
-            year_payroll = base_payroll_query.filter(payment_date__gte=year_start).aggregate(
-                total=Sum("net_amount")
-            )
-            expenses_this_year += Decimal(str(year_payroll["total"] or 0))
-
-        logger.info(f"Expense metrics calculated for business {self.business_id}")
-
-        return {
-            "total_expenses": total_expenses,
-            "expenses_today": expenses_today,
-            "expenses_this_week": expenses_this_week,
-            "expenses_this_month": expenses_this_month,
-            "expenses_this_year": expenses_this_year,
-            "salary_expenses": salary_expenses,
-            "other_expenses": other_expenses,
-        }
+        return self.metrics_repository.aggregate_expense_metrics(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
     def calculate_profit_metrics(
         self,
-        revenue_metrics: dict[str, Decimal | int],
-        expense_metrics: dict[str, Decimal],
+        revenue_metrics: dict[str, Decimal | int] | None = None,
+        expense_metrics: dict[str, Decimal] | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> dict[str, Decimal]:
         """
         Calculate profit metrics from revenue and expense metrics.
 
         Args:
-            revenue_metrics: Revenue metrics dictionary
-            expense_metrics: Expense metrics dictionary
+            revenue_metrics: Revenue metrics dictionary (optional, will be fetched if not provided)
+            expense_metrics: Expense metrics dictionary (optional, will be fetched if not provided)
+            start_date: Start date for filtering (optional)
+            end_date: End date for filtering (optional)
 
         Returns:
             Dictionary with profit metrics
         """
-        total_revenue = Decimal(str(revenue_metrics["total_revenue"]))
-        total_expenses = expense_metrics["total_expenses"]
-
-        total_profit = total_revenue - total_expenses
-        profit_today = (
-            Decimal(str(revenue_metrics["revenue_today"])) - expense_metrics["expenses_today"]
+        return self.metrics_repository.calculate_profit_metrics(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-        profit_this_week = (
-            Decimal(str(revenue_metrics["revenue_this_week"]))
-            - expense_metrics["expenses_this_week"]
-        )
-        profit_this_month = (
-            Decimal(str(revenue_metrics["revenue_this_month"]))
-            - expense_metrics["expenses_this_month"]
-        )
-
-        profit_margin = (
-            (total_profit / total_revenue * 100) if total_revenue > 0 else Decimal("0.00")
-        )
-
-        logger.info(f"Profit metrics calculated: total_profit={total_profit}")
-
-        return {
-            "total_profit": total_profit,
-            "profit_today": profit_today,
-            "profit_this_week": profit_this_week,
-            "profit_this_month": profit_this_month,
-            "profit_margin_percentage": profit_margin,
-        }
 
     def calculate_inventory_metrics(self) -> dict[str, int | Decimal]:
         """
@@ -309,37 +113,7 @@ class DashboardMetricsService:
         Returns:
             Dictionary with inventory metrics
         """
-        # Use SQL aggregations instead of loading all products
-        products_query = ProductModel.objects.filter(business_id=self.business_id)
-
-        total_products = products_query.count()
-
-        # Count low stock products (quantity <= min_quantity)
-        low_stock_products = products_query.filter(
-            models.Q(quantity__lte=models.F("min_quantity"))
-        ).count()
-
-        expired_products = products_query.filter(is_expired=True).count()
-
-        products_on_promotion = products_query.filter(on_promotion=True).count()
-
-        inventory_value_stats = products_query.aggregate(
-            total_value=Sum(models.F("purchase_price") * models.F("quantity"))
-        )
-        total_inventory_value = Decimal(str(inventory_value_stats["total_value"] or 0))
-
-        logger.info(
-            f"Inventory metrics calculated: total={total_products}, "
-            f"low_stock={low_stock_products}, expired={expired_products}"
-        )
-
-        return {
-            "total_products": total_products,
-            "low_stock_products": low_stock_products,
-            "expired_products": expired_products,
-            "total_inventory_value": total_inventory_value,
-            "products_on_promotion": products_on_promotion,
-        }
+        return self.metrics_repository.get_inventory_metrics(business_id=self.business_id)
 
     def calculate_customer_metrics(self) -> dict[str, int | Decimal]:
         """
@@ -348,59 +122,15 @@ class DashboardMetricsService:
         Returns:
             Dictionary with customer metrics
         """
-        now = timezone.now()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=now.weekday())
-        month_start = today_start.replace(day=1)
-
-        # Get credits for the business
-        credits = self.credit_repository.get_by_business(
-            business_id=self.business_id,
-            overdue_only=False,
-            limit=10000,
+        customer_metrics = self.metrics_repository.get_customer_metrics(
+            business_id=self.business_id
         )
-
-        overdue_credits = self.credit_repository.get_by_business(
-            business_id=self.business_id,
-            overdue_only=True,
-            limit=10000,
-        )
-
-        total_credit_amount = sum(c.remaining_amount for c in credits)
-        overdue_credit_amount = sum(c.remaining_amount for c in overdue_credits)
-
-        customers_query = CustomerModel.objects.filter(business_id=self.business_id)
-
-        total_customers = customers_query.count()
-        new_customers_today = customers_query.filter(created_at__gte=today_start).count()
-        new_customers_this_week = customers_query.filter(created_at__gte=week_start).count()
-        new_customers_this_month = customers_query.filter(created_at__gte=month_start).count()
-
-        # Active customers are those who made purchases in the last 30 days
-        active_threshold = now - timedelta(days=30)
-        active_customers = (
-            InvoiceModel.objects.filter(
-                business_id=self.business_id,
-                status="COMPLETED",
-                is_archived=False,
-                created_at__gte=active_threshold,
-            )
-            .exclude(customer_id__isnull=True)
-            .values("customer_id")
-            .distinct()
-            .count()
-        )
-
-        logger.info(f"Customer metrics calculated for business {self.business_id}")
+        credit_metrics = self.metrics_repository.get_credit_metrics(business_id=self.business_id)
 
         return {
-            "total_customers": total_customers,
-            "new_customers_today": new_customers_today,
-            "new_customers_this_week": new_customers_this_week,
-            "new_customers_this_month": new_customers_this_month,
-            "active_customers": active_customers,
-            "total_credit_amount": total_credit_amount,
-            "overdue_credit_amount": overdue_credit_amount,
+            **customer_metrics,
+            "total_credit_amount": credit_metrics["total_credit_amount"],
+            "overdue_credit_amount": credit_metrics["overdue_credit_amount"],
         }
 
     def get_top_products(
@@ -420,46 +150,12 @@ class DashboardMetricsService:
         Returns:
             List of top products with sales data
         """
-        top_products_raw = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                **(
-                    {}
-                    if start_date is None or end_date is None
-                    else {
-                        "invoice__created_at__gte": start_date,
-                        "invoice__created_at__lte": end_date,
-                    }
-                ),
-            )
-            .select_related("product")
-            .values("product_id", "product__name", "product__quantity")
-            .annotate(
-                total_sold=Sum("quantity"),
-                total_revenue=Sum("line_total"),
-            )
-            .order_by("-total_revenue")[:limit]
+        return self.metrics_repository.get_top_products(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
         )
-
-        top_products = []
-        for row in top_products_raw:
-            top_products.append(
-                {
-                    "product_id": row["product_id"],
-                    "product_name": row["product__name"] or "Unknown",
-                    "total_sold": row["total_sold"] or 0,
-                    "total_revenue": Decimal(str(row["total_revenue"] or 0)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "quantity_available": row["product__quantity"] or 0,
-                }
-            )
-
-        logger.info(f"Top {len(top_products)} products calculated for business {self.business_id}")
-
-        return top_products
 
     def calculate_daily_metrics(
         self,
@@ -476,268 +172,62 @@ class DashboardMetricsService:
         Returns:
             List of daily metrics dictionaries
         """
-        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-        daily_invoices = (
-            InvoiceModel.objects.filter(
-                business_id=self.business_id,
-                is_archived=False,
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-            )
-            .annotate(day=TruncDay("created_at"))
-            .values("day", "status")
-            .annotate(
-                total_revenue=Sum("total"),
-                count=Count("id"),
-                credit_revenue=Sum("remaining_amount"),
-            )
-            .order_by("day")
+        return self.metrics_repository.aggregate_daily_metrics(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        daily_expenses = (
-            ExpenseModel.objects.filter(
-                business_id=self.business_id,
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-            )
-            .annotate(day=TruncDay("created_at"))
-            .values("day")
-            .annotate(total_expenses=Sum("amount"))
-            .order_by("day")
-        )
-
-        daily_payroll = (
-            PayrollModel.objects.filter(
-                business_id=self.business_id,
-                payment_date__gte=start_date,
-                payment_date__lte=end_date,
-            )
-            .annotate(day=TruncDay("payment_date"))
-            .values("day")
-            .annotate(total_payroll=Sum("net_amount"))
-            .order_by("day")
-        )
-
-        daily_credits = (
-            CreditModel.objects.filter(
-                business_id=self.business_id,
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-            )
-            .annotate(day=TruncDay("created_at"))
-            .values("day")
-            .annotate(credit_outstanding=Sum("remaining_amount"))
-            .order_by("day")
-        )
-
-        daily_map: dict[date, dict[str, Decimal | int]] = {}
-
-        current_date = start_date.date()
-        end_date_only = end_date.date()
-        while current_date <= end_date_only:
-            daily_map[current_date] = {
-                "complete_revenue": Decimal("0.00"),
-                "credit_revenue": Decimal("0.00"),
-                "total_revenue": Decimal("0.00"),
-                "total_sales": 0,
-                "total_expenses": Decimal("0.00"),
-                "credit_outstanding": Decimal("0.00"),
-            }
-            current_date += timedelta(days=1)
-
-        for row in daily_invoices:
-            day = row["day"].date()
-            status = row["status"]
-            revenue = Decimal(str(row["total_revenue"] or 0))
-            count = row["count"] or 0
-            credit_rev = Decimal(str(row["credit_revenue"] or 0))
-
-            if day not in daily_map:
-                daily_map[day] = {
-                    "complete_revenue": Decimal("0.00"),
-                    "credit_revenue": Decimal("0.00"),
-                    "total_revenue": Decimal("0.00"),
-                    "total_sales": 0,
-                    "total_expenses": Decimal("0.00"),
-                    "credit_outstanding": Decimal("0.00"),
-                }
-
-            if status == "COMPLETED":
-                daily_map[day]["complete_revenue"] += revenue
-                daily_map[day]["total_revenue"] += revenue
-            elif status == "CREDIT":
-                daily_map[day]["credit_revenue"] += credit_rev
-                daily_map[day]["total_revenue"] += revenue
-
-            daily_map[day]["total_sales"] += count
-
-        for row in daily_expenses:
-            day = row["day"].date()
-            expenses = Decimal(str(row["total_expenses"] or 0))
-            if day in daily_map:
-                daily_map[day]["total_expenses"] += expenses
-
-        for row in daily_payroll:
-            day = row["day"].date()
-            payroll = Decimal(str(row["total_payroll"] or 0))
-            if day in daily_map:
-                daily_map[day]["total_expenses"] += payroll
-
-        for row in daily_credits:
-            day = row["day"].date()
-            credit = Decimal(str(row["credit_outstanding"] or 0))
-            if day in daily_map:
-                daily_map[day]["credit_outstanding"] += credit
-
-        result = []
-        for day, metrics in sorted(daily_map.items()):
-            day_datetime = datetime.combine(day, datetime.min.time())
-            if timezone.is_naive(day_datetime):
-                day_datetime = timezone.make_aware(day_datetime)
-            result.append(
-                {
-                    "date": day_datetime,
-                    "complete_revenue": Decimal(str(metrics["complete_revenue"])).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "credit_revenue": Decimal(str(metrics["credit_revenue"])).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "total_revenue": Decimal(str(metrics["total_revenue"])).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "total_sales": metrics["total_sales"],
-                    "total_expenses": Decimal(str(metrics["total_expenses"])).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "credit_outstanding": Decimal(str(metrics["credit_outstanding"])).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                }
-            )
-
-        logger.info(
-            f"Daily metrics calculated for {len(result)} days for business {self.business_id}"
-        )
-        return result
 
     def calculate_daily_profits(
         self,
-        daily_metrics: list[dict[str, Any]],
-        start_date: datetime,
-        end_date: datetime,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """
         Calculate gross and net profits for each day.
 
         Args:
-            daily_metrics: List of daily metrics from calculate_daily_metrics
-            start_date: Start date
-            end_date: End date
+            daily_metrics: List of daily metrics from calculate_daily_metrics (optional, will be fetched if not provided)
+            start_date: Start date (required if daily_metrics not provided)
+            end_date: End date (required if daily_metrics not provided)
 
         Returns:
             List of daily metrics with profit calculations
         """
-        daily_cogs = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
+        if start_date is None or end_date is None:
+            raise ValueError(
+                "start_date and end_date are required when daily_metrics is not provided"
             )
-            .select_related("product")
-            .annotate(day=TruncDay("invoice__created_at"))
-            .values("day")
-            .annotate(
-                total_cost=Sum(
-                    models.F("product__purchase_price") * models.F("quantity"),
-                    output_field=models.DecimalField(),
-                )
-            )
-            .order_by("day")
+
+        return self.metrics_repository.aggregate_daily_profits(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        cost_map: dict[date, Decimal] = {}
-        for row in daily_cogs:
-            day = row["day"].date()
-            cost = Decimal(str(row["total_cost"] or 0))
-            cost_map[day] = cost
-
-        result = []
-        for day_data in daily_metrics:
-            day_date = day_data["date"].date()
-            total_revenue = day_data["total_revenue"]
-            total_expenses = day_data["total_expenses"]
-            cost = cost_map.get(day_date, Decimal("0.00"))
-
-            gross_profit = total_revenue - cost
-            net_profit = total_revenue - total_expenses
-
-            day_data["gross_profit"] = gross_profit.quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
-            day_data["net_profit"] = net_profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            day_data["profit"] = net_profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-            result.append(day_data)
-
-        return result
 
     def get_top_categories(
         self,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 10,
     ) -> list[dict[str, UUID | str | Decimal | int]]:
         """
         Get top categories by revenue.
 
         Args:
-            start_date: Start date
-            end_date: End date
+            start_date: Start date (optional)
+            end_date: End date (optional)
             limit: Number of top categories to return
 
         Returns:
             List of top categories with sales data
         """
-        category_sales = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .select_related("product__category")
-            .values("product__category_id", "product__category__name")
-            .annotate(
-                total_revenue=Sum("line_total"),
-                total_quantity=Sum("quantity"),
-                sales_count=Count("invoice_id", distinct=True),
-            )
-            .order_by("-total_revenue")[:limit]
+        return self.metrics_repository.get_top_categories(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
         )
-
-        top_categories = []
-        for row in category_sales:
-            top_categories.append(
-                {
-                    "category_id": row["product__category_id"],
-                    "category_name": row["product__category__name"] or "Unknown",
-                    "total_revenue": Decimal(str(row["total_revenue"] or 0)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "total_quantity_sold": row["total_quantity"] or 0,
-                    "number_of_sales": row["sales_count"] or 0,
-                }
-            )
-
-        logger.info(
-            f"Top {len(top_categories)} categories calculated for business {self.business_id}"
-        )
-        return top_categories
 
     def get_recent_sales(
         self,
@@ -752,27 +242,10 @@ class DashboardMetricsService:
         Returns:
             List of recent sales
         """
-        invoices = (
-            InvoiceModel.objects.filter(business_id=self.business_id, is_archived=False)
-            .only("id", "number", "customer_name", "total", "status", "created_at")
-            .order_by("-created_at")[:limit]
+        return self.metrics_repository.get_recent_sales(
+            business_id=self.business_id,
+            limit=limit,
         )
-
-        recent_sales = []
-        for invoice in invoices:
-            recent_sales.append(
-                {
-                    "invoice_id": invoice.id,
-                    "invoice_number": invoice.number,
-                    "customer_name": invoice.customer_name,
-                    "total": invoice.total,
-                    "status": invoice.status,
-                    "created_at": invoice.created_at,
-                }
-            )
-
-        logger.info(f"Recent {len(recent_sales)} sales retrieved for business {self.business_id}")
-        return recent_sales
 
     def calculate_product_statistics(
         self,
@@ -786,61 +259,18 @@ class DashboardMetricsService:
         Args:
             start_date: Start date
             end_date: End date
-            group_by: "daily" or "weekly"
+            group_by: "daily" or "weekly" (not used anymore, kept for compatibility)
 
         Returns:
             List of product statistics
         """
-
-        trunc_func = (
-            TruncDay("invoice__created_at")
-            if group_by == "daily"
-            else TruncWeek("invoice__created_at")
+        # Note: This method is kept for backward compatibility
+        # The actual implementation uses daily aggregation from the repository
+        return self.product_statistics_repository.calculate_product_margins(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        product_stats = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .select_related("product")
-            .annotate(period=trunc_func)
-            .values("product_id", "product__name", "period")
-            .annotate(
-                quantity_sold=Sum("quantity"),
-                revenue=Sum("line_total"),
-                cost=Sum(
-                    models.F("product__purchase_price") * models.F("quantity"),
-                    output_field=models.DecimalField(),
-                ),
-            )
-            .order_by("period", "-revenue")
-        )
-
-        result = []
-        for row in product_stats:
-            revenue = Decimal(str(row["revenue"] or 0))
-            cost = Decimal(str(row["cost"] or 0))
-            profit = revenue - cost
-            margin = (profit / revenue * 100) if revenue > 0 else Decimal("0.00")
-
-            result.append(
-                {
-                    "product_id": row["product_id"],
-                    "product_name": row["product__name"] or "Unknown",
-                    "date": row["period"],
-                    "quantity_sold": row["quantity_sold"] or 0,
-                    "revenue": revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "cost": cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "profit": profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "margin_percentage": margin.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                }
-            )
-
-        logger.info(f"Product statistics calculated ({group_by}) for business {self.business_id}")
-        return result
 
     def calculate_product_margins(
         self,
@@ -857,48 +287,11 @@ class DashboardMetricsService:
         Returns:
             List of product margins
         """
-        product_margins = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .select_related("product")
-            .values("product_id", "product__name")
-            .annotate(
-                total_quantity_sold=Sum("quantity"),
-                total_revenue=Sum("line_total"),
-                total_cost=Sum(
-                    models.F("product__purchase_price") * models.F("quantity"),
-                    output_field=models.DecimalField(),
-                ),
-            )
-            .order_by("-total_revenue")
+        return self.product_statistics_repository.calculate_product_margins(
+            business_id=self.business_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        result = []
-        for row in product_margins:
-            revenue = Decimal(str(row["total_revenue"] or 0))
-            cost = Decimal(str(row["total_cost"] or 0))
-            profit = revenue - cost
-            margin = (profit / revenue * 100) if revenue > 0 else Decimal("0.00")
-
-            result.append(
-                {
-                    "product_id": row["product_id"],
-                    "product_name": row["product__name"] or "Unknown",
-                    "total_quantity_sold": row["total_quantity_sold"] or 0,
-                    "total_revenue": revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "total_cost": cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "total_profit": profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "margin_percentage": margin.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                }
-            )
-
-        logger.info(f"Product margins calculated for business {self.business_id}")
-        return result
 
     def calculate_trends(
         self,
@@ -919,30 +312,12 @@ class DashboardMetricsService:
         Returns:
             Dictionary with trends data
         """
-        change_amount = current_value - previous_value
-        if previous_value > 0:
-            change_percentage = (change_amount / previous_value) * 100
-        else:
-            change_percentage = Decimal("100.00") if current_value > 0 else Decimal("0.00")
-
-        if change_percentage > Decimal("5.00"):
-            trend_direction = "up"
-        elif change_percentage < Decimal("-5.00"):
-            trend_direction = "down"
-        else:
-            trend_direction = "stable"
-
-        return {
-            "previous_period_start": previous_period_start,
-            "previous_period_end": previous_period_end,
-            "current_value": current_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            "previous_value": previous_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            "change_amount": change_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            "change_percentage": change_percentage.quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            ),
-            "trend_direction": trend_direction,
-        }
+        return self.metrics_repository.calculate_trends(
+            current_value=current_value,
+            previous_value=previous_value,
+            previous_period_start=previous_period_start,
+            previous_period_end=previous_period_end,
+        )
 
     def get_product_detail_statistics(
         self,
@@ -961,123 +336,12 @@ class DashboardMetricsService:
         Returns:
             Dictionary with product statistics
         """
-        try:
-            product = ProductModel.objects.select_related("category", "subcategory").get(
-                id=product_id, business_id=self.business_id
-            )
-        except ProductModel.DoesNotExist:
-            logger.warning(f"Product {product_id} not found for business {self.business_id}")
-            return {}
-
-        invoice_lines = (
-            InvoiceLineModel.objects.filter(
-                product_id=product_id,
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .annotate(period=TruncDay("invoice__created_at"))
-            .values("period")
-            .annotate(
-                quantity_sold=Sum("quantity"),
-                revenue=Sum("line_total"),
-                cost=Sum(
-                    models.F("product__purchase_price") * models.F("quantity"),
-                    output_field=models.DecimalField(),
-                ),
-            )
-            .order_by("period")
+        return self.product_statistics_repository.get_product_statistics(
+            business_id=self.business_id,
+            product_id=product_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        # Calculate totals
-        total_quantity = 0
-        total_revenue = Decimal("0.00")
-        total_cost = Decimal("0.00")
-        number_of_sales = 0
-
-        daily_data = []
-        for row in invoice_lines:
-            quantity = row["quantity_sold"] or 0
-            revenue = Decimal(str(row["revenue"] or 0))
-            cost = Decimal(str(row["cost"] or 0))
-            profit = revenue - cost
-            margin = (profit / revenue * 100) if revenue > 0 else Decimal("0.00")
-
-            total_quantity += quantity
-            total_revenue += revenue
-            total_cost += cost
-            number_of_sales += 1
-
-            daily_data.append(
-                {
-                    "product_id": product_id,
-                    "product_name": product.name,
-                    "date": row["period"],
-                    "quantity_sold": quantity,
-                    "revenue": revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "cost": cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "profit": profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "margin_percentage": margin.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                }
-            )
-
-        total_profit = total_revenue - total_cost
-        total_margin = (
-            (total_profit / total_revenue * 100) if total_revenue > 0 else Decimal("0.00")
-        )
-
-        top_customers_raw = (
-            InvoiceLineModel.objects.filter(
-                product_id=product_id,
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .values("invoice__customer_id", "invoice__customer_name")
-            .annotate(
-                total_purchases=Count("invoice_id", distinct=True),
-                total_revenue=Sum("line_total"),
-            )
-            .order_by("-total_revenue")[:10]
-        )
-
-        top_customers = []
-        for row in top_customers_raw:
-            top_customers.append(
-                {
-                    "customer_id": row["invoice__customer_id"],
-                    "customer_name": row["invoice__customer_name"] or "Walk-in Customer",
-                    "total_purchases": row["total_purchases"] or 0,
-                    "total_revenue": Decimal(str(row["total_revenue"] or 0)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                }
-            )
-
-        return {
-            "product": {
-                "product_id": product.id,
-                "product_name": product.name,
-                "category_id": product.category_id,
-                "category_name": product.category.name,
-                "subcategory_id": product.subcategory_id,
-                "subcategory_name": product.subcategory.name if product.subcategory else None,
-            },
-            "totals": {
-                "total_revenue": total_revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "total_cost": total_cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "total_profit": total_profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "margin_percentage": total_margin.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "quantity_sold": total_quantity,
-                "number_of_sales": number_of_sales,
-            },
-            "daily_data": daily_data,
-            "top_customers": top_customers,
-        }
 
     def get_category_statistics(
         self,
@@ -1096,111 +360,12 @@ class DashboardMetricsService:
         Returns:
             Dictionary with category statistics
         """
-        try:
-            category = CategoryModel.objects.get(id=category_id, business_id=self.business_id)
-        except CategoryModel.DoesNotExist:
-            logger.warning(f"Category {category_id} not found for business {self.business_id}")
-            return {}
-
-        invoice_lines = (
-            InvoiceLineModel.objects.filter(
-                product__category_id=category_id,
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .annotate(period=TruncDay("invoice__created_at"))
-            .values("period")
-            .annotate(
-                quantity_sold=Sum("quantity"),
-                revenue=Sum("line_total"),
-                cost=Sum(
-                    models.F("product__purchase_price") * models.F("quantity"),
-                    output_field=models.DecimalField(),
-                ),
-            )
-            .order_by("period")
+        return self.category_statistics_repository.get_category_statistics(
+            business_id=self.business_id,
+            category_id=category_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        total_quantity = 0
-        total_revenue = Decimal("0.00")
-        total_cost = Decimal("0.00")
-        number_of_sales = 0
-
-        daily_data = []
-        for row in invoice_lines:
-            quantity = row["quantity_sold"] or 0
-            revenue = Decimal(str(row["revenue"] or 0))
-            cost = Decimal(str(row["cost"] or 0))
-            profit = revenue - cost
-
-            total_quantity += quantity
-            total_revenue += revenue
-            total_cost += cost
-            number_of_sales += 1
-
-            daily_data.append(
-                {
-                    "date": row["period"],
-                    "quantity_sold": quantity,
-                    "revenue": revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "cost": cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "profit": profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                }
-            )
-
-        total_profit = total_revenue - total_cost
-
-        # Get top products in this category
-        top_products_raw = (
-            InvoiceLineModel.objects.filter(
-                product__category_id=category_id,
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .select_related("product")
-            .values("product_id", "product__name", "product__quantity")
-            .annotate(
-                total_sold=Sum("quantity"),
-                total_revenue=Sum("line_total"),
-            )
-            .order_by("-total_revenue")[:10]
-        )
-
-        top_products = []
-        for row in top_products_raw:
-            top_products.append(
-                {
-                    "product_id": row["product_id"],
-                    "product_name": row["product__name"] or "Unknown",
-                    "total_sold": row["total_sold"] or 0,
-                    "total_revenue": Decimal(str(row["total_revenue"] or 0)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "quantity_available": row["product__quantity"] or 0,
-                }
-            )
-
-        return {
-            "category": {
-                "category_id": category.id,
-                "category_name": category.name,
-            },
-            "totals": {
-                "total_revenue": total_revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "total_cost": total_cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "total_profit": total_profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "quantity_sold": total_quantity,
-                "number_of_sales": number_of_sales,
-            },
-            "daily_data": daily_data,
-            "top_products": top_products,
-        }
 
     def get_subcategory_statistics(
         self,
@@ -1219,120 +384,12 @@ class DashboardMetricsService:
         Returns:
             Dictionary with subcategory statistics
         """
-        # Verify subcategory belongs to business
-        try:
-            subcategory = SubCategoryModel.objects.select_related("category").get(
-                id=subcategory_id, business_id=self.business_id
-            )
-        except SubCategoryModel.DoesNotExist:
-            logger.warning(
-                f"Subcategory {subcategory_id} not found for business {self.business_id}"
-            )
-            return {}
-
-        # Get invoice lines for products in this subcategory
-        invoice_lines = (
-            InvoiceLineModel.objects.filter(
-                product__subcategory_id=subcategory_id,
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .annotate(period=TruncDay("invoice__created_at"))
-            .values("period")
-            .annotate(
-                quantity_sold=Sum("quantity"),
-                revenue=Sum("line_total"),
-                cost=Sum(
-                    models.F("product__purchase_price") * models.F("quantity"),
-                    output_field=models.DecimalField(),
-                ),
-            )
-            .order_by("period")
+        return self.subcategory_statistics_repository.get_subcategory_statistics(
+            business_id=self.business_id,
+            subcategory_id=subcategory_id,
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        # Calculate totals
-        total_quantity = 0
-        total_revenue = Decimal("0.00")
-        total_cost = Decimal("0.00")
-        number_of_sales = 0
-
-        daily_data = []
-        for row in invoice_lines:
-            quantity = row["quantity_sold"] or 0
-            revenue = Decimal(str(row["revenue"] or 0))
-            cost = Decimal(str(row["cost"] or 0))
-            profit = revenue - cost
-
-            total_quantity += quantity
-            total_revenue += revenue
-            total_cost += cost
-            number_of_sales += 1
-
-            daily_data.append(
-                {
-                    "date": row["period"],
-                    "quantity_sold": quantity,
-                    "revenue": revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "cost": cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "profit": profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                }
-            )
-
-        total_profit = total_revenue - total_cost
-
-        # Get top products in this subcategory
-        top_products_raw = (
-            InvoiceLineModel.objects.filter(
-                product__subcategory_id=subcategory_id,
-                invoice__business_id=self.business_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .select_related("product")
-            .values("product_id", "product__name", "product__quantity")
-            .annotate(
-                total_sold=Sum("quantity"),
-                total_revenue=Sum("line_total"),
-            )
-            .order_by("-total_revenue")[:10]
-        )
-
-        top_products = []
-        for row in top_products_raw:
-            top_products.append(
-                {
-                    "product_id": row["product_id"],
-                    "product_name": row["product__name"] or "Unknown",
-                    "total_sold": row["total_sold"] or 0,
-                    "total_revenue": Decimal(str(row["total_revenue"] or 0)).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "quantity_available": row["product__quantity"] or 0,
-                }
-            )
-
-        return {
-            "subcategory": {
-                "subcategory_id": subcategory.id,
-                "subcategory_name": subcategory.name,
-                "category_id": subcategory.category_id,
-                "category_name": subcategory.category.name,
-            },
-            "totals": {
-                "total_revenue": total_revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "total_cost": total_cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "total_profit": total_profit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "quantity_sold": total_quantity,
-                "number_of_sales": number_of_sales,
-            },
-            "daily_data": daily_data,
-            "top_products": top_products,
-        }
 
     def get_cashier_statistics(
         self,
@@ -1351,228 +408,12 @@ class DashboardMetricsService:
         Returns:
             Dictionary with cashier statistics
         """
-        has_invoices = InvoiceModel.objects.filter(
+        return self.cashier_statistics_repository.get_cashier_statistics(
             business_id=self.business_id,
             cashier_id=cashier_id,
-            is_archived=False,
-            status="COMPLETED",
-            created_at__gte=start_date,
-            created_at__lte=end_date,
-        ).exists()
-
-        try:
-            cashier = UserModel.objects.get(id=cashier_id)
-            cashier_name = cashier.name or cashier.email or "Unknown"
-            cashier_email = cashier.email or ""
-            cashier_phone = cashier.phone_number
-            cashier_avatar = cashier.avatar_url
-        except UserModel.DoesNotExist:
-            cashier_name = "Unknown"
-            cashier_email = ""
-            cashier_phone = None
-            cashier_avatar = None
-
-        try:
-            business_member = BusinessMemberModel.objects.select_related("user").get(
-                business_id=self.business_id, user_id=cashier_id
-            )
-            member_role = business_member.role
-            member_is_active = business_member.is_active
-            member_joined_at = business_member.joined_at
-            member_left_at = business_member.left_at
-        except BusinessMemberModel.DoesNotExist:
-            member_role = "unknown"
-            member_is_active = False
-            member_joined_at = timezone.now()
-            member_left_at = None
-
-        if not has_invoices:
-            return {
-                "cashier": {
-                    "cashier_id": cashier_id,
-                    "cashier_name": cashier_name,
-                    "cashier_email": cashier_email,
-                    "phone_number": cashier_phone,
-                    "avatar_url": cashier_avatar,
-                    "role": member_role,
-                    "is_active": member_is_active,
-                    "joined_at": member_joined_at,
-                    "left_at": member_left_at,
-                },
-                "totals": {
-                    "total_sales": 0,
-                    "total_revenue": Decimal("0.00"),
-                    "average_sale_value": Decimal("0.00"),
-                    "customers_served": 0,
-                    "total_quantity_sold": 0,
-                },
-                "lifetime_totals": {
-                    "total_sales": 0,
-                    "total_revenue": Decimal("0.00"),
-                    "average_sale_value": Decimal("0.00"),
-                    "customers_served": 0,
-                    "total_quantity_sold": 0,
-                },
-                "daily_data": [],
-            }
-
-        invoices_daily = (
-            InvoiceModel.objects.filter(
-                business_id=self.business_id,
-                cashier_id=cashier_id,
-                is_archived=False,
-                status="COMPLETED",
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-            )
-            .annotate(period=TruncDay("created_at"))
-            .values("period")
-            .annotate(
-                total_sales=Count("id", distinct=True),
-                total_revenue=Sum("total"),
-                customers_served=Count("customer_id", distinct=True),
-            )
-            .order_by("period")
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        # Get quantity sold per day in a single aggregated query
-        quantity_per_day = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__cashier_id=cashier_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=start_date,
-                invoice__created_at__lte=end_date,
-            )
-            .annotate(period=TruncDay("invoice__created_at"))
-            .values("period")
-            .annotate(total_quantity=Sum("quantity"))
-        )
-
-        quantity_dict = {row["period"]: row["total_quantity"] or 0 for row in quantity_per_day}
-
-        # Calculate totals and daily data
-        total_sales_count = 0
-        total_revenue = Decimal("0.00")
-        total_quantity_sold = 0
-
-        total_customers_served_count = (
-            InvoiceModel.objects.filter(
-                business_id=self.business_id,
-                cashier_id=cashier_id,
-                is_archived=False,
-                status="COMPLETED",
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-            )
-            .exclude(customer_id__isnull=True)
-            .values("customer_id")
-            .distinct()
-            .count()
-        )
-
-        daily_data = []
-        for row in invoices_daily:
-            period = row["period"]
-            sales_count = row["total_sales"] or 0
-            revenue = Decimal(str(row["total_revenue"] or 0))
-            quantity = quantity_dict.get(period, 0)
-            customers_count = row["customers_served"] or 0
-
-            average_sale_value = revenue / sales_count if sales_count > 0 else Decimal("0.00")
-
-            total_sales_count += sales_count
-            total_revenue += revenue
-            total_quantity_sold += quantity
-
-            daily_data.append(
-                {
-                    "date": period,
-                    "total_sales": sales_count,
-                    "total_revenue": revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                    "total_quantity_sold": quantity,
-                    "average_sale_value": average_sale_value.quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    ),
-                    "customers_served": customers_count,
-                }
-            )
-
-        average_sale_value = (
-            total_revenue / total_sales_count if total_sales_count > 0 else Decimal("0.00")
-        )
-
-        lifetime_start_date = (
-            member_joined_at if member_joined_at else timezone.now() - timedelta(days=365)
-        )
-
-        lifetime_stats = InvoiceModel.objects.filter(
-            business_id=self.business_id,
-            cashier_id=cashier_id,
-            is_archived=False,
-            status="COMPLETED",
-            created_at__gte=lifetime_start_date,
-        ).aggregate(
-            total_sales=Count("id", distinct=True),
-            total_revenue=Sum("total"),
-            customers_served=Count("customer_id", distinct=True),
-        )
-
-        lifetime_total_quantity = (
-            InvoiceLineModel.objects.filter(
-                invoice__business_id=self.business_id,
-                invoice__cashier_id=cashier_id,
-                invoice__is_archived=False,
-                invoice__status="COMPLETED",
-                invoice__created_at__gte=lifetime_start_date,
-            ).aggregate(total=Sum("quantity"))["total"]
-            or 0
-        )
-
-        lifetime_total_sales = lifetime_stats["total_sales"] or 0
-        lifetime_total_revenue = Decimal(str(lifetime_stats["total_revenue"] or 0))
-        lifetime_customers_served = lifetime_stats["customers_served"] or 0
-        lifetime_average_sale_value = (
-            lifetime_total_revenue / lifetime_total_sales
-            if lifetime_total_sales > 0
-            else Decimal("0.00")
-        )
-
-        return {
-            "cashier": {
-                "cashier_id": cashier_id,
-                "cashier_name": cashier_name,
-                "cashier_email": cashier_email,
-                "phone_number": cashier_phone,
-                "avatar_url": cashier_avatar,
-                "role": member_role,
-                "is_active": member_is_active,
-                "joined_at": member_joined_at,
-                "left_at": member_left_at,
-            },
-            "totals": {
-                "total_sales": total_sales_count,
-                "total_revenue": total_revenue.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-                "average_sale_value": average_sale_value.quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                ),
-                "customers_served": total_customers_served_count,
-                "total_quantity_sold": total_quantity_sold,
-            },
-            "lifetime_totals": {
-                "total_sales": lifetime_total_sales,
-                "total_revenue": lifetime_total_revenue.quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                ),
-                "average_sale_value": lifetime_average_sale_value.quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                ),
-                "customers_served": lifetime_customers_served,
-                "total_quantity_sold": lifetime_total_quantity,
-            },
-            "daily_data": daily_data,
-        }
 
     def get_cashier_ranking(
         self,
@@ -1591,32 +432,9 @@ class DashboardMetricsService:
         Returns:
             Rank (1-based) or None if cashier not found
         """
-        cashier_revenue = InvoiceModel.objects.filter(
+        return self.cashier_statistics_repository.get_cashier_ranking(
             business_id=self.business_id,
             cashier_id=cashier_id,
-            is_archived=False,
-            status="COMPLETED",
-            created_at__gte=start_date,
-            created_at__lte=end_date,
-        ).aggregate(total=Sum("total"))["total"]
-
-        if cashier_revenue is None:
-            return None
-
-        cashiers_with_higher_revenue = (
-            InvoiceModel.objects.filter(
-                business_id=self.business_id,
-                is_archived=False,
-                status="COMPLETED",
-                created_at__gte=start_date,
-                created_at__lte=end_date,
-                cashier_id__isnull=False,
-            )
-            .exclude(cashier_id=cashier_id)
-            .values("cashier_id")
-            .annotate(total_revenue=Sum("total"))
-            .filter(total_revenue__gt=cashier_revenue)
-            .count()
+            start_date=start_date,
+            end_date=end_date,
         )
-
-        return cashiers_with_higher_revenue + 1
