@@ -83,6 +83,28 @@ class TopProductDTO:
 
 
 @dataclass
+class BusinessOverviewDTO:
+    """DTO for business overview metrics (lifetime, not period-dependent)."""
+
+    total_customers: int
+    total_members: int
+    active_members: int
+    total_products: int
+    total_categories: int
+    total_subcategories: int
+    lifetime_revenue: Decimal
+    lifetime_credit: Decimal
+    lifetime_profit: Decimal
+    lifetime_expenses: Decimal
+    total_invoices: int
+    total_invoices_completed: int
+    total_invoices_credit: int
+    average_invoice_value: Decimal
+    total_inventory_value: Decimal
+    business_created_at: datetime
+
+
+@dataclass
 class DashboardSummaryDTO:
     """DTO for complete dashboard summary."""
 
@@ -95,6 +117,7 @@ class DashboardSummaryDTO:
     inventory: InventoryMetricsDTO
     customers: CustomerMetricsDTO
     top_products: list[TopProductDTO]
+    overview: BusinessOverviewDTO
     generated_at: datetime
 
 

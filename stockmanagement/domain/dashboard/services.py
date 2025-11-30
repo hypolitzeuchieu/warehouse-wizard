@@ -438,3 +438,12 @@ class DashboardMetricsService:
             start_date=start_date,
             end_date=end_date,
         )
+
+    def get_business_overview_metrics(self) -> dict[str, Any]:
+        """
+        Get business overview metrics (lifetime, not period-dependent).
+
+        Returns:
+            Dictionary with business overview metrics
+        """
+        return self.metrics_repository.get_business_overview_metrics(business_id=self.business_id)

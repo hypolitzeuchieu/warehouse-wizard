@@ -10,6 +10,7 @@ from uuid import UUID
 from django.utils import timezone
 
 from application.dto.dashboard_dto import (
+    BusinessOverviewDTO,
     CashierDailyDataDTO,
     CashierInfoDTO,
     CashierStatisticsDTO,
@@ -220,6 +221,27 @@ class GetDashboardSummaryUseCase:
             for p in top_products_data
         ]
 
+        overview_metrics_data = self.dashboard_metrics_service.get_business_overview_metrics()
+
+        overview = BusinessOverviewDTO(
+            total_customers=overview_metrics_data["total_customers"],
+            total_members=overview_metrics_data["total_members"],
+            active_members=overview_metrics_data["active_members"],
+            total_products=overview_metrics_data["total_products"],
+            total_categories=overview_metrics_data["total_categories"],
+            total_subcategories=overview_metrics_data["total_subcategories"],
+            lifetime_revenue=overview_metrics_data["lifetime_revenue"],
+            lifetime_credit=overview_metrics_data["lifetime_credit"],
+            lifetime_profit=overview_metrics_data["lifetime_profit"],
+            lifetime_expenses=overview_metrics_data["lifetime_expenses"],
+            total_invoices=overview_metrics_data["total_invoices"],
+            total_invoices_completed=overview_metrics_data["total_invoices_completed"],
+            total_invoices_credit=overview_metrics_data["total_invoices_credit"],
+            average_invoice_value=overview_metrics_data["average_invoice_value"],
+            total_inventory_value=overview_metrics_data["total_inventory_value"],
+            business_created_at=overview_metrics_data["business_created_at"],
+        )
+
         return DashboardSummaryDTO(
             business_id=self.business_id,
             period_start=start_date,
@@ -230,6 +252,7 @@ class GetDashboardSummaryUseCase:
             inventory=inventory_metrics,
             customers=customer_metrics,
             top_products=top_products,
+            overview=overview,
             generated_at=timezone.now(),
         )
 

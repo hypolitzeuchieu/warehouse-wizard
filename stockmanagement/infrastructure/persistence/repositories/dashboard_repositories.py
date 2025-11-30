@@ -721,6 +721,108 @@ class DashboardMetricsRepositoryImpl(DashboardMetricsRepository):
             "trend_direction": trend_direction,
         }
 
+    def get_business_overview_metrics(
+        self,
+        business_id: UUID,
+    ) -> dict[str, Any]:
+        """Get business overview metrics (lifetime)."""
+        from infrastructure.persistence.models.business_models import Business as BusinessModel
+
+        business = BusinessModel.objects.filter(id=business_id).first()
+        business_created_at = business.created_at if business else timezone.now()
+
+        total_customers = CustomerModel.objects.filter(business_id=business_id).count()
+
+        total_members = BusinessMemberModel.objects.filter(business_id=business_id).count()
+        active_members = BusinessMemberModel.objects.filter(
+            business_id=business_id, is_active=True, left_at__isnull=True
+        ).count()
+
+        total_products = ProductModel.objects.filter(business_id=business_id).count()
+
+        total_categories = CategoryModel.objects.filter(business_id=business_id).count()
+
+        total_subcategories = SubCategoryModel.objects.filter(business_id=business_id).count()
+
+        lifetime_revenue_stats = InvoiceModel.objects.filter(
+            business_id=business_id,
+            status="COMPLETED",
+            is_archived=False,
+        ).aggregate(
+            total_revenue=Sum("total"),
+            total_invoices=Count("id"),
+        )
+        lifetime_revenue = Decimal(str(lifetime_revenue_stats["total_revenue"] or 0))
+        total_invoices_completed = lifetime_revenue_stats["total_invoices"] or 0
+
+        lifetime_credit_stats = CreditModel.objects.filter(business_id=business_id).aggregate(
+            total_credit=Sum("remaining_amount"),
+        )
+        lifetime_credit = Decimal(str(lifetime_credit_stats["total_credit"] or 0))
+
+        total_invoices = InvoiceModel.objects.filter(
+            business_id=business_id, is_archived=False
+        ).count()
+
+        total_invoices_credit = InvoiceModel.objects.filter(
+            business_id=business_id,
+            status="CREDIT",
+            is_archived=False,
+        ).count()
+
+        average_invoice_value = (
+            lifetime_revenue / total_invoices_completed
+            if total_invoices_completed > 0
+            else Decimal("0.00")
+        )
+
+        lifetime_expenses_stats = ExpenseModel.objects.filter(business_id=business_id).aggregate(
+            total_expenses=Sum("amount")
+        )
+
+        lifetime_expenses = Decimal(str(lifetime_expenses_stats["total_expenses"] or 0))
+
+        lifetime_payroll_stats = PayrollModel.objects.filter(business_id=business_id).aggregate(
+            total_payroll=Sum("net_amount")
+        )
+
+        lifetime_expenses += Decimal(str(lifetime_payroll_stats["total_payroll"] or 0))
+
+        lifetime_profit = lifetime_revenue - lifetime_expenses
+
+        inventory_value_stats = ProductModel.objects.filter(business_id=business_id).aggregate(
+            total_value=Sum(
+                models.F("quantity") * models.F("purchase_price"),
+                output_field=models.DecimalField(),
+            )
+        )
+        total_inventory_value = Decimal(str(inventory_value_stats["total_value"] or 0))
+
+        logger.info(
+            f"Business overview metrics calculated for business {business_id}: "
+            f"customers={total_customers}, members={total_members}, "
+            f"products={total_products}, revenue={lifetime_revenue}"
+        )
+
+        return {
+            "total_customers": total_customers,
+            "total_members": total_members,
+            "active_members": active_members,
+            "total_products": total_products,
+            "total_categories": total_categories,
+            "total_subcategories": total_subcategories,
+            "lifetime_revenue": lifetime_revenue,
+            "lifetime_credit": lifetime_credit,
+            "lifetime_profit": lifetime_profit,
+            "lifetime_expenses": lifetime_expenses,
+            "total_invoices": total_invoices,
+            "total_invoices_completed": total_invoices_completed,
+            "total_invoices_credit": total_invoices_credit,
+            "average_invoice_value": average_invoice_value,
+            "total_inventory_value": total_inventory_value,
+            "business_created_at": business_created_at,
+        }
+
 
 class DashboardProductStatisticsRepositoryImpl(DashboardProductStatisticsRepository):
     """Django implementation of DashboardProductStatisticsRepository."""
