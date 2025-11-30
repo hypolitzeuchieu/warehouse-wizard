@@ -137,3 +137,34 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send member credentials email to {email}: {str(e)}")
             return False
+
+    @staticmethod
+    def send_notification_email(email: str, subject: str, message: str) -> bool:
+        """
+        Send notification email.
+
+        Args:
+            email: Recipient email address
+            subject: Email subject
+            message: Email message
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            from_email = settings.EMAIL_HOST_USER
+            recipient_list = [email]
+
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=recipient_list,
+                fail_silently=False,
+            )
+
+            logger.info(f"Notification email sent to {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send notification email to {email}: {str(e)}")
+            return False

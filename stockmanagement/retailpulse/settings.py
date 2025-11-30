@@ -5,7 +5,6 @@ import socket
 from datetime import timedelta
 from pathlib import Path
 
-from celery.schedules import crontab
 from dotenv import load_dotenv
 
 from shared.config.logging_config import get_logging_config
@@ -253,11 +252,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "UTC"
-
 USE_I18N = True
-
 USE_TZ = True
 
 # AWS settings
@@ -295,17 +291,19 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
 
 # Celery Beat Schedule
 
 CELERY_BEAT_SCHEDULE = {
     "check-expired-products": {
         "task": "tasks.inventory_tasks.check_expired_products",
-        "schedule": crontab(minute=0),
+        "schedule": timedelta(seconds=60),
     },
     "cleanup-expired-tokens": {
         "task": "tasks.auth_tasks.cleanup_expired_tokens",
-        "schedule": crontab(minute=0),
+        "schedule": timedelta(seconds=120),
     },
 }
 
@@ -394,15 +392,3 @@ RATE_LIMIT_RESET_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_RE
 RATE_LIMIT_RESET_PASSWORD_PERIOD = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_PERIOD", "300"))
 RATE_LIMIT_REFRESH_TOKEN_REQUESTS = int(os.getenv("RATE_LIMIT_REFRESH_TOKEN_REQUESTS", "20"))
 RATE_LIMIT_REFRESH_TOKEN_PERIOD = int(os.getenv("RATE_LIMIT_REFRESH_TOKEN_PERIOD", "60"))
-
-# Cache configuration for OAuth state and rate limiting
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "unique-snowflake",
-        "OPTIONS": {
-            "MAX_ENTRIES": 10000,
-        },
-        "TIMEOUT": 300,
-    }
-}
