@@ -2,6 +2,7 @@ import logging
 from uuid import UUID, uuid4
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.tokens import RefreshToken as JWTRefreshToken
@@ -131,6 +132,7 @@ class SignupUseCase:
             user_repository=user_repository,
         )
 
+    @transaction.atomic
     def execute(self, dto: UserCreateDTO) -> SignupResponseDTO:
         """
         Execute user signup with automatic OTP sending.
@@ -146,8 +148,6 @@ class SignupUseCase:
         Raises:
             BaseAPIException: If user creation fails or OTP sending fails
         """
-
-        # Create user
         create_user_use_case = CreateUserUseCase(user_repository=self.user_repository)
         user_dto = create_user_use_case.execute(dto)
 

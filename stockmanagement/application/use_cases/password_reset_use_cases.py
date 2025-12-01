@@ -15,8 +15,10 @@ from domain.users.repositories import UserRepository
 from infrastructure.persistence.models.password_reset_models import (
     PasswordResetToken as PasswordResetTokenModel,
 )
+from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
 from shared.exceptions.base import BaseAPIException
 from shared.services.otp_service import OTPService
+from tasks.password_reset_tasks import send_password_reset_email_task, send_password_reset_sms_task
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +46,9 @@ class ForgotPasswordUseCase:
         Raises:
             BaseAPIException: If user not found or sending fails
         """
-        # Get expiration time from environment (default 10 minutes)
         expiration_minutes = int(getattr(settings, "PASSWORD_RESET_EXPIRY_MINUTES", 10))
 
-        # Get frontend URL for reset link
         frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
-
-        # Find user by identifier
-        from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
 
         user = None
         if dto.email:
@@ -64,36 +61,30 @@ class ForgotPasswordUseCase:
                 user = None
 
         if not user:
-            # Don't reveal if user exists for security
             return {
                 "message": f"If the {dto.reset_type} exists, a reset link/code has been sent.",
                 "expires_in_minutes": expiration_minutes,
             }
 
-        # Get Django model instance for database operations
         try:
             user_model = UserModel.objects.get(id=user.id)
         except UserModel.DoesNotExist:
-            # Don't reveal if user exists for security
             return {
                 "message": f"If the {dto.reset_type} exists, a reset link/code has been sent.",
                 "expires_in_minutes": expiration_minutes,
             }
 
-        # Invalidate previous reset tokens for this user
         PasswordResetTokenModel.objects.filter(
             user_id=user.id, used=False, reset_type=dto.reset_type
         ).update(used=True, used_at=timezone.now())
 
-        # Generate token or code
         if dto.reset_type == "email":
             token = secrets.token_urlsafe(32)
             code = None
-        else:  # SMS
+        else:
             code = OTPService.generate_otp_code()
             token = None
 
-        # Create reset token
         expires_at = timezone.now() + timedelta(minutes=expiration_minutes)
         reset_token = PasswordResetTokenModel.objects.create(
             id=uuid4(),
@@ -109,12 +100,9 @@ class ForgotPasswordUseCase:
             max_attempts=3,
         )
 
-        # Send reset link/code asynchronously via Celery
         if dto.reset_type == "email" and dto.email:
             reset_url = f"{frontend_url}/reset-password?token={token}"
-            from tasks.password_reset_tasks import send_password_reset_email_task
 
-            # Send email in background
             send_password_reset_email_task.delay(
                 email=dto.email,
                 reset_url=reset_url,
@@ -124,9 +112,7 @@ class ForgotPasswordUseCase:
                 f"Password reset email task queued for {dto.email} (user: {user.id}, token_id: {reset_token.id})"
             )
         elif dto.reset_type == "sms" and dto.phone_number:
-            from tasks.password_reset_tasks import send_password_reset_sms_task
 
-            # Send SMS in background
             send_password_reset_sms_task.delay(
                 phone_number=dto.phone_number,
                 code=code,
@@ -189,7 +175,6 @@ class ResetPasswordUseCase:
                 status_code=400,
             )
 
-        # Validate token
         if not reset_token.is_valid():
             if reset_token.attempts >= reset_token.max_attempts:
                 raise BaseAPIException(
@@ -197,7 +182,6 @@ class ResetPasswordUseCase:
                     code="MAX_ATTEMPTS_EXCEEDED",
                     status_code=400,
                 )
-            # Increment attempts for invalid token
             reset_token.attempts += 1
             reset_token.save()
             raise BaseAPIException(
@@ -206,7 +190,6 @@ class ResetPasswordUseCase:
                 status_code=400,
             )
 
-        # Validate password
         if len(dto.new_password) < 8:
             reset_token.attempts += 1
             reset_token.save()
@@ -216,7 +199,6 @@ class ResetPasswordUseCase:
                 status_code=400,
             )
 
-        # Get user
         user = self.user_repository.get_by_id(reset_token.user_id)
         if not user:
             raise BaseAPIException(
@@ -225,23 +207,17 @@ class ResetPasswordUseCase:
                 status_code=404,
             )
 
-        # Update password using repository
-        from infrastructure.persistence.models.user_models import RetailPulseUser as UserModel
-
         user_model = UserModel.objects.get(id=user.id)
         user_model.set_password(dto.new_password)
         user_model.save()
 
-        # Update domain entity
         user.updated_at = timezone.now()
         self.user_repository.update(user)
 
-        # Mark token as used
         reset_token.used = True
         reset_token.used_at = timezone.now()
         reset_token.save()
 
-        # Invalidate all other reset tokens for this user
         PasswordResetTokenModel.objects.filter(user=user_model, used=False).update(
             used=True, used_at=timezone.now()
         )

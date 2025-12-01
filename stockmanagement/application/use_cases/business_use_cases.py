@@ -3,6 +3,7 @@
 import logging
 from uuid import UUID, uuid4
 
+from django.db import transaction
 from django.utils import timezone
 
 from application.dto.business_dto import (
@@ -47,9 +48,9 @@ class CreateBusinessUseCase:
         self.business_member_repository = business_member_repository
         self.owner_id = owner_id
 
+    @transaction.atomic
     def execute(self, dto: BusinessCreateDTO) -> BusinessResponseDTO:
         """Execute business creation."""
-        # Get user and verify they are active
         user = self.user_repository.get_by_id(self.owner_id)
         if not user:
             raise NotFoundError(
@@ -106,6 +107,11 @@ class CreateBusinessUseCase:
             f"unique_name: {business.unique_name}, owner_id: {self.owner_id}"
         )
 
+        if user.role != UserRole.OWNER:
+            user.role = UserRole.OWNER
+            user.updated_at = timezone.now()
+            self.user_repository.update(user)
+
         try:
             qr_service = QRCodeService()
             qr_code_url = qr_service.upload_business_qr_code(business.id)
@@ -114,11 +120,6 @@ class CreateBusinessUseCase:
             logger.info(f"QR code generated and uploaded for business {business.id}")
         except Exception as e:
             logger.warning(f"Failed to generate QR code for business {business.id}: {str(e)}")
-
-        if user.role != UserRole.OWNER:
-            user.role = UserRole.OWNER
-            user.updated_at = timezone.now()
-            self.user_repository.update(user)
 
         return self._to_dto(business)
 
@@ -265,6 +266,7 @@ class AddBusinessMemberUseCase:
         self.business_id = business_id
         self.user_id = user_id
 
+    @transaction.atomic
     def execute(self, dto: BusinessMemberCreateDTO) -> BusinessMemberResponseDTO:
         """Execute adding business member."""
         business = self.business_repository.get_by_id(self.business_id)
