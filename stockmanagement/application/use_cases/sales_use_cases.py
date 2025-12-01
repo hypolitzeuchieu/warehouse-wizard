@@ -152,6 +152,7 @@ class CreateInvoiceUseCase:
         credit_repository: CreditRepository,
         customer_repository: CustomerRepository,
         notification_domain_service: NotificationDomainService,
+        business_domain_service: BusinessDomainService,
         business_id: UUID,
         cashier_id: UUID,
     ) -> None:
@@ -166,12 +167,19 @@ class CreateInvoiceUseCase:
         self.credit_repository = credit_repository
         self.customer_repository = customer_repository
         self.notification_domain_service = notification_domain_service
+        self.business_domain_service = business_domain_service
         self.business_id = business_id
         self.cashier_id = cashier_id
 
     @transaction.atomic
     def execute(self, dto: InvoiceCreateDTO) -> InvoiceResponseDTO:
         """Execute invoice creation."""
+        # Check if user can access sales
+        if not self.business_domain_service.can_access_sales(self.business_id, self.cashier_id):
+            raise ForbiddenError(
+                detail="You don't have permission to create invoices for this business",
+                code="PERMISSION_DENIED",
+            )
         try:
             customer, customer_id, customer_name = self._resolve_customer(dto)
 
@@ -804,9 +812,9 @@ class ListInvoicesUseCase:
 
     def execute(self) -> list[InvoiceResponseDTO]:
         """Execute listing invoices."""
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
+        if not self.business_domain_service.can_access_sales(self.business_id, self.user_id):
             raise ForbiddenError(
-                detail="You don't have access to this business",
+                detail="You don't have permission to access sales for this business",
                 code="PERMISSION_DENIED",
             )
 
@@ -884,6 +892,7 @@ class UpdateInvoiceUseCase:
         product_repository: ProductRepository,
         user_repository: UserRepository,
         inventory_domain_service: InventoryDomainService,
+        business_domain_service: BusinessDomainService,
         invoice_id: UUID,
         user_id: UUID,
     ) -> None:
@@ -894,6 +903,7 @@ class UpdateInvoiceUseCase:
         self.product_repository = product_repository
         self.user_repository = user_repository
         self.inventory_domain_service = inventory_domain_service
+        self.business_domain_service = business_domain_service
         self.invoice_id = invoice_id
         self.user_id = user_id
 
@@ -905,6 +915,13 @@ class UpdateInvoiceUseCase:
             raise NotFoundError(
                 detail="Invoice not found",
                 code="INVOICE_NOT_FOUND",
+            )
+
+        # Check if user can access sales
+        if not self.business_domain_service.can_access_sales(invoice.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to update invoices for this business",
+                code="PERMISSION_DENIED",
             )
 
         if invoice.status == InvoiceStatus.COMPLETED and dto.status != "CANCELLED":
@@ -1046,6 +1063,7 @@ class PayInvoiceUseCase:
         product_repository: ProductRepository,
         user_repository: UserRepository,
         credit_repository: CreditRepository,
+        business_domain_service: BusinessDomainService,
         invoice_id: UUID,
         user_id: UUID,
     ) -> None:
@@ -1057,6 +1075,7 @@ class PayInvoiceUseCase:
         self.product_repository = product_repository
         self.user_repository = user_repository
         self.credit_repository = credit_repository
+        self.business_domain_service = business_domain_service
         self.invoice_id = invoice_id
         self.user_id = user_id
 
@@ -1065,6 +1084,18 @@ class PayInvoiceUseCase:
         """Execute payment processing."""
         try:
             invoice = self.invoice_repository.get_by_id_for_update(self.invoice_id)
+            if not invoice:
+                raise NotFoundError(
+                    detail="Invoice not found",
+                    code="INVOICE_NOT_FOUND",
+                )
+
+            # Check if user can access sales
+            if not self.business_domain_service.can_access_sales(invoice.business_id, self.user_id):
+                raise ForbiddenError(
+                    detail="You don't have permission to process payments for this business",
+                    code="PERMISSION_DENIED",
+                )
             if not invoice:
                 raise NotFoundError(
                     detail="Invoice not found",
@@ -1222,6 +1253,7 @@ class CancelInvoiceUseCase:
         user_repository: UserRepository,
         inventory_domain_service: InventoryDomainService,
         credit_repository: CreditRepository,
+        business_domain_service: BusinessDomainService,
         invoice_id: UUID,
         user_id: UUID,
     ) -> None:
@@ -1233,6 +1265,7 @@ class CancelInvoiceUseCase:
         self.user_repository = user_repository
         self.inventory_domain_service = inventory_domain_service
         self.credit_repository = credit_repository
+        self.business_domain_service = business_domain_service
         self.invoice_id = invoice_id
         self.user_id = user_id
 
@@ -1244,6 +1277,13 @@ class CancelInvoiceUseCase:
             raise NotFoundError(
                 detail="Invoice not found",
                 code="INVOICE_NOT_FOUND",
+            )
+
+        # Check if user can access sales
+        if not self.business_domain_service.can_access_sales(invoice.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to cancel invoices for this business",
+                code="PERMISSION_DENIED",
             )
 
         if invoice.status == InvoiceStatus.CANCELLED:
@@ -1361,6 +1401,7 @@ class ArchiveInvoiceUseCase:
         invoice_log_repository: InvoiceLogRepository,
         product_repository: ProductRepository,
         user_repository: UserRepository,
+        business_domain_service: BusinessDomainService,
         invoice_id: UUID,
         user_id: UUID,
     ) -> None:
@@ -1370,6 +1411,7 @@ class ArchiveInvoiceUseCase:
         self.invoice_log_repository = invoice_log_repository
         self.product_repository = product_repository
         self.user_repository = user_repository
+        self.business_domain_service = business_domain_service
         self.invoice_id = invoice_id
         self.user_id = user_id
 
@@ -1381,6 +1423,13 @@ class ArchiveInvoiceUseCase:
             raise NotFoundError(
                 detail="Invoice not found",
                 code="INVOICE_NOT_FOUND",
+            )
+
+        # Check if user can access sales (owner, manager, cashier can archive)
+        if not self.business_domain_service.can_access_sales(invoice.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to archive invoices for this business",
+                code="PERMISSION_DENIED",
             )
 
         if invoice.is_archived:

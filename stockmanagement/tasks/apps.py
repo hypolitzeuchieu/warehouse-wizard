@@ -1,6 +1,10 @@
 """Django app configuration for Celery tasks."""
 
+import logging
+
 from django.apps import AppConfig
+
+logger = logging.getLogger(__name__)
 
 
 class TasksConfig(AppConfig):
@@ -17,13 +21,11 @@ class TasksConfig(AppConfig):
         This ensures tasks are registered with Celery after Django is fully initialized.
         """
         try:
+            import tasks.auth_tasks  # noqa: F401
             import tasks.inventory_tasks  # noqa: F401
+            import tasks.notification_tasks  # noqa: F401
             import tasks.otp_tasks  # noqa: F401
             import tasks.password_reset_tasks  # noqa: F401
             import tasks.send_mail  # noqa: F401
         except ImportError as e:
-            # Log but don't fail if tasks can't be imported
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(f"Could not import some tasks: {e}")

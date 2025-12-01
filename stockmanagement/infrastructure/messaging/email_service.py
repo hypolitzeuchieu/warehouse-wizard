@@ -94,3 +94,77 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send password reset email to {email}: {str(e)}")
             return False
+
+    @staticmethod
+    def send_member_credentials_email(
+        email: str, username: str, password: str, business_name: str, role: str
+    ) -> bool:
+        """Send member credentials via email."""
+        try:
+            subject = f"Welcome to {business_name} - Your Account Credentials"
+            frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+
+            message = f"""Hello {username},
+
+            You have been added as a {role} to {business_name}.
+
+            Your login credentials:
+            Email: {email}
+            Password: {password}
+
+            Please login and change your password after your first login for security.
+
+            Login URL: {frontend_url}/login
+
+            If you didn't expect this email, please contact support.
+
+            Best regards,
+            The {business_name} Team"""
+
+            from_email = settings.EMAIL_HOST_USER
+            recipient_list = [email]
+
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=recipient_list,
+                fail_silently=False,
+            )
+
+            logger.info(f"Member credentials email sent to {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send member credentials email to {email}: {str(e)}")
+            return False
+
+    @staticmethod
+    def send_notification_email(email: str, subject: str, message: str) -> bool:
+        """
+        Send notification email.
+
+        Args:
+            email: Recipient email address
+            subject: Email subject
+            message: Email message
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            from_email = settings.EMAIL_HOST_USER
+            recipient_list = [email]
+
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=recipient_list,
+                fail_silently=False,
+            )
+
+            logger.info(f"Notification email sent to {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send notification email to {email}: {str(e)}")
+            return False

@@ -48,6 +48,20 @@ services:
     networks:
       - backend
 
+  celery-beat:
+    build: .
+    command: celery -A retailpulse beat --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+      - celery
+    networks:
+      - backend
+
 volumes:
   postgres_data:
 

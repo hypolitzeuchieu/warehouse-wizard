@@ -36,6 +36,8 @@ from application.use_cases.user_use_cases import (
 from domain.users.services import UserDomainService
 from infrastructure.external.google_oauth import GoogleOAuthService
 from infrastructure.persistence.repositories import (
+    BusinessMemberRepositoryImpl,
+    BusinessRepositoryImpl,
     DeviceRepositoryImpl,
     OTPRepositoryImpl,
     RefreshTokenRepositoryImpl,
@@ -53,6 +55,7 @@ from presentation.serializers.user_serializers import (
     RefreshTokenSerializer,
     ResetPasswordSerializer,
     UserCreateSerializer,
+    UserResponseSerializer,
 )
 from shared.authentication.jwt import generate_tokens
 from shared.authentication.jwt_blacklist_service import JWTBlacklistService
@@ -178,21 +181,19 @@ def login_view(request: Request) -> Response:
             logger.warning(f"Login failed - user not found: {identifier}")
             return helper.error(
                 message="Invalid credentials",
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 code="INVALID_CREDENTIALS",
             )
 
-        # Verify password using repository
         user_repository = UserRepositoryImpl()
         if not user_repository.verify_password(user.id, dto.password):
             logger.warning(f"Login failed - invalid password for user: {user.id} ({identifier})")
             return helper.error(
                 message="Invalid credentials",
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 code="INVALID_CREDENTIALS",
             )
 
-        # Check if account is active (not disabled by admin)
         if not user.is_active:
             logger.warning(f"Login failed - account disabled: {user.id} ({identifier})")
             return helper.error(
@@ -201,8 +202,6 @@ def login_view(request: Request) -> Response:
                 code="ACCOUNT_DISABLED",
             )
 
-        # Credentials are valid - send OTP even if email is not verified
-        # Email will be verified automatically when OTP is verified
         if not user.email_verified:
             logger.info(
                 f"Login with unverified email - sending OTP to verify: {user.id} ({identifier})"
@@ -210,13 +209,11 @@ def login_view(request: Request) -> Response:
         else:
             logger.debug(f"Credentials verified for user: {user.id} ({identifier})")
 
-        # Credentials are valid, send OTP
         otp_use_case = RequestOTPUseCase(
             otp_repository=OTPRepositoryImpl(),
             user_repository=UserRepositoryImpl(),
         )
 
-        # Determine OTP type based on the identifier used for login
         if dto.email:
             otp_type = "email"
             otp_request_dto = OTPRequestDTO(
@@ -317,7 +314,31 @@ def verify_otp_view(request: Request) -> Response:
             user_agent=user_agent,
         )
 
-        from presentation.serializers.user_serializers import UserResponseSerializer
+        business_info = None
+        user_role = getattr(login_response.user, "role", None)
+        if user_role == "owner":
+            businesses = BusinessRepositoryImpl().get_by_owner(login_response.user.id)
+            if businesses:
+                active_business = next((b for b in businesses if b.is_active), businesses[0])
+                business_info = {
+                    "id": str(active_business.id),
+                    "name": active_business.name,
+                    "unique_name": active_business.unique_name,
+                }
+        elif user_role in ["manager", "cashier", "stock_keeper", "delivery"]:
+            member_repo = BusinessMemberRepositoryImpl()
+            memberships = member_repo.get_user_businesses(login_response.user.id)
+            if memberships:
+                active_membership = next((m for m in memberships if m.is_active_member()), None)
+                if active_membership:
+                    business = BusinessRepositoryImpl().get_by_id(active_membership.business_id)
+                    if business:
+                        business_info = {
+                            "id": str(business.id),
+                            "name": business.name,
+                            "unique_name": business.unique_name,
+                            "role": active_membership.role,
+                        }
 
         return helper.success(
             message="OTP verified successfully. Login completed.",
@@ -326,6 +347,7 @@ def verify_otp_view(request: Request) -> Response:
                 "refresh_token": login_response.refresh_token,
                 "expires_in": login_response.expires_in,
                 "user": UserResponseSerializer.from_dto(login_response.user),
+                "business": business_info,
             },
             status_code=status.HTTP_200_OK,
         )
@@ -515,6 +537,10 @@ def google_callback_view(request: Request) -> Response:
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@rate_limit(
+    requests_per_period=settings.RATE_LIMIT_REFRESH_TOKEN_REQUESTS,
+    period_seconds=settings.RATE_LIMIT_REFRESH_TOKEN_PERIOD,
+)
 def refresh_token_view(request: Request) -> Response:
     """Refresh token endpoint."""
     helper = FunctionalViewHelper(request)

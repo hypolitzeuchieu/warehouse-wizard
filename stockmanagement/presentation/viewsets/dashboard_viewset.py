@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -10,24 +12,36 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from application.use_cases.dashboard_use_cases import (
+    GetCashierStatisticsUseCase,
+    GetCategoryStatisticsUseCase,
     GetDashboardDailyUseCase,
     GetDashboardSummaryUseCase,
+    GetProductStatisticsUseCase,
+    GetSubCategoryStatisticsUseCase,
 )
 from domain.business.services import BusinessDomainService
 from domain.dashboard.services import DashboardMetricsService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
-    CreditRepositoryImpl,
-    ExpenseRepositoryImpl,
-    InvoiceLineRepositoryImpl,
-    InvoiceRepositoryImpl,
-    PayrollRepositoryImpl,
+    CategoryRepositoryImpl,
     ProductRepositoryImpl,
+    SubCategoryRepositoryImpl,
+)
+from infrastructure.persistence.repositories.dashboard_repositories import (
+    DashboardCashierStatisticsRepositoryImpl,
+    DashboardCategoryStatisticsRepositoryImpl,
+    DashboardMetricsRepositoryImpl,
+    DashboardProductStatisticsRepositoryImpl,
+    DashboardSubCategoryStatisticsRepositoryImpl,
 )
 from presentation.serializers.dashboard_serializers import (
+    CashierStatisticsQuerySerializer,
+    CategoryStatisticsQuerySerializer,
     DashboardDailyQuerySerializer,
     DashboardSummaryQuerySerializer,
+    ProductStatisticsQuerySerializer,
+    SubCategoryStatisticsQuerySerializer,
 )
 from shared.views.base_viewset import BaseViewSet
 
@@ -68,25 +82,21 @@ class DashboardViewSet(BaseViewSet):
             start_date = query_serializer.validated_data.get("start_date")
             end_date = query_serializer.validated_data.get("end_date")
 
-            # Check if user has access to business
-            if not self._get_business_domain_service().user_has_access(
-                business_id, request.user.id
-            ):
+            if not self._get_business_domain_service().is_user_owner(business_id, request.user.id):
                 return self.error(
-                    message="You don't have access to this business",
+                    message="Only the business owner can access the dashboard",
                     status_code=status.HTTP_403_FORBIDDEN,
                     code="PERMISSION_DENIED",
                 )
 
             # Create dashboard metrics service
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetDashboardSummaryUseCase(
@@ -163,6 +173,24 @@ class DashboardViewSet(BaseViewSet):
                         }
                         for p in dashboard_dto.top_products
                     ],
+                    "overview": {
+                        "total_customers": dashboard_dto.overview.total_customers,
+                        "total_members": dashboard_dto.overview.total_members,
+                        "active_members": dashboard_dto.overview.active_members,
+                        "total_products": dashboard_dto.overview.total_products,
+                        "total_categories": dashboard_dto.overview.total_categories,
+                        "total_subcategories": dashboard_dto.overview.total_subcategories,
+                        "lifetime_revenue": str(dashboard_dto.overview.lifetime_revenue),
+                        "lifetime_credit": str(dashboard_dto.overview.lifetime_credit),
+                        "lifetime_profit": str(dashboard_dto.overview.lifetime_profit),
+                        "lifetime_expenses": str(dashboard_dto.overview.lifetime_expenses),
+                        "total_invoices": dashboard_dto.overview.total_invoices,
+                        "total_invoices_completed": dashboard_dto.overview.total_invoices_completed,
+                        "total_invoices_credit": dashboard_dto.overview.total_invoices_credit,
+                        "average_invoice_value": str(dashboard_dto.overview.average_invoice_value),
+                        "total_inventory_value": str(dashboard_dto.overview.total_inventory_value),
+                        "business_created_at": dashboard_dto.overview.business_created_at.isoformat(),
+                    },
                     "generated_at": dashboard_dto.generated_at.isoformat(),
                 },
                 status_code=status.HTTP_200_OK,
@@ -184,7 +212,7 @@ class DashboardViewSet(BaseViewSet):
     @action(
         detail=False,
         methods=["get"],
-        url_path="daily",
+        url_path="insights",
     )
     def get_daily(self, request: Request) -> Response:
         """Get daily dashboard data for a business."""
@@ -199,25 +227,21 @@ class DashboardViewSet(BaseViewSet):
             end_date = query_serializer.validated_data.get("end_date")
             recent_sales_limit = query_serializer.validated_data.get("recent_sales_limit", 10)
 
-            # Check if user has access to business
-            if not self._get_business_domain_service().user_has_access(
-                business_id, request.user.id
-            ):
+            if not self._get_business_domain_service().is_user_owner(business_id, request.user.id):
                 return self.error(
-                    message="You don't have access to this business",
+                    message="Only the business owner can access the dashboard",
                     status_code=status.HTTP_403_FORBIDDEN,
                     code="PERMISSION_DENIED",
                 )
 
             # Create dashboard metrics service
             metrics_service = DashboardMetricsService(
-                invoice_repository=InvoiceRepositoryImpl(),
-                invoice_line_repository=InvoiceLineRepositoryImpl(),
-                product_repository=ProductRepositoryImpl(),
-                credit_repository=CreditRepositoryImpl(),
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
                 business_id=business_id,
-                expense_repository=ExpenseRepositoryImpl(),
-                payroll_repository=PayrollRepositoryImpl(),
             )
 
             use_case = GetDashboardDailyUseCase(
@@ -341,6 +365,484 @@ class DashboardViewSet(BaseViewSet):
                         for pm in dashboard_dto.product_margins
                     ],
                     "generated_at": dashboard_dto.generated_at.isoformat(),
+                },
+                status_code=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Get product statistics",
+        operation_description=(
+            "Get detailed statistics for a specific product including daily breakdown, "
+            "trends, and top customers. Filtered by start_date and end_date."
+        ),
+        query_serializer=ProductStatisticsQuerySerializer,
+        responses={
+            200: "Product statistics",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Not found",
+        },
+        tags=["Dashboard"],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="products/statistics",
+    )
+    def get_product_statistics(self, request: Request) -> Response:
+        """Get detailed statistics for a specific product."""
+        try:
+            query_serializer = ProductStatisticsQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
+            product_uuid = query_serializer.validated_data["product_id"]
+            start_date = query_serializer.validated_data.get("start_date")
+            end_date = query_serializer.validated_data.get("end_date")
+
+            if not self._get_business_domain_service().is_user_owner(business_id, request.user.id):
+                return self.error(
+                    message="Only the business owner can access the dashboard",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="PERMISSION_DENIED",
+                )
+
+            metrics_service = DashboardMetricsService(
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
+                business_id=business_id,
+            )
+
+            use_case = GetProductStatisticsUseCase(
+                dashboard_metrics_service=metrics_service,
+                business_domain_service=self._get_business_domain_service(),
+                product_repository=ProductRepositoryImpl(),
+                business_id=business_id,
+                product_id=product_uuid,
+                user_id=request.user.id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            stats_dto = use_case.execute()
+
+            return self.success(
+                message="Product statistics retrieved successfully",
+                data={
+                    "product": {
+                        "product_id": str(stats_dto.product.product_id),
+                        "product_name": stats_dto.product.product_name,
+                        "category_id": str(stats_dto.product.category_id),
+                        "category_name": stats_dto.product.category_name,
+                        "subcategory_id": (
+                            str(stats_dto.product.subcategory_id)
+                            if stats_dto.product.subcategory_id
+                            else None
+                        ),
+                        "subcategory_name": stats_dto.product.subcategory_name,
+                    },
+                    "period": {
+                        "start_date": stats_dto.period_start.isoformat(),
+                        "end_date": stats_dto.period_end.isoformat(),
+                    },
+                    "totals": {
+                        k: str(v) if isinstance(v, Decimal) else v
+                        for k, v in stats_dto.totals.items()
+                    },
+                    "daily_data": [
+                        {
+                            "product_id": str(d.product_id),
+                            "product_name": d.product_name,
+                            "date": d.date.isoformat(),
+                            "quantity_sold": d.quantity_sold,
+                            "revenue": str(d.revenue),
+                            "cost": str(d.cost),
+                            "profit": str(d.profit),
+                            "margin_percentage": str(d.margin_percentage),
+                        }
+                        for d in stats_dto.daily_data
+                    ],
+                    "trends": {
+                        k: {
+                            "previous_period": {
+                                "start_date": v.previous_period_start.isoformat(),
+                                "end_date": v.previous_period_end.isoformat(),
+                            },
+                            "current_value": str(v.current_value),
+                            "previous_value": str(v.previous_value),
+                            "change_amount": str(v.change_amount),
+                            "change_percentage": str(v.change_percentage),
+                            "trend_direction": v.trend_direction,
+                        }
+                        for k, v in stats_dto.trends.items()
+                    },
+                    "top_customers": [
+                        {
+                            "customer_id": str(c.customer_id) if c.customer_id else None,
+                            "customer_name": c.customer_name,
+                            "total_purchases": c.total_purchases,
+                            "total_revenue": str(c.total_revenue),
+                        }
+                        for c in stats_dto.top_customers
+                    ],
+                },
+                status_code=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Get category statistics",
+        operation_description=(
+            "Get detailed statistics for a specific category including daily breakdown, "
+            "trends, and top products. Filtered by start_date and end_date."
+        ),
+        query_serializer=CategoryStatisticsQuerySerializer,
+        responses={
+            200: "Category statistics",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Not found",
+        },
+        tags=["Dashboard"],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="categories/statistics",
+    )
+    def get_category_statistics(self, request: Request) -> Response:
+        """Get detailed statistics for a specific category."""
+        try:
+            query_serializer = CategoryStatisticsQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
+            category_id = query_serializer.validated_data["category_id"]
+            start_date = query_serializer.validated_data.get("start_date")
+            end_date = query_serializer.validated_data.get("end_date")
+
+            if not self._get_business_domain_service().is_user_owner(business_id, request.user.id):
+                return self.error(
+                    message="Only the business owner can access the dashboard",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="PERMISSION_DENIED",
+                )
+
+            metrics_service = DashboardMetricsService(
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
+                business_id=business_id,
+            )
+
+            use_case = GetCategoryStatisticsUseCase(
+                dashboard_metrics_service=metrics_service,
+                business_domain_service=self._get_business_domain_service(),
+                category_repository=CategoryRepositoryImpl(),
+                business_id=business_id,
+                category_id=category_id,
+                user_id=request.user.id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            stats_dto = use_case.execute()
+
+            return self.success(
+                message="Category statistics retrieved successfully",
+                data={
+                    "category": {
+                        "category_id": str(stats_dto.category.category_id),
+                        "category_name": stats_dto.category.category_name,
+                    },
+                    "period": {
+                        "start_date": stats_dto.period_start.isoformat(),
+                        "end_date": stats_dto.period_end.isoformat(),
+                    },
+                    "totals": {
+                        k: str(v) if isinstance(v, Decimal) else v
+                        for k, v in stats_dto.totals.items()
+                    },
+                    "top_products": [
+                        {
+                            "product_id": str(p.product_id),
+                            "product_name": p.product_name,
+                            "total_sold": p.total_sold,
+                            "total_revenue": str(p.total_revenue),
+                            "quantity_available": p.quantity_available,
+                        }
+                        for p in stats_dto.top_products
+                    ],
+                    "daily_data": [
+                        {
+                            "date": d["date"].isoformat(),
+                            "quantity_sold": d["quantity_sold"],
+                            "revenue": str(d["revenue"]),
+                            "cost": str(d["cost"]),
+                            "profit": str(d["profit"]),
+                        }
+                        for d in stats_dto.daily_data
+                    ],
+                    "trends": {
+                        k: {
+                            "previous_period": {
+                                "start_date": v.previous_period_start.isoformat(),
+                                "end_date": v.previous_period_end.isoformat(),
+                            },
+                            "current_value": str(v.current_value),
+                            "previous_value": str(v.previous_value),
+                            "change_amount": str(v.change_amount),
+                            "change_percentage": str(v.change_percentage),
+                            "trend_direction": v.trend_direction,
+                        }
+                        for k, v in stats_dto.trends.items()
+                    },
+                },
+                status_code=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Get subcategory statistics",
+        operation_description=(
+            "Get detailed statistics for a specific subcategory including daily breakdown, "
+            "trends, and top products. Filtered by start_date and end_date."
+        ),
+        query_serializer=SubCategoryStatisticsQuerySerializer,
+        responses={
+            200: "Subcategory statistics",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Not found",
+        },
+        tags=["Dashboard"],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="subcategories/statistics",
+    )
+    def get_subcategory_statistics(self, request: Request) -> Response:
+        """Get detailed statistics for a specific subcategory."""
+        try:
+            query_serializer = SubCategoryStatisticsQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
+            subcategory_id = query_serializer.validated_data["subcategory_id"]
+            start_date = query_serializer.validated_data.get("start_date")
+            end_date = query_serializer.validated_data.get("end_date")
+
+            if not self._get_business_domain_service().is_user_owner(business_id, request.user.id):
+                return self.error(
+                    message="Only the business owner can access the dashboard",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="PERMISSION_DENIED",
+                )
+
+            metrics_service = DashboardMetricsService(
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
+                business_id=business_id,
+            )
+
+            use_case = GetSubCategoryStatisticsUseCase(
+                dashboard_metrics_service=metrics_service,
+                business_domain_service=self._get_business_domain_service(),
+                subcategory_repository=SubCategoryRepositoryImpl(),
+                business_id=business_id,
+                subcategory_id=subcategory_id,
+                user_id=request.user.id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            stats_dto = use_case.execute()
+
+            return self.success(
+                message="Subcategory statistics retrieved successfully",
+                data={
+                    "subcategory": {
+                        "subcategory_id": str(stats_dto.subcategory.subcategory_id),
+                        "subcategory_name": stats_dto.subcategory.subcategory_name,
+                        "category_id": str(stats_dto.subcategory.category_id),
+                        "category_name": stats_dto.subcategory.category_name,
+                    },
+                    "period": {
+                        "start_date": stats_dto.period_start.isoformat(),
+                        "end_date": stats_dto.period_end.isoformat(),
+                    },
+                    "totals": {
+                        k: str(v) if isinstance(v, Decimal) else v
+                        for k, v in stats_dto.totals.items()
+                    },
+                    "top_products": [
+                        {
+                            "product_id": str(p.product_id),
+                            "product_name": p.product_name,
+                            "total_sold": p.total_sold,
+                            "total_revenue": str(p.total_revenue),
+                            "quantity_available": p.quantity_available,
+                        }
+                        for p in stats_dto.top_products
+                    ],
+                    "daily_data": [
+                        {
+                            "date": d["date"].isoformat(),
+                            "quantity_sold": d["quantity_sold"],
+                            "revenue": str(d["revenue"]),
+                            "cost": str(d["cost"]),
+                            "profit": str(d["profit"]),
+                        }
+                        for d in stats_dto.daily_data
+                    ],
+                    "trends": {
+                        k: {
+                            "previous_period": {
+                                "start_date": v.previous_period_start.isoformat(),
+                                "end_date": v.previous_period_end.isoformat(),
+                            },
+                            "current_value": str(v.current_value),
+                            "previous_value": str(v.previous_value),
+                            "change_amount": str(v.change_amount),
+                            "change_percentage": str(v.change_percentage),
+                            "trend_direction": v.trend_direction,
+                        }
+                        for k, v in stats_dto.trends.items()
+                    },
+                },
+                status_code=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Get cashier statistics",
+        operation_description=(
+            "Get detailed statistics for a specific cashier including daily breakdown, "
+            "trends, and ranking. Filtered by start_date and end_date."
+        ),
+        query_serializer=CashierStatisticsQuerySerializer,
+        responses={
+            200: "Cashier statistics",
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Not found",
+        },
+        tags=["Dashboard"],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="cashiers/statistics",
+    )
+    def get_cashier_statistics(self, request: Request) -> Response:
+        """Get detailed statistics for a specific cashier."""
+        try:
+            query_serializer = CashierStatisticsQuerySerializer(data=request.query_params)
+            if not query_serializer.is_valid():
+                return self.handle_validation_error(query_serializer)
+
+            business_id = query_serializer.validated_data["business_id"]
+            cashier_id = query_serializer.validated_data["cashier_id"]
+            start_date = query_serializer.validated_data.get("start_date")
+            end_date = query_serializer.validated_data.get("end_date")
+
+            if not self._get_business_domain_service().is_user_owner(business_id, request.user.id):
+                return self.error(
+                    message="Only the business owner can access the dashboard",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="PERMISSION_DENIED",
+                )
+
+            metrics_service = DashboardMetricsService(
+                metrics_repository=DashboardMetricsRepositoryImpl(),
+                product_statistics_repository=DashboardProductStatisticsRepositoryImpl(),
+                category_statistics_repository=DashboardCategoryStatisticsRepositoryImpl(),
+                subcategory_statistics_repository=DashboardSubCategoryStatisticsRepositoryImpl(),
+                cashier_statistics_repository=DashboardCashierStatisticsRepositoryImpl(),
+                business_id=business_id,
+            )
+
+            use_case = GetCashierStatisticsUseCase(
+                dashboard_metrics_service=metrics_service,
+                business_domain_service=self._get_business_domain_service(),
+                business_id=business_id,
+                cashier_id=cashier_id,
+                user_id=request.user.id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            stats_dto = use_case.execute()
+
+            return self.success(
+                message="Cashier statistics retrieved successfully",
+                data={
+                    "cashier": {
+                        "cashier_id": str(stats_dto.cashier.cashier_id),
+                        "cashier_name": stats_dto.cashier.cashier_name,
+                        "cashier_email": stats_dto.cashier.cashier_email,
+                        "phone_number": stats_dto.cashier.phone_number,
+                        "avatar_url": stats_dto.cashier.avatar_url,
+                        "role": stats_dto.cashier.role,
+                        "is_active": stats_dto.cashier.is_active,
+                        "joined_at": stats_dto.cashier.joined_at.isoformat(),
+                        "left_at": (
+                            stats_dto.cashier.left_at.isoformat()
+                            if stats_dto.cashier.left_at
+                            else None
+                        ),
+                    },
+                    "period": {
+                        "start_date": stats_dto.period_start.isoformat(),
+                        "end_date": stats_dto.period_end.isoformat(),
+                    },
+                    "totals": {
+                        k: str(v) if isinstance(v, Decimal) else v
+                        for k, v in stats_dto.totals.items()
+                    },
+                    "lifetime_totals": {
+                        k: str(v) if isinstance(v, Decimal) else v
+                        for k, v in stats_dto.lifetime_totals.items()
+                    },
+                    "daily_data": [
+                        {
+                            "date": d.date.isoformat(),
+                            "total_sales": d.total_sales,
+                            "total_revenue": str(d.total_revenue),
+                            "total_quantity_sold": d.total_quantity_sold,
+                            "average_sale_value": str(d.average_sale_value),
+                            "customers_served": d.customers_served,
+                        }
+                        for d in stats_dto.daily_data
+                    ],
+                    "trends": {
+                        k: {
+                            "previous_period": {
+                                "start_date": v.previous_period_start.isoformat(),
+                                "end_date": v.previous_period_end.isoformat(),
+                            },
+                            "current_value": str(v.current_value),
+                            "previous_value": str(v.previous_value),
+                            "change_amount": str(v.change_amount),
+                            "change_percentage": str(v.change_percentage),
+                            "trend_direction": v.trend_direction,
+                        }
+                        for k, v in stats_dto.trends.items()
+                    },
+                    "ranking": stats_dto.ranking,
                 },
                 status_code=status.HTTP_200_OK,
             )

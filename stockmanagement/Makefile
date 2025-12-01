@@ -1,4 +1,4 @@
-.PHONY: start stop makemigrations migrate start-celery start-runserver check-migrations check-and-create-migrations
+.PHONY: start stop makemigrations migrate start-celery start-celery-beat start-runserver check-migrations check-and-create-migrations
 
 UV ?= uv
 PYTHON ?= python
@@ -10,10 +10,11 @@ PID_DIR := .pids
 LOG_DIR := logs
 RUNSERVER_PID := $(PID_DIR)/runserver.pid
 CELERY_PID := $(PID_DIR)/celery.pid
+CELERY_BEAT_PID := $(PID_DIR)/celery-beat.pid
 RUNSERVER_PORT ?= 8000
 
-start: check-migrations migrate start-celery start-runserver
-	@echo "All services started. Logs: $(LOG_DIR)/runserver.log, $(LOG_DIR)/celery.log"
+start: check-migrations migrate start-celery start-celery-beat start-runserver
+	@echo "All services started. Logs: $(LOG_DIR)/runserver.log, $(LOG_DIR)/celery.log, $(LOG_DIR)/celery-beat.log"
 	@echo "Use \`make stop\` to stop background processes."
 
 check-migrations:
@@ -45,6 +46,16 @@ start-celery:
 		echo "Starting Celery worker..."; \
 		nohup $(CELERY) worker --loglevel=info > $(LOG_DIR)/celery.log 2>&1 & echo $$! > $(CELERY_PID); \
 		echo "Celery worker started with PID $$(cat $(CELERY_PID))."; \
+	fi
+
+start-celery-beat:
+	@mkdir -p $(PID_DIR) $(LOG_DIR)
+	@if [ -f $(CELERY_BEAT_PID) ] && kill -0 $$(cat $(CELERY_BEAT_PID)) 2>/dev/null; then \
+		echo "Celery Beat already running with PID $$(cat $(CELERY_BEAT_PID))."; \
+	else \
+		echo "Starting Celery Beat..."; \
+		nohup $(CELERY) beat --loglevel=info > $(LOG_DIR)/celery-beat.log 2>&1 & echo $$! > $(CELERY_BEAT_PID); \
+		echo "Celery Beat started with PID $$(cat $(CELERY_BEAT_PID))."; \
 	fi
 
 start-runserver:
@@ -84,5 +95,18 @@ stop:
 		rm -f $(CELERY_PID); \
 	else \
 		echo "No Celery worker PID file found."; \
+	fi
+	@if [ -f $(CELERY_BEAT_PID) ]; then \
+		PID=$$(cat $(CELERY_BEAT_PID)); \
+		if kill -0 $$PID 2>/dev/null; then \
+			echo "Stopping Celery Beat (PID $$PID)..."; \
+			kill $$PID; \
+			echo "Celery Beat stopped."; \
+		else \
+			echo "Celery Beat not running (stale PID)."; \
+		fi; \
+		rm -f $(CELERY_BEAT_PID); \
+	else \
+		echo "No Celery Beat PID file found."; \
 	fi
 	@echo "Services stopped."

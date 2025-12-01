@@ -286,6 +286,7 @@ class SalesViewSet(BaseViewSet):
                 credit_repository=CreditRepositoryImpl(),
                 customer_repository=CustomerRepositoryImpl(),
                 notification_domain_service=self._get_notification_domain_service(),
+                business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 cashier_id=request.user.id,
             )
@@ -389,6 +390,7 @@ class SalesViewSet(BaseViewSet):
                 product_repository=ProductRepositoryImpl(),
                 user_repository=UserRepositoryImpl(),
                 inventory_domain_service=self._get_inventory_domain_service(),
+                business_domain_service=self._get_business_domain_service(),
                 invoice_id=pk,
                 user_id=request.user.id,
             )
@@ -452,6 +454,7 @@ class SalesViewSet(BaseViewSet):
                 invoice_log_repository=InvoiceLogRepositoryImpl(),
                 product_repository=ProductRepositoryImpl(),
                 user_repository=UserRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
                 invoice_id=pk,
                 user_id=request.user.id,
             )
@@ -502,6 +505,7 @@ class SalesViewSet(BaseViewSet):
                 user_repository=UserRepositoryImpl(),
                 inventory_domain_service=self._get_inventory_domain_service(),
                 credit_repository=CreditRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
                 invoice_id=pk,
                 user_id=request.user.id,
             )
@@ -593,6 +597,7 @@ class SalesViewSet(BaseViewSet):
                 product_repository=ProductRepositoryImpl(),
                 user_repository=UserRepositoryImpl(),
                 credit_repository=CreditRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
                 invoice_id=pk,
                 user_id=request.user.id,
             )

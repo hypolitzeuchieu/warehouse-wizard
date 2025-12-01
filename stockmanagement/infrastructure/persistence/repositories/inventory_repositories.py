@@ -318,6 +318,13 @@ class ProductRepositoryImpl(ProductRepository):
         """Update product quantity."""
         ProductModel.objects.filter(id=product_id).update(quantity=quantity)
 
+    def get_all_with_expiry_dates(self) -> list[Product]:
+        """Get all products that have expiry dates."""
+        products = ProductModel.objects.filter(expiry_date__isnull=False).select_related(
+            "category", "subcategory"
+        )
+        return [self._to_entity(product) for product in products]
+
     def _to_entity(self, product_model: ProductModel) -> Product:
         """Convert Django model to domain entity."""
         return Product(

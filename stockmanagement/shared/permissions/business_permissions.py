@@ -148,8 +148,48 @@ class CanManageMembers(BusinessPermission):
 
 
 class CanViewDashboard(BusinessPermission):
-    """Permission to view dashboard (owner, manager)."""
+    """Permission to view dashboard (owner only)."""
 
     def __init__(self) -> None:
         """Initialize permission."""
-        super().__init__(allowed_roles=["owner", "manager"])
+        super().__init__(allowed_roles=["owner"])
+
+
+class CanCreateInventory(BusinessPermission):
+    """Permission to create inventory items (owner, manager, stock_keeper)."""
+
+    def __init__(self) -> None:
+        """Initialize permission."""
+        super().__init__(allowed_roles=["owner", "manager", "stock_keeper"])
+
+
+class CanViewProducts(BusinessPermission):
+    """Permission to view products (all business members for sales purposes)."""
+
+    def has_permission(self, request, view) -> bool:
+        """Check if user has permission to view products."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        business_id = self._get_business_id_from_request(request)
+        if not business_id:
+            return True
+
+        user_role = self._get_user_role_in_business(business_id, request.user.id)
+        return user_role is not None
+
+
+class CanModifyProducts(BusinessPermission):
+    """Permission to modify products (owner, manager, stock_keeper)."""
+
+    def __init__(self) -> None:
+        """Initialize permission."""
+        super().__init__(allowed_roles=["owner", "manager", "stock_keeper"])
+
+
+class CanAccessSalesReports(BusinessPermission):
+    """Permission to access sales reports (owner, manager, cashier). Explicitly excludes stock_keeper."""
+
+    def __init__(self) -> None:
+        """Initialize permission."""
+        super().__init__(allowed_roles=["owner", "manager", "cashier"])

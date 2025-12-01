@@ -12,6 +12,13 @@ from infrastructure.persistence.repositories.customer_repositories import (
     CustomerPurchaseHistoryRepositoryImpl,
     CustomerRepositoryImpl,
 )
+from infrastructure.persistence.repositories.dashboard_repositories import (
+    DashboardCashierStatisticsRepositoryImpl,
+    DashboardCategoryStatisticsRepositoryImpl,
+    DashboardMetricsRepositoryImpl,
+    DashboardProductStatisticsRepositoryImpl,
+    DashboardSubCategoryStatisticsRepositoryImpl,
+)
 from infrastructure.persistence.repositories.delivery_repositories import (
     DeliveryRepositoryImpl,
 )
@@ -93,4 +100,10 @@ __all__ = [
     "CreditPaymentRepositoryImpl",
     # OTP repositories
     "OTPRepositoryImpl",
+    # Dashboard repositories
+    "DashboardMetricsRepositoryImpl",
+    "DashboardProductStatisticsRepositoryImpl",
+    "DashboardCategoryStatisticsRepositoryImpl",
+    "DashboardSubCategoryStatisticsRepositoryImpl",
+    "DashboardCashierStatisticsRepositoryImpl",
 ]

@@ -322,6 +322,7 @@ class ProductViewSet(BaseViewSet):
                 product_repository=ProductRepositoryImpl(),
                 category_repository=CategoryRepositoryImpl(),
                 subcategory_repository=SubCategoryRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
             )

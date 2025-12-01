@@ -23,10 +23,9 @@ class CustomSchemaGenerator(OpenAPISchemaGenerator):
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="RetailPulse API",
+        title="Mahcalcul-Mahplan API",
         default_version="v1",
-        description="RetailPulse - Modern Supermarket Management Platform API Documentation",
-        # terms_of_service='https://www.google.com/policies/terms/',
+        description="Mahcalcul-Mahplan - Modern Supermarket Management Platform API Documentation",
         contact=openapi.Contact(email="hypolitdu13@gmail.com"),
         license=openapi.License(name="All right reserved"),
     ),

@@ -1,17 +1,25 @@
 """User domain services."""
 
+import logging
 from datetime import timedelta
 from uuid import UUID, uuid4
 
 from django.utils import timezone
 
-from domain.users.entities import RefreshToken, Session
+from domain.users.entities import RefreshToken, Session, User
 from domain.users.repositories import (
     DeviceRepository,
     RefreshTokenRepository,
     SessionRepository,
     UserRepository,
 )
+from infrastructure.persistence.repositories import BusinessRepositoryImpl
+from infrastructure.persistence.repositories.business_repositories import (
+    BusinessMemberRepositoryImpl,
+)
+from shared.exceptions.base import BaseAPIException
+
+logger = logging.getLogger(__name__)
 
 
 class UserDomainService:
@@ -100,3 +108,67 @@ class UserDomainService:
     def revoke_user_device_tokens(self, user_id: UUID, device_id: str) -> None:
         """Revoke refresh tokens for a specific user device."""
         self.refresh_token_repository.revoke_user_device_tokens(user_id, device_id)
+
+    def validate_user_business_access(self, user: User) -> None:
+        """
+        Validate that user has active business access (for owners and members).
+
+        This should be called only during login/OTP verification to ensure
+        the user has valid business access before generating tokens.
+
+        Args:
+            user: User entity to validate
+
+        Raises:
+            BaseAPIException: If user doesn't have valid business access
+        """
+
+        if user.role.value not in ["owner", "customer", "wholesaler", "partner"]:
+            member_repo = BusinessMemberRepositoryImpl()
+            business_repo = BusinessRepositoryImpl()
+            memberships = member_repo.get_user_businesses(user.id)
+
+            if not memberships:
+                logger.warning(
+                    f"Login attempt for member without business: {user.id}, role: {user.role.value}"
+                )
+                raise BaseAPIException(
+                    detail="You are not associated with any business. Please contact support.",
+                    code="NO_BUSINESS_ASSOCIATION",
+                    status_code=403,
+                )
+
+            active_membership = next((m for m in memberships if m.is_active_member()), None)
+            if not active_membership:
+                logger.warning(f"Login attempt for inactive member: {user.id}")
+                raise BaseAPIException(
+                    detail="Your membership has been deactivated. Please contact your business owner.",
+                    code="MEMBERSHIP_INACTIVE",
+                    status_code=403,
+                )
+
+            business = business_repo.get_by_id(active_membership.business_id)
+            if business and not business.is_active:
+                logger.warning(
+                    f"Login attempt for member of inactive business: {user.id}, business: {business.id}"
+                )
+                raise BaseAPIException(
+                    detail="The business you belong to has been deactivated. Please contact support.",
+                    code="BUSINESS_INACTIVE",
+                    status_code=403,
+                )
+
+        if user.role.value == "owner":
+            business_repo = BusinessRepositoryImpl()
+            businesses = business_repo.get_by_owner(user.id)
+            if businesses:
+                active_business = next((b for b in businesses if b.is_active), None)
+                if not active_business:
+                    logger.warning(
+                        f"Login attempt for owner with all businesses inactive: {user.id}"
+                    )
+                    raise BaseAPIException(
+                        detail="All your businesses have been deactivated. Please contact support.",
+                        code="BUSINESS_INACTIVE",
+                        status_code=403,
+                    )

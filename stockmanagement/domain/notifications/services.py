@@ -326,7 +326,23 @@ class NotificationDomainService:
             read_at=None,
         )
 
-        return self.notification_repository.create(notification)
+        saved_notification = self.notification_repository.create(notification)
+
+        try:
+            from tasks.notification_tasks import send_notification_task
+
+            send_notification_task.delay(notification_id=saved_notification.id)
+
+            logger.debug(
+                f"Queued notification sending task for notification {saved_notification.id} "
+                f"(user {user_id})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to queue notification sending task for {saved_notification.id}: {str(e)}"
+            )
+
+        return saved_notification
 
     def _has_recent_notification(
         self,

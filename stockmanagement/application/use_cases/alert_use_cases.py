@@ -12,8 +12,6 @@ from domain.inventory.entities import Product
 from domain.inventory.repositories import ProductRepository
 from domain.inventory.services import InventoryDomainService
 from domain.notifications.services import NotificationDomainService
-from infrastructure.persistence.models.inventory_models import Product as ProductModel
-from infrastructure.persistence.models.notification_models import Notification
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
@@ -280,21 +278,13 @@ class CheckAndNotifyExpiredProductsUseCase:
         """
         Get all unique business IDs that have products with expiry dates.
 
-        This is a helper method that efficiently gets business IDs.
-        Note: This method uses direct model access for efficiency in batch processing.
-        In a production system, consider adding a method to ProductRepository
-        for this purpose to fully respect clean architecture.
 
         Returns:
             List of unique business IDs that have products with expiry dates
         """
-
-        business_ids = (
-            ProductModel.objects.filter(expiry_date__isnull=False)
-            .values_list("business_id", flat=True)
-            .distinct()
-        )
-        return list(business_ids)
+        all_products = self.product_repository.get_all_with_expiry_dates()
+        business_ids = [product.business_id for product in all_products]
+        return business_ids
 
 
 class CheckExpiredProductsUseCase:
@@ -353,10 +343,12 @@ class CheckLowStockProductsUseCase:
     def __init__(
         self,
         inventory_domain_service: InventoryDomainService,
+        notification_domain_service: NotificationDomainService,
         business_id: UUID,
     ) -> None:
         """Initialize use case."""
         self.inventory_domain_service = inventory_domain_service
+        self.notification_domain_service = notification_domain_service
         self.business_id = business_id
 
     def execute(self) -> list[dict]:
@@ -364,81 +356,35 @@ class CheckLowStockProductsUseCase:
         low_stock_products = self.inventory_domain_service.get_low_stock_products(self.business_id)
         notifications_created = []
 
-        for product_entity in low_stock_products:
+        for product in low_stock_products:
             try:
-                # Get Django model for notification
-                product_model = ProductModel.objects.get(id=product_entity.id)
+                notifications = self.notification_domain_service.notify_low_stock(
+                    product_id=product.id,
+                    product_name=product.name,
+                    business_id=self.business_id,
+                    current_quantity=product.quantity,
+                    min_quantity=product.min_quantity,
+                )
 
-                # Check if notification already exists (within last 24 hours)
-                from datetime import timedelta
+                notifications_created.extend(
+                    [
+                        {
+                            "product_id": str(notification.related_entity_id),
+                            "product_name": product.name,
+                            "notification_id": str(notification.id),
+                            "user_id": str(notification.user_id) if notification.user_id else None,
+                            "notification_type": notification.notification_type.value,
+                        }
+                        for notification in notifications
+                    ]
+                )
 
-                from django.utils import timezone
-
-                recent_notification = Notification.objects.filter(
-                    product=product_model,
-                    notification_type="STOCK_LOW",
-                    created_at__gte=timezone.now() - timedelta(hours=24),
-                ).first()
-
-                if not recent_notification:
-                    # Create notification for business owner and managers
-                    business = BusinessRepositoryImpl().get_by_id(self.business_id)
-                    if business:
-                        # Notify owner
-                        from infrastructure.persistence.models.user_models import (
-                            RetailPulseUser as User,
-                        )
-
-                        owner = User.objects.filter(id=business.owner_id).first()
-                        if owner:
-                            notification = Notification.objects.create(
-                                product=product_model,
-                                user=owner,
-                                notification_type="STOCK_LOW",
-                                message=f"Product '{product_entity.name}' is low in stock. Current: {product_entity.quantity}, Minimum: {product_entity.min_quantity}.",
-                                status="UNREAD",
-                            )
-                            notifications_created.append(
-                                {
-                                    "product_id": str(product_entity.id),
-                                    "product_name": product_entity.name,
-                                    "notification_id": str(notification.id),
-                                }
-                            )
-
-                        # Notify managers
-                        from infrastructure.persistence.models.business_models import (
-                            BusinessMember as BusinessMemberModel,
-                        )
-
-                        managers = BusinessMemberModel.objects.filter(
-                            business_id=self.business_id,
-                            role="manager",
-                            is_active=True,
-                        ).select_related("user")
-
-                        for manager_member in managers:
-                            notification = Notification.objects.create(
-                                product=product_model,
-                                user=manager_member.user,
-                                notification_type="STOCK_LOW",
-                                message=f"Product '{product_entity.name}' is low in stock. Current: {product_entity.quantity}, Minimum: {product_entity.min_quantity}.",
-                                status="UNREAD",
-                            )
-                            notifications_created.append(
-                                {
-                                    "product_id": str(product_entity.id),
-                                    "product_name": product_entity.name,
-                                    "notification_id": str(notification.id),
-                                    "user_id": str(manager_member.user.id),
-                                }
-                            )
-
-                    logger.info(f"Created low stock notification for {product_entity.name}")
+                logger.info(f"Created low stock notification for {product.name}")
 
             except Exception as e:
                 logger.error(
-                    f"Error creating notification for low stock product {product_entity.id}: {str(e)}"
+                    f"Error creating notification for low stock product {product.id}: {str(e)}",
+                    exc_info=True,
                 )
 
         return notifications_created

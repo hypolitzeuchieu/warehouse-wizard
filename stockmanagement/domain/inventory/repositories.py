@@ -143,6 +143,11 @@ class ProductRepository(ABC):
         """Update product quantity."""
         pass
 
+    @abstractmethod
+    def get_all_with_expiry_dates(self) -> list[Product]:
+        """Get all products that have expiry dates (for batch processing)."""
+        pass
+
 
 class StockMovementRepository(ABC):
     """Stock movement repository interface."""

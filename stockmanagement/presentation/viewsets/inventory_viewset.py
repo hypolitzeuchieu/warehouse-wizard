@@ -28,10 +28,12 @@ from application.use_cases.inventory_use_cases import (
 )
 from domain.business.services import BusinessDomainService
 from domain.inventory.services import InventoryDomainService
+from domain.notifications.services import NotificationDomainService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
     CategoryRepositoryImpl,
+    NotificationRepositoryImpl,
     ProductRepositoryImpl,
     StockMovementRepositoryImpl,
     SubCategoryRepositoryImpl,
@@ -66,6 +68,14 @@ class InventoryViewSet(BaseViewSet):
         return InventoryDomainService(
             product_repository=ProductRepositoryImpl(),
             stock_movement_repository=StockMovementRepositoryImpl(),
+        )
+
+    def _get_notification_domain_service(self) -> NotificationDomainService:
+        """Get notification domain service instance."""
+        return NotificationDomainService(
+            notification_repository=NotificationRepositoryImpl(),
+            business_repository=BusinessRepositoryImpl(),
+            business_member_repository=BusinessMemberRepositoryImpl(),
         )
 
     @swagger_auto_schema(
@@ -443,6 +453,7 @@ class InventoryViewSet(BaseViewSet):
 
             use_case = CheckLowStockProductsUseCase(
                 inventory_domain_service=self._get_inventory_domain_service(),
+                notification_domain_service=self._get_notification_domain_service(),
                 business_id=business_id,
             )
             notifications = use_case.execute()

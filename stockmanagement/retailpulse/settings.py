@@ -5,8 +5,6 @@ import socket
 from datetime import timedelta
 from pathlib import Path
 
-import dj_database_url
-from celery.schedules import crontab
 from dotenv import load_dotenv
 
 from shared.config.logging_config import get_logging_config
@@ -17,6 +15,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is required")
 
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
@@ -34,9 +34,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # New DDD structure
     "infrastructure.persistence.models.apps.PersistenceModelsConfig",
-    # Celery tasks app - must be after persistence models
     "tasks.apps.TasksConfig",
     "rest_framework",
     "corsheaders",
@@ -55,11 +53,10 @@ REST_FRAMEWORK = {
         "shared.authentication.jwt_blacklist_authentication.JWTAuthenticationWithBlacklist",
     ),
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",
+        "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
-        "rest_framework.renderers.BrowsableAPIRenderer",
     ],
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
@@ -92,7 +89,10 @@ SWAGGER_SETTINGS = {
 }
 
 # JWT Settings
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    raise ValueError("JWT_SECRET_KEY environment variable is required")
+
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -130,35 +130,50 @@ MIDDLEWARE = [
 
 # Add debug toolbar middleware only in DEBUG mode
 if DEBUG:
-    # Insert after CommonMiddleware (index 4)
     MIDDLEWARE.insert(5, "debug_toolbar.middleware.DebugToolbarMiddleware")
 
 # CORS settings
-CORS_ALLOWED_ALL_ORIGINS = True  # ⚠️ False in production
+CORS_ALLOWED_ALL_ORIGINS = os.getenv("CORS_ALLOWED_ALL_ORIGINS", "False").lower() == "true"
 CORS_ALLOWED_ORIGINS = [
-    os.getenv("FRONTEND_URL"),
-]
+    origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()
+] or ([os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else [])
 CORS_ORIGIN_ALLOW_ALL = False
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 CORS_EXPOSE_HEADERS = ["Content-Type", "X-CSRFToken", "X-Refresh-Token"]
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+CORS_PREFLIGHT_MAX_AGE = 86400 * 30
 CORS_ALLOW_CREDENTIALS = True
 
 # CSRF settings
-CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SECURE = False  # ⚠️ True in production HTTPS
+CSRF_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_AGE = 86400 * 30
 
 # Session settings
-SESSION_COOKIE_SECURE = False  # ⚠️ True in production HTTPS
-SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = "Strict"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_AGE = 86400 * 30
 
 # Security settings
-SECURE_HSTS_SECONDS = 31536000  # HSTS
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_PRELOAD = True
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
-SECURE_SSL_REDIRECT = False  # ⚠️ True in production HTTPS
-
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "False").lower() == "true"
 ROOT_URLCONF = "retailpulse.urls"
 
 TEMPLATES = [
@@ -184,14 +199,34 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 
-if os.getenv("PRODUCTION") == "True":
-    DATABASES = {"default": dj_database_url.parse(os.getenv("PROD_DATABASE_URL"))}
-else:
+if DEBUG:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
         },
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DATABASE_NAME"),
+            "USER": os.getenv("DATABASE_USER"),
+            "PASSWORD": os.getenv("DATABASE_PASSWORD"),
+            "HOST": os.getenv("DATABASE_HOST"),
+            "PORT": os.getenv("DATABASE_PORT"),
+        },
+    }
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": os.getenv("REDIS_URL"),
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+            "KEY_PREFIX": "retailpulse",
+            "TIMEOUT": 300,
+        }
     }
 
 # Password validation
@@ -217,11 +252,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "UTC"
-
 USE_I18N = True
-
 USE_TZ = True
 
 # AWS settings
@@ -259,13 +291,19 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
 
 # Celery Beat Schedule
 
 CELERY_BEAT_SCHEDULE = {
     "check-expired-products": {
         "task": "tasks.inventory_tasks.check_expired_products",
-        "schedule": crontab(minute=0),
+        "schedule": timedelta(seconds=60),
+    },
+    "cleanup-expired-tokens": {
+        "task": "tasks.auth_tasks.cleanup_expired_tokens",
+        "schedule": timedelta(seconds=120),
     },
 }
 
@@ -331,59 +369,26 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", None)
 
 # Rate Limiting Settings (configurable via environment variables)
 RATE_LIMIT_SIGNUP_REQUESTS = int(os.getenv("RATE_LIMIT_SIGNUP_REQUESTS", "5"))
-RATE_LIMIT_SIGNUP_PERIOD = int(os.getenv("RATE_LIMIT_SIGNUP_PERIOD", "3600"))  # 1 hour
+RATE_LIMIT_SIGNUP_PERIOD = int(os.getenv("RATE_LIMIT_SIGNUP_PERIOD", "3600"))
 
 RATE_LIMIT_LOGIN_REQUESTS = int(os.getenv("RATE_LIMIT_LOGIN_REQUESTS", "10"))
-RATE_LIMIT_LOGIN_PERIOD = int(os.getenv("RATE_LIMIT_LOGIN_PERIOD", "900"))  # 15 minutes
-
+RATE_LIMIT_LOGIN_PERIOD = int(os.getenv("RATE_LIMIT_LOGIN_PERIOD", "900"))
 RATE_LIMIT_VERIFY_OTP_REQUESTS = int(os.getenv("RATE_LIMIT_VERIFY_OTP_REQUESTS", "5"))
-RATE_LIMIT_VERIFY_OTP_PERIOD = int(os.getenv("RATE_LIMIT_VERIFY_OTP_PERIOD", "300"))  # 5 minutes
+RATE_LIMIT_VERIFY_OTP_PERIOD = int(os.getenv("RATE_LIMIT_VERIFY_OTP_PERIOD", "300"))
 
 RATE_LIMIT_REQUEST_OTP_REQUESTS = int(os.getenv("RATE_LIMIT_REQUEST_OTP_REQUESTS", "3"))
-RATE_LIMIT_REQUEST_OTP_PERIOD = int(os.getenv("RATE_LIMIT_REQUEST_OTP_PERIOD", "300"))  # 5 minutes
+RATE_LIMIT_REQUEST_OTP_PERIOD = int(os.getenv("RATE_LIMIT_REQUEST_OTP_PERIOD", "300"))
 
 RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS = int(os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS", "10"))
-RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD = int(
-    os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD", "60")
-)  # 1 minute
+RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD = int(os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD", "60"))
 
 RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS = int(os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS", "5"))
-RATE_LIMIT_GOOGLE_CALLBACK_PERIOD = int(
-    os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_PERIOD", "300")
-)  # 5 minutes
+RATE_LIMIT_GOOGLE_CALLBACK_PERIOD = int(os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_PERIOD", "300"))
 
 RATE_LIMIT_FORGOT_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_FORGOT_PASSWORD_REQUESTS", "3"))
-RATE_LIMIT_FORGOT_PASSWORD_PERIOD = int(
-    os.getenv("RATE_LIMIT_FORGOT_PASSWORD_PERIOD", "300")
-)  # 5 minutes
+RATE_LIMIT_FORGOT_PASSWORD_PERIOD = int(os.getenv("RATE_LIMIT_FORGOT_PASSWORD_PERIOD", "300"))
 
 RATE_LIMIT_RESET_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_REQUESTS", "5"))
-RATE_LIMIT_RESET_PASSWORD_PERIOD = int(
-    os.getenv("RATE_LIMIT_RESET_PASSWORD_PERIOD", "300")
-)  # 5 minutes
-
-# Cache configuration for OAuth state and rate limiting
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "unique-snowflake",
-        "OPTIONS": {
-            "MAX_ENTRIES": 10000,
-        },
-        "TIMEOUT": 300,  # 5 minutes default
-    }
-}
-
-# Use Redis cache in production if available
-if os.getenv("PRODUCTION") == "True" and os.getenv("REDIS_URL"):
-    CACHES = {
-        "default": {
-            "BACKEND": "django.core.cache.backends.redis.RedisCache",
-            "LOCATION": os.getenv("REDIS_URL"),
-            "OPTIONS": {
-                "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            },
-            "KEY_PREFIX": "retailpulse",
-            "TIMEOUT": 300,
-        }
-    }
+RATE_LIMIT_RESET_PASSWORD_PERIOD = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_PERIOD", "300"))
+RATE_LIMIT_REFRESH_TOKEN_REQUESTS = int(os.getenv("RATE_LIMIT_REFRESH_TOKEN_REQUESTS", "20"))
+RATE_LIMIT_REFRESH_TOKEN_PERIOD = int(os.getenv("RATE_LIMIT_REFRESH_TOKEN_PERIOD", "60"))

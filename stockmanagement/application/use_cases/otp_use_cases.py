@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from uuid import uuid4
 
+from django.conf import settings
 from django.utils import timezone
 
 from application.dto.user_dto import (
@@ -60,6 +61,21 @@ class RequestOTPUseCase:
         elif dto.phone_number:
             user = self.user_repository.get_by_phone_number(dto.phone_number)
 
+        otp_type = "email" if dto.email else "sms"
+
+        otp = OTPService.create_otp(
+            otp_repository=self.otp_repository,
+            user_id=user.id if user else None,
+            email=dto.email,
+            phone_number=dto.phone_number,
+            otp_type=otp_type,
+        )
+        if not user:
+            logger.warning(f"OTP request for non-existent user: {dto.email or dto.phone_number}")
+            return {
+                "message": f"OTP sent successfully to your {otp_type}",
+                "expires_in_minutes": OTPService.OTP_EXPIRY_MINUTES,
+            }
         if user and dto.email and user.email and user.email.lower() != dto.email.lower():
             raise BaseAPIException(
                 detail="Email does not match user account",
@@ -73,20 +89,8 @@ class RequestOTPUseCase:
                 status_code=400,
             )
 
-        otp_type = "email" if dto.email else "sms"
-
-        otp = OTPService.create_otp(
-            otp_repository=self.otp_repository,
-            user_id=user.id if user else None,
-            email=dto.email,
-            phone_number=dto.phone_number,
-            otp_type=otp_type,
-        )
-
         if otp_type == "email" and dto.email:
-
             try:
-                # Send email in background
                 send_otp_email_task.delay(
                     email=dto.email,
                     otp_code=otp.otp_code,
@@ -247,13 +251,11 @@ class VerifyOTPUseCase:
                 status_code=400,
             )
 
-        # Log successful verification
         logger.info(
             f"OTP verified successfully - OTP ID: {otp.id}, identifier: {identifier}, "
             f"user_id: {otp.user_id}"
         )
 
-        # Get user if exists
         user = None
         if otp.user_id:
             user = self.user_repository.get_by_id(otp.user_id)
@@ -275,6 +277,15 @@ class VerifyOTPUseCase:
                 code="USER_NOT_FOUND",
                 status_code=404,
             )
+        if not user.is_active:
+            logger.warning(f"Login attempt for inactive user: {user.id}")
+            raise BaseAPIException(
+                detail="Your account has been disabled. Please contact support to reactivate your account.",
+                code="ACCOUNT_DISABLED",
+                status_code=403,
+            )
+
+        self.user_domain_service.validate_user_business_access(user)
 
         if not user.email_verified:
             logger.info(
@@ -363,5 +374,5 @@ class VerifyOTPUseCase:
                 created_at=user.created_at,
                 updated_at=user.updated_at,
             ),
-            expires_in=3600,  # 1 hour
+            expires_in=int(settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60),
         )
