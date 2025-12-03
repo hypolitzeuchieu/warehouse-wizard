@@ -18,6 +18,11 @@ class CreditRepository(ABC):
         pass
 
     @abstractmethod
+    def get_by_id_for_update(self, credit_id: UUID) -> Credit | None:
+        """Get credit by ID with row lock for update (prevents race conditions)."""
+        pass
+
+    @abstractmethod
     def get_by_customer(
         self, customer_id: UUID, business_id: UUID, limit: int = 100
     ) -> list[Credit]:

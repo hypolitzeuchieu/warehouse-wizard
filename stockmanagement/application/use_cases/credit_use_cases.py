@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from django.db import transaction
 from django.utils import timezone
 
 from application.dto.credit_dto import (
@@ -16,6 +18,12 @@ from application.dto.credit_dto import (
 )
 from domain.credit.entities import Credit, CreditPayment, CreditStatus
 from domain.credit.repositories import CreditPaymentRepository, CreditRepository
+from infrastructure.persistence.models.business_models import Business as BusinessModel
+from infrastructure.persistence.models.business_models import (
+    BusinessMember as BusinessMemberModel,
+)
+from infrastructure.persistence.models.customer_models import Customer as CustomerModel
+from infrastructure.persistence.models.notification_models import Notification
 from shared.exceptions.base import BaseAPIException
 from shared.exceptions.specific import (
     BadRequestError,
@@ -193,26 +201,24 @@ class PayCreditUseCase:
         self.credit_id = credit_id
         self.user_id = user_id
 
+    @transaction.atomic
     def execute(
         self, dto: CreditPaymentCreateDTO
     ) -> tuple[CreditResponseDTO, CreditPaymentResponseDTO]:
         """Execute credit payment."""
-        # Get credit
-        credit = self.credit_repository.get_by_id(self.credit_id)
+        credit = self.credit_repository.get_by_id_for_update(self.credit_id)
         if not credit:
             raise NotFoundError(
                 detail="Credit not found",
                 code="CREDIT_NOT_FOUND",
             )
 
-        # Check if credit is already settled
         if credit.status == CreditStatus.SETTLED:
             raise BadRequestError(
                 detail="Credit is already fully paid",
                 code="CREDIT_ALREADY_SETTLED",
             )
 
-        # Validate payment amount
         if dto.amount > credit.remaining_amount:
             raise BaseAPIException(
                 detail=f"Payment amount ({dto.amount}) exceeds remaining amount ({credit.remaining_amount})",
@@ -220,7 +226,6 @@ class PayCreditUseCase:
                 status_code=400,
             )
 
-        # Create payment
         payment_date = dto.payment_date or timezone.now()
         payment = CreditPayment(
             id=uuid4(),
@@ -235,7 +240,6 @@ class PayCreditUseCase:
 
         payment = self.credit_payment_repository.create(payment)
 
-        # Update credit
         credit.paid_amount += dto.amount
         credit.remaining_amount -= dto.amount
         credit.updated_at = timezone.now()
@@ -331,23 +335,12 @@ class CheckOverdueCreditsUseCase:
                 if credit.status == CreditStatus.OVERDUE:
                     credit = self.credit_repository.update(credit)
 
-        # Create notifications for overdue credits
-        from infrastructure.persistence.models.business_models import Business as BusinessModel
-        from infrastructure.persistence.models.business_models import (
-            BusinessMember as BusinessMemberModel,
-        )
-        from infrastructure.persistence.models.customer_models import Customer as CustomerModel
-        from infrastructure.persistence.models.notification_models import Notification
-
         notifications_created = []
         for credit in overdue_credits:
             try:
                 # Get customer
                 customer = CustomerModel.objects.get(id=credit.customer_id)
                 business = BusinessModel.objects.get(id=self.business_id)
-
-                # Check if notification already exists (within last 24 hours)
-                from datetime import timedelta
 
                 recent_notification = (
                     Notification.objects.filter(

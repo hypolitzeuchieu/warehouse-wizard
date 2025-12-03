@@ -12,7 +12,7 @@ class Business(BaseModel):
     """Business model."""
 
     name = models.CharField(max_length=255)
-    unique_name = models.CharField(max_length=100, unique=True)  # Unique identifier for QR code
+    unique_name = models.CharField(max_length=100, unique=True)
     owner = models.ForeignKey(
         RetailPulseUser,
         on_delete=models.CASCADE,
@@ -37,6 +37,7 @@ class Business(BaseModel):
             models.Index(fields=["unique_name"]),
             models.Index(fields=["is_active"]),
         ]
+        unique_together = [["owner", "name"]]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.unique_name})"
@@ -49,7 +50,7 @@ class BusinessMember(BaseModel):
     user = models.ForeignKey(
         RetailPulseUser, on_delete=models.CASCADE, related_name="business_memberships"
     )
-    role = models.CharField(max_length=50)  # manager, cashier, stock_keeper, delivery
+    role = models.CharField(max_length=50)
     is_active = models.BooleanField(default=True)
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)

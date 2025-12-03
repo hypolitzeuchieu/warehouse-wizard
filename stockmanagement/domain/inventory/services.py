@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 from uuid import UUID, uuid4
 
+from django.db import transaction
 from django.utils import timezone
 
 from domain.inventory.entities import Product, StockMovement, StockMovementType
@@ -29,6 +30,7 @@ class InventoryDomainService:
         self.product_repository = product_repository
         self.stock_movement_repository = stock_movement_repository
 
+    @transaction.atomic
     def record_stock_entry(
         self,
         business_id: UUID,
@@ -38,16 +40,14 @@ class InventoryDomainService:
         reason: str | None = None,
     ) -> StockMovement:
         """Record a stock entry (incoming stock)."""
-        product = self.product_repository.get_by_id(product_id)
+        product = self.product_repository.get_by_id_for_update(product_id)
         if not product:
             raise ValueError(f"Product {product_id} not found")
 
-        # Update product quantity
         product.quantity += quantity
         product.updated_at = timezone.now()
         product = self.product_repository.update(product)
 
-        # Create stock movement
         now = timezone.now()
         movement = StockMovement(
             id=uuid4(),
@@ -63,6 +63,7 @@ class InventoryDomainService:
 
         return self.stock_movement_repository.create(movement)
 
+    @transaction.atomic
     def record_stock_exit(
         self,
         business_id: UUID,
@@ -72,22 +73,19 @@ class InventoryDomainService:
         reason: str | None = None,
     ) -> StockMovement:
         """Record a stock exit (outgoing stock)."""
-        product = self.product_repository.get_by_id(product_id)
+        product = self.product_repository.get_by_id_for_update(product_id)
         if not product:
             raise ValueError(f"Product {product_id} not found")
 
-        # Check if enough stock
         if product.quantity < quantity:
             raise ValueError(
                 f"Insufficient stock. Available: {product.quantity}, Requested: {quantity}"
             )
 
-        # Update product quantity
         product.quantity -= quantity
         product.updated_at = timezone.now()
         product = self.product_repository.update(product)
 
-        # Create stock movement
         now = timezone.now()
         movement = StockMovement(
             id=uuid4(),

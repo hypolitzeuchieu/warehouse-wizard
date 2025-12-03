@@ -5,6 +5,7 @@ import socket
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 from shared.config.logging_config import get_logging_config
@@ -299,11 +300,11 @@ CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {
     "check-expired-products": {
         "task": "tasks.inventory_tasks.check_expired_products",
-        "schedule": timedelta(seconds=60),
+        "schedule": crontab(hour=0, minute=0),
     },
     "cleanup-expired-tokens": {
         "task": "tasks.auth_tasks.cleanup_expired_tokens",
-        "schedule": timedelta(seconds=120),
+        "schedule": crontab(hour=0, minute=0),
     },
 }
 
