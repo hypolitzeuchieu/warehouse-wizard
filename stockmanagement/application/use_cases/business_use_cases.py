@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID, uuid4
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from application.dto.business_dto import (
@@ -30,6 +30,29 @@ from tasks.member_tasks import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_uuid(value: UUID | str | None) -> UUID | None:
+    """Normalize UUID value to UUID type."""
+    if value is None:
+        return None
+    if isinstance(value, UUID):
+        return value
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
+def _compare_uuids(uuid1: UUID | str | None, uuid2: UUID | str | None) -> bool:
+    """Compare two UUIDs safely, handling UUID and string types."""
+    normalized1 = _normalize_uuid(uuid1)
+    normalized2 = _normalize_uuid(uuid2)
+
+    if normalized1 is None or normalized2 is None:
+        return False
+
+    return normalized1 == normalized2
 
 
 class CreateBusinessUseCase:
@@ -304,7 +327,7 @@ class AddBusinessMemberUseCase:
         target_user = None
         user_created = False
         generated_password = None
-
+        found_by = None
         if dto.user_id:
             target_user = self.user_repository.get_by_id(dto.user_id)
             if not target_user:
@@ -312,23 +335,12 @@ class AddBusinessMemberUseCase:
                     detail="User not found",
                     code="USER_NOT_FOUND",
                 )
+            found_by = "user_id"
             if not target_user.email_verified:
                 raise BadRequestError(
                     detail="User account is not verified",
                     code="USER_NOT_VERIFIED",
                 )
-        else:
-            if dto.email:
-                target_user = self.user_repository.get_by_email(dto.email)
-            elif dto.phone_number:
-                target_user = self.user_repository.get_by_phone_number(dto.phone_number)
-
-            if target_user:
-                if not target_user.email_verified:
-                    raise BadRequestError(
-                        detail="User account is not verified",
-                        code="USER_NOT_VERIFIED",
-                    )
             if target_user.role == UserRole.OWNER:
                 raise BadRequestError(
                     detail="Business owners cannot be added as members",
@@ -339,12 +351,68 @@ class AddBusinessMemberUseCase:
                     detail="User account is not active",
                     code="USER_NOT_ACTIVE",
                 )
+        else:
+            target_user = None
 
+            if dto.email:
+                target_user = self.user_repository.get_by_email(dto.email)
+                if target_user:
+                    found_by = "email"
+
+            if not target_user and dto.phone_number:
+                target_user = self.user_repository.get_by_phone_number(dto.phone_number)
+                if target_user:
+                    found_by = "phone_number"
+
+            if target_user:
+                if not target_user.email_verified:
+                    raise BadRequestError(
+                        detail="User account is not verified",
+                        code="USER_NOT_VERIFIED",
+                    )
+                if target_user.role == UserRole.OWNER:
+                    raise BadRequestError(
+                        detail="Business owners cannot be added as members",
+                        code="OWNER_CANNOT_BE_MEMBER",
+                    )
+                if not target_user.is_active:
+                    raise BadRequestError(
+                        detail="User account is not active",
+                        code="USER_NOT_ACTIVE",
+                    )
             else:
                 if not dto.name:
                     raise BadRequestError(
                         detail="Name is required when creating a new user",
                         code="NAME_REQUIRED",
+                    )
+
+                existing_user_by_email = None
+                existing_user_by_phone = None
+
+                if dto.email:
+                    existing_user_by_email = self.user_repository.get_by_email(dto.email)
+                if dto.phone_number:
+                    existing_user_by_phone = self.user_repository.get_by_phone_number(
+                        dto.phone_number
+                    )
+
+                if existing_user_by_email and existing_user_by_phone:
+                    if existing_user_by_email.id != existing_user_by_phone.id:
+                        raise BadRequestError(
+                            detail="Email and phone number belong to different users. Please provide matching credentials.",
+                            code="CREDENTIALS_MISMATCH",
+                        )
+
+                if existing_user_by_email:
+                    raise BadRequestError(
+                        detail=f"A member with email '{dto.email}' already exists",
+                        code="MEMBER_EMAIL_ALREADY_EXISTS",
+                    )
+                if existing_user_by_phone:
+                    raise BadRequestError(
+                        detail=f"A member with phone number '{dto.phone_number}' already exists",
+                        code="MEMBER_PHONE_ALREADY_EXISTS",
                     )
 
                 generated_password = dto.password or generate_secure_password()
@@ -369,15 +437,74 @@ class AddBusinessMemberUseCase:
                     auth_method=AuthMethod.EMAIL_PASSWORD if dto.email else AuthMethod.PHONE_OTP,
                 )
 
-                target_user = self.user_repository.create(target_user, password=generated_password)
-                user_created = True
+                try:
+                    target_user = self.user_repository.create(
+                        target_user, password=generated_password
+                    )
+                    user_created = True
+                except IntegrityError as e:
+                    error_message = str(e).lower()
+                    if "email" in error_message or (
+                        "unique constraint" in error_message and "email" in error_message
+                    ):
+                        raise BadRequestError(
+                            detail=f"A member with email '{dto.email}' already exists. This email is used for login and cannot be duplicated.",
+                            code="MEMBER_EMAIL_ALREADY_EXISTS",
+                        ) from e
+                    elif (
+                        "phone_number" in error_message
+                        or "phone" in error_message
+                        or ("unique constraint" in error_message and "phone" in error_message)
+                    ):
+                        raise BadRequestError(
+                            detail=f"A member with phone number '{dto.phone_number}' already exists. This phone number is used for login and cannot be duplicated.",
+                            code="MEMBER_PHONE_ALREADY_EXISTS",
+                        ) from e
+                    else:
+                        conflict_fields = []
+                        if dto.email:
+                            conflict_fields.append(f"email '{dto.email}'")
+                        if dto.phone_number:
+                            conflict_fields.append(f"phone number '{dto.phone_number}'")
+
+                        detail_msg = f"A member with {' or '.join(conflict_fields)} already exists. These credentials are used for login and cannot be duplicated."
+                        raise BadRequestError(
+                            detail=detail_msg,
+                            code="MEMBER_CREDENTIALS_ALREADY_EXISTS",
+                        ) from e
 
         existing_members = self.business_member_repository.get_business_members(
-            self.business_id, active_only=True
+            self.business_id, active_only=False
         )
         if any(member.user_id == target_user.id for member in existing_members):
+            existing_member = next(
+                (m for m in existing_members if m.user_id == target_user.id), None
+            )
+            if existing_member and existing_member.is_active and existing_member.left_at is None:
+                if found_by == "email":
+                    detail_message = (
+                        f"User with email '{dto.email}' is already a member of this business"
+                    )
+                elif found_by == "phone_number":
+                    detail_message = f"User with phone number '{dto.phone_number}' is already a member of this business"
+                elif found_by == "user_id":
+                    detail_message = (
+                        f"User with ID '{dto.user_id}' is already a member of this business"
+                    )
+                else:
+                    detail_message = "User is already a member of this business"
+            else:
+                if found_by == "email":
+                    detail_message = f"User with email '{dto.email}' was previously a member of this business. Please reactivate the existing membership instead of creating a new one."
+                elif found_by == "phone_number":
+                    detail_message = f"User with phone number '{dto.phone_number}' was previously a member of this business. Please reactivate the existing membership instead of creating a new one."
+                elif found_by == "user_id":
+                    detail_message = f"User with ID '{dto.user_id}' was previously a member of this business. Please reactivate the existing membership instead of creating a new one."
+                else:
+                    detail_message = "User was previously a member of this business. Please reactivate the existing membership instead of creating a new one."
+
             raise BadRequestError(
-                detail="User is already a member of this business",
+                detail=detail_message,
                 code="USER_ALREADY_MEMBER",
             )
 
@@ -400,7 +527,28 @@ class AddBusinessMemberUseCase:
             updated_at=timezone.now(),
         )
 
-        member = self.business_member_repository.create(member)
+        try:
+            member = self.business_member_repository.create(member)
+        except IntegrityError as e:
+            error_message = str(e).lower()
+            if (
+                "business" in error_message and "user" in error_message
+            ) or "unique constraint" in error_message:
+                if found_by == "email":
+                    detail_message = f"User with email '{dto.email}' is already associated with this business (may be inactive). Please reactivate the existing membership."
+                elif found_by == "phone_number":
+                    detail_message = f"User with phone number '{dto.phone_number}' is already associated with this business (may be inactive). Please reactivate the existing membership."
+                elif found_by == "user_id":
+                    detail_message = f"User with ID '{dto.user_id}' is already associated with this business (may be inactive). Please reactivate the existing membership."
+                else:
+                    detail_message = "User is already associated with this business (may be inactive). Please reactivate the existing membership."
+
+                raise BadRequestError(
+                    detail=detail_message,
+                    code="USER_ALREADY_MEMBER",
+                ) from e
+            else:
+                raise
 
         if user_created and generated_password:
             business = self.business_repository.get_by_id(self.business_id)
@@ -535,10 +683,15 @@ class RemoveBusinessMemberUseCase:
                 detail="Member not found",
                 code="MEMBER_NOT_FOUND",
             )
-        if member.business_id != self.business_id:
+        if not _compare_uuids(member.business_id, self.business_id):
             raise ForbiddenError(
                 detail="Member does not belong to this business",
                 code="MEMBER_NOT_IN_BUSINESS",
+            )
+        if not member.is_active or member.left_at is not None:
+            raise BadRequestError(
+                detail="Member is already inactive or has been removed",
+                code="MEMBER_ALREADY_INACTIVE",
             )
         if member.is_manager():
             if not self.business_domain_service.can_user_manage_managers(
@@ -587,6 +740,7 @@ class ListBusinessMembersUseCase:
         members = self.business_member_repository.get_business_members(
             self.business_id, active_only=not self.include_inactive
         )
+        logger.info(f"Fetched {members} members for business {self.business_id}")
 
         return [self._to_dto(member) for member in members]
 
@@ -597,7 +751,7 @@ class ListBusinessMembersUseCase:
             user = self.user_repository.get_by_id(member.user_id)
             if user:
                 user_details = {
-                    "id": user.id,
+                    "id": str(user.id),
                     "name": user.name,
                     "email": user.email,
                     "phone_number": user.phone_number,
@@ -605,6 +759,8 @@ class ListBusinessMembersUseCase:
                     "avatar_url": user.avatar_url,
                     "is_active": user.is_active,
                 }
+            else:
+                logger.warning(f"User {member.user_id} not found for business member {member.id}")
 
         return BusinessMemberResponseDTO(
             id=member.id,

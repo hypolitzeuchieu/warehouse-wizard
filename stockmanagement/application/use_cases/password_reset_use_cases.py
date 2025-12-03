@@ -44,11 +44,13 @@ class ForgotPasswordUseCase:
             Dictionary with success message
 
         Raises:
-            BaseAPIException: If user not found or sending fails
+            BaseAPIException: If sending fails (but not if user not found for security)
         """
         expiration_minutes = int(getattr(settings, "PASSWORD_RESET_EXPIRY_MINUTES", 10))
 
         frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+
+        generic_message = "If the email or phone number exists, a reset link/code has been sent."
 
         user = None
         if dto.email:
@@ -62,7 +64,7 @@ class ForgotPasswordUseCase:
 
         if not user:
             return {
-                "message": f"If the {dto.reset_type} exists, a reset link/code has been sent.",
+                "message": generic_message,
                 "expires_in_minutes": expiration_minutes,
             }
 
@@ -70,7 +72,7 @@ class ForgotPasswordUseCase:
             user_model = UserModel.objects.get(id=user.id)
         except UserModel.DoesNotExist:
             return {
-                "message": f"If the {dto.reset_type} exists, a reset link/code has been sent.",
+                "message": generic_message,
                 "expires_in_minutes": expiration_minutes,
             }
 
@@ -122,7 +124,7 @@ class ForgotPasswordUseCase:
             )
 
         return {
-            "message": f"Password reset {dto.reset_type} sent successfully",
+            "message": generic_message,
             "expires_in_minutes": expiration_minutes,
         }
 

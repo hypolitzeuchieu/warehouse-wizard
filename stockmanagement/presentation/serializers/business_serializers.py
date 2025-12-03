@@ -153,8 +153,6 @@ class BusinessMemberSerializer(serializers.Serializer):
     """Serializer for business member responses."""
 
     id = serializers.UUIDField(read_only=True)
-    business_id = serializers.UUIDField(read_only=True)
-    user_id = serializers.UUIDField(read_only=True)
     role = serializers.CharField(read_only=True)
     is_active = serializers.BooleanField(read_only=True)
     joined_at = serializers.DateTimeField(read_only=True)
@@ -166,23 +164,18 @@ class BusinessMemberSerializer(serializers.Serializer):
     @classmethod
     def from_dto(cls, dto: BusinessMemberResponseDTO) -> dict:
         """Convert BusinessMemberResponseDTO to serialized data."""
-        serializer = cls(
-            data={
-                "id": dto.id,
-                "business_id": dto.business_id,
-                "user_id": dto.user_id,
-                "role": dto.role,
-                "is_active": dto.is_active,
-                "joined_at": dto.joined_at,
-                "left_at": dto.left_at,
-                "created_at": dto.created_at,
-                "updated_at": dto.updated_at,
-                "user": dto.user,
-            }
-        )
-        serializer.is_valid(raise_exception=True)
-        data = serializer.data
-        return data
+        user_data = dto.user if dto.user else None
+
+        return {
+            "id": str(dto.id),
+            "role": dto.role,
+            "is_active": dto.is_active,
+            "joined_at": dto.joined_at,
+            "left_at": dto.left_at,
+            "created_at": dto.created_at,
+            "updated_at": dto.updated_at,
+            "user": user_data,
+        }
 
 
 class BusinessResponseSerializer(serializers.Serializer):
@@ -202,6 +195,7 @@ class BusinessResponseSerializer(serializers.Serializer):
     settings = serializers.JSONField(required=False)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
+    member_count = serializers.IntegerField(required=False, allow_null=True)
     members = BusinessMemberSerializer(many=True, required=False, allow_null=True)
 
     @classmethod
@@ -209,8 +203,18 @@ class BusinessResponseSerializer(serializers.Serializer):
         cls,
         dto: BusinessResponseDTO,
         members: Sequence[BusinessMemberResponseDTO] | None = None,
+        member_count: int | None = None,
     ) -> dict:
         """Convert BusinessResponseDTO to serialized data."""
+        if member_count is None and members is not None:
+            member_count = len(members)
+
+        serialized_members = (
+            [BusinessMemberSerializer.from_dto(member_dto) for member_dto in members]
+            if members is not None
+            else None
+        )
+
         serializer = cls(
             data={
                 "id": dto.id,
@@ -227,15 +231,15 @@ class BusinessResponseSerializer(serializers.Serializer):
                 "settings": dto.settings,
                 "created_at": dto.created_at,
                 "updated_at": dto.updated_at,
-                "members": (
-                    [BusinessMemberSerializer.from_dto(member_dto) for member_dto in members]
-                    if members is not None
-                    else None
-                ),
+                "member_count": member_count,
             }
         )
         serializer.is_valid(raise_exception=True)
         data = serializer.data
-        if serializer.initial_data.get("members") is None:
+
+        if serialized_members is not None:
+            data["members"] = serialized_members
+        elif "members" in data:
             data.pop("members", None)
+
         return data
