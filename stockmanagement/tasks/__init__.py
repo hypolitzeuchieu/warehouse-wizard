@@ -9,6 +9,7 @@ __all__ = [
     "check_expired_products",
     "cleanup_expired_tokens",
     "send_notification_task",
+    "generate_report_task",
 ]
 
 
@@ -22,4 +23,5 @@ def _lazy_imports():
         send_password_reset_email_task,
         send_password_reset_sms_task,
     )
+    from tasks.report_tasks import generate_report_task  # noqa: F401
     from tasks.send_mail import send_email  # noqa: F401

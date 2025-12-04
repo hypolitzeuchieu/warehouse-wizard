@@ -1,2 +1,1 @@
-"""Utility functions for RetailPulse."""
-
+"""Shared utilities."""

@@ -20,12 +20,13 @@ if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable is required")
 
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
 
-ALLOWED_HOSTS = (
-    os.getenv("ALLOWED_HOSTS", default="localhost,testserver").split(",")
-    if os.getenv("ALLOWED_HOSTS")
-    else ["localhost", "testserver"]
-)
+if DEBUG and ENVIRONMENT == "production":
+    raise ValueError(
+        "DEBUG cannot be True in production environment. "
+        "Set ALLOW_DEBUG_IN_PRODUCTION=True only for emergency debugging."
+    )
 
 
 INSTALLED_APPS = [
@@ -135,6 +136,14 @@ if DEBUG:
 
 # CORS settings
 CORS_ALLOWED_ALL_ORIGINS = os.getenv("CORS_ALLOWED_ALL_ORIGINS", "False").lower() == "true"
+
+# Security: Prevent CORS_ALLOWED_ALL_ORIGINS=True in production
+if CORS_ALLOWED_ALL_ORIGINS and ENVIRONMENT == "production":
+    raise ValueError(
+        "CORS_ALLOWED_ALL_ORIGINS cannot be True in production environment. "
+        "Configure CORS_ALLOWED_ORIGINS with specific allowed origins instead."
+    )
+
 CORS_ALLOWED_ORIGINS = [
     origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()
 ] or ([os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else [])
@@ -158,11 +167,11 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF settings
 CSRF_COOKIE_SAMESITE = "Strict"
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = ENVIRONMENT == "production"
 CSRF_COOKIE_AGE = 86400 * 30
 
 # Session settings
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = ENVIRONMENT == "production"
 SESSION_COOKIE_SAMESITE = "Strict"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 86400 * 30
@@ -175,6 +184,23 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "False").lower() == "true"
+
+# Security: Warn if SECURE_SSL_REDIRECT is False in production
+if not SECURE_SSL_REDIRECT and ENVIRONMENT == "production":
+    raise ValueError(
+        "SECURE_SSL_REDIRECT is False in production. "
+        "This is a security risk. Set SECURE_SSL_REDIRECT=True in production."
+    )
+
+# File upload security limits
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(
+    os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", "10485760")
+)  # 10 MB default
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(
+    os.getenv("FILE_UPLOAD_MAX_MEMORY_SIZE", "10485760")
+)  # 10 MB default
+DATA_UPLOAD_MAX_NUMBER_FIELDS = int(os.getenv("DATA_UPLOAD_MAX_NUMBER_FIELDS", "1000"))
+
 ROOT_URLCONF = "retailpulse.urls"
 
 TEMPLATES = [
@@ -200,14 +226,14 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 
-if DEBUG:
+if ENVIRONMENT == "development":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
         },
     }
-else:
+if ENVIRONMENT == "production":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -321,7 +347,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", None)
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", None)
 
 # Django Debug Toolbar Settings
-if DEBUG:
+if ENVIRONMENT == "development":
     hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
     INTERNAL_IPS = [
         "127.0.0.1",
@@ -335,7 +361,7 @@ if DEBUG:
 
     # Configure Debug Toolbar panels
     DEBUG_TOOLBAR_CONFIG = {
-        "SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG,
+        "SHOW_TOOLBAR_CALLBACK": lambda request: ENVIRONMENT == "development",
         "SHOW_COLLAPSED": True,
         "HIDE_DJANGO_SQL": False,
         "ENABLE_STACKTRACES": True,

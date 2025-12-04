@@ -161,3 +161,29 @@ class OTP:
         self.verified = True
         self.verified_at = timezone.now()
         return True
+
+
+@dataclass
+class PasswordResetToken:
+    """Password reset token entity."""
+
+    id: UUID
+    user_id: UUID
+    email: str | None
+    phone_number: str | None
+    token: str | None
+    code: str | None
+    reset_type: str
+    expires_at: datetime
+    used: bool
+    used_at: datetime | None
+    attempts: int
+    max_attempts: int
+    created_at: datetime
+    updated_at: datetime
+
+    def is_valid(self) -> bool:
+        """Check if token is valid (not expired and not used)."""
+        return (
+            not self.used and self.expires_at > timezone.now() and self.attempts < self.max_attempts
+        )

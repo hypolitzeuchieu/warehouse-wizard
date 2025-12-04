@@ -24,6 +24,7 @@ from domain.users.repositories import UserRepository
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
 from shared.services.qr_code_service import QRCodeService
 from shared.utils.password_generator import generate_secure_password
+from shared.utils.validation import validate_business_access
 from tasks.member_tasks import (
     send_member_credentials_email_task,
     send_member_credentials_sms_task,
@@ -53,6 +54,26 @@ def _compare_uuids(uuid1: UUID | str | None, uuid2: UUID | str | None) -> bool:
         return False
 
     return normalized1 == normalized2
+
+
+def _business_to_dto(business: Business) -> BusinessResponseDTO:
+    """Convert business entity to DTO (shared utility function)."""
+    return BusinessResponseDTO(
+        id=business.id,
+        name=business.name,
+        unique_name=business.unique_name,
+        owner_id=business.owner_id,
+        description=business.description,
+        address=business.address,
+        phone_number=business.phone_number,
+        email=business.email,
+        qr_code_url=business.qr_code_url,
+        logo_url=business.logo_url,
+        is_active=business.is_active,
+        settings=business.settings,
+        created_at=business.created_at,
+        updated_at=business.updated_at,
+    )
 
 
 class CreateBusinessUseCase:
@@ -148,22 +169,7 @@ class CreateBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return BusinessResponseDTO(
-            id=business.id,
-            name=business.name,
-            unique_name=business.unique_name,
-            owner_id=business.owner_id,
-            description=business.description,
-            address=business.address,
-            phone_number=business.phone_number,
-            email=business.email,
-            qr_code_url=business.qr_code_url,
-            logo_url=business.logo_url,
-            is_active=business.is_active,
-            settings=business.settings,
-            created_at=business.created_at,
-            updated_at=business.updated_at,
-        )
+        return _business_to_dto(business)
 
 
 class UpdateBusinessUseCase:
@@ -218,22 +224,7 @@ class UpdateBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return BusinessResponseDTO(
-            id=business.id,
-            name=business.name,
-            unique_name=business.unique_name,
-            owner_id=business.owner_id,
-            description=business.description,
-            address=business.address,
-            phone_number=business.phone_number,
-            email=business.email,
-            qr_code_url=business.qr_code_url,
-            logo_url=business.logo_url,
-            is_active=business.is_active,
-            settings=business.settings,
-            created_at=business.created_at,
-            updated_at=business.updated_at,
-        )
+        return _business_to_dto(business)
 
 
 class DeleteBusinessUseCase:
@@ -731,11 +722,11 @@ class ListBusinessMembersUseCase:
 
     def execute(self) -> list[BusinessMemberResponseDTO]:
         """Execute listing business members."""
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         members = self.business_member_repository.get_business_members(
             self.business_id, active_only=not self.include_inactive
@@ -801,32 +792,17 @@ class GetBusinessUseCase:
                 code="BUSINESS_NOT_FOUND",
             )
 
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         return self._to_dto(business)
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return BusinessResponseDTO(
-            id=business.id,
-            name=business.name,
-            unique_name=business.unique_name,
-            owner_id=business.owner_id,
-            description=business.description,
-            address=business.address,
-            phone_number=business.phone_number,
-            email=business.email,
-            qr_code_url=business.qr_code_url,
-            logo_url=business.logo_url,
-            is_active=business.is_active,
-            settings=business.settings,
-            created_at=business.created_at,
-            updated_at=business.updated_at,
-        )
+        return _business_to_dto(business)
 
 
 class ListBusinessesUseCase:
@@ -859,19 +835,4 @@ class ListBusinessesUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return BusinessResponseDTO(
-            id=business.id,
-            name=business.name,
-            unique_name=business.unique_name,
-            owner_id=business.owner_id,
-            description=business.description,
-            address=business.address,
-            phone_number=business.phone_number,
-            email=business.email,
-            qr_code_url=business.qr_code_url,
-            logo_url=business.logo_url,
-            is_active=business.is_active,
-            settings=business.settings,
-            created_at=business.created_at,
-            updated_at=business.updated_at,
-        )
+        return _business_to_dto(business)

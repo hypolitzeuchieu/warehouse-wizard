@@ -54,6 +54,7 @@ from infrastructure.persistence.repositories.sales_repositories import (
 )
 from infrastructure.persistence.repositories.user_repositories import (
     DeviceRepositoryImpl,
+    PasswordResetTokenRepositoryImpl,
     RefreshTokenRepositoryImpl,
     SessionRepositoryImpl,
     UserRepositoryImpl,
@@ -65,6 +66,7 @@ __all__ = [
     "SessionRepositoryImpl",
     "RefreshTokenRepositoryImpl",
     "DeviceRepositoryImpl",
+    "PasswordResetTokenRepositoryImpl",
     # Business repositories
     "BusinessRepositoryImpl",
     "BusinessMemberRepositoryImpl",

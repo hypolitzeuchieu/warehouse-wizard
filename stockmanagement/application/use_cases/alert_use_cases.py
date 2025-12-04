@@ -11,14 +11,21 @@ from domain.business.repositories import BusinessRepository
 from domain.inventory.entities import Product
 from domain.inventory.repositories import ProductRepository
 from domain.inventory.services import InventoryDomainService
+from domain.notifications.entities import Notification
 from domain.notifications.services import NotificationDomainService
-from infrastructure.persistence.repositories import (
-    BusinessMemberRepositoryImpl,
-    BusinessRepositoryImpl,
-    NotificationRepositoryImpl,
-)
 
 logger = logging.getLogger(__name__)
+
+
+def _notification_to_dict(notification: Notification, product_name: str) -> dict:
+    """Convert notification entity to dictionary format (shared utility function)."""
+    return {
+        "product_id": str(notification.related_entity_id),
+        "product_name": product_name,
+        "notification_id": str(notification.id),
+        "user_id": str(notification.user_id) if notification.user_id else None,
+        "notification_type": notification.notification_type.value,
+    }
 
 
 class NotifyProductExpiringUseCase:
@@ -78,14 +85,7 @@ class NotifyProductExpiringUseCase:
 
         # Convert to dict format for response
         return [
-            {
-                "product_id": str(notification.related_entity_id),
-                "product_name": self.product.name,
-                "notification_id": str(notification.id),
-                "user_id": str(notification.user_id) if notification.user_id else None,
-                "notification_type": notification.notification_type.value,
-            }
-            for notification in notifications
+            _notification_to_dict(notification, self.product.name) for notification in notifications
         ]
 
 
@@ -136,14 +136,7 @@ class NotifyProductExpiredUseCase:
 
         # Convert to dict format for response
         return [
-            {
-                "product_id": str(notification.related_entity_id),
-                "product_name": self.product.name,
-                "notification_id": str(notification.id),
-                "user_id": str(notification.user_id) if notification.user_id else None,
-                "notification_type": notification.notification_type.value,
-            }
-            for notification in notifications
+            _notification_to_dict(notification, self.product.name) for notification in notifications
         ]
 
 
@@ -297,10 +290,12 @@ class CheckExpiredProductsUseCase:
     def __init__(
         self,
         inventory_domain_service: InventoryDomainService,
+        notification_domain_service: NotificationDomainService,
         business_id: UUID,
     ) -> None:
         """Initialize use case."""
         self.inventory_domain_service = inventory_domain_service
+        self.notification_domain_service = notification_domain_service
         self.business_id = business_id
 
     def execute(self) -> list[dict]:
@@ -310,12 +305,6 @@ class CheckExpiredProductsUseCase:
         Note: This is a legacy use case. Consider using CheckAndNotifyExpiredProductsUseCase.
         """
 
-        notification_domain_service = NotificationDomainService(
-            notification_repository=NotificationRepositoryImpl(),
-            business_repository=BusinessRepositoryImpl(),
-            business_member_repository=BusinessMemberRepositoryImpl(),
-        )
-
         # Get expired products (this updates the DB)
         expired_products = self.inventory_domain_service.check_expired_products(self.business_id)
         notifications_created = []
@@ -323,7 +312,7 @@ class CheckExpiredProductsUseCase:
         for product in expired_products:
             try:
                 use_case = NotifyProductExpiredUseCase(
-                    notification_domain_service=notification_domain_service,
+                    notification_domain_service=self.notification_domain_service,
                     product=product,
                 )
                 notifications = use_case.execute()
@@ -368,13 +357,7 @@ class CheckLowStockProductsUseCase:
 
                 notifications_created.extend(
                     [
-                        {
-                            "product_id": str(notification.related_entity_id),
-                            "product_name": product.name,
-                            "notification_id": str(notification.id),
-                            "user_id": str(notification.user_id) if notification.user_id else None,
-                            "notification_type": notification.notification_type.value,
-                        }
+                        _notification_to_dict(notification, product.name)
                         for notification in notifications
                     ]
                 )

@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from domain.sales.entities import (
@@ -64,6 +65,16 @@ class InvoiceRepository(ABC):
     @abstractmethod
     def delete(self, invoice_id: UUID) -> None:
         """Permanently delete an invoice (hard delete)."""
+        pass
+
+    @abstractmethod
+    def get_sales_aggregations_for_report(
+        self,
+        business_id: UUID,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> dict[str, Any]:
+        """Get optimized sales aggregations for reports."""
         pass
 
 

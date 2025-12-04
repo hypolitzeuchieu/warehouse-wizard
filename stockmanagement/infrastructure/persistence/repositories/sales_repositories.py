@@ -1,8 +1,11 @@
 """Sales repository implementations."""
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
+from django.db.models import Count, Sum
 from django.utils import timezone
 
 from domain.sales.entities import (
@@ -89,8 +92,13 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         archived_only: bool = False,
     ) -> list[Invoice]:
         """Get invoices for a business with optional filters."""
-        query = InvoiceModel.objects.filter(business_id=business_id).select_related(
-            "customer", "cashier"
+        query = (
+            InvoiceModel.objects.filter(business_id=business_id)
+            .select_related("customer", "cashier")
+            .prefetch_related(
+                "lines__product__category",
+                "lines__product__subcategory",
+            )
         )
 
         if archived_only:
@@ -166,6 +174,131 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         if last_invoice:
             return last_invoice.number + 1
         return 1
+
+    def get_sales_aggregations_for_report(
+        self,
+        business_id: UUID,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> dict[str, Any]:
+        """
+        Get optimized sales aggregations for reports using DB aggregations.
+
+        This method uses database aggregations instead of Python loops
+        to optimize performance for large datasets.
+
+        Args:
+            business_id: Business ID
+            start_date: Start date for filtering
+            end_date: End date for filtering
+
+        Returns:
+            Dictionary with aggregated statistics
+        """
+        if timezone.is_naive(start_date):
+            start_date = timezone.make_aware(start_date)
+        if timezone.is_naive(end_date):
+            end_date = timezone.make_aware(end_date)
+
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        total_stats = InvoiceModel.objects.filter(
+            business_id=business_id,
+            is_archived=False,
+            created_at__gte=start_date,
+            created_at__lte=end_date,
+        ).aggregate(
+            total_revenue=Sum("total"),
+            total_invoices=Count("id"),
+        )
+
+        items_sold_stats = InvoiceLineModel.objects.filter(
+            invoice__business_id=business_id,
+            invoice__is_archived=False,
+            invoice__created_at__gte=start_date,
+            invoice__created_at__lte=end_date,
+        ).aggregate(
+            total_items_sold=Sum("quantity"),
+        )
+
+        payment_method_stats = (
+            InvoiceModel.objects.filter(
+                business_id=business_id,
+                is_archived=False,
+                created_at__gte=start_date,
+                created_at__lte=end_date,
+            )
+            .values("payment_method")
+            .annotate(
+                total_amount=Sum("total"),
+                invoice_count=Count("id"),
+            )
+            .order_by("-total_amount")
+        )
+
+        status_stats = (
+            InvoiceModel.objects.filter(
+                business_id=business_id,
+                is_archived=False,
+                created_at__gte=start_date,
+                created_at__lte=end_date,
+            )
+            .values("status")
+            .annotate(
+                total_amount=Sum("total"),
+                invoice_count=Count("id"),
+            )
+            .order_by("-total_amount")
+        )
+
+        product_stats = (
+            InvoiceLineModel.objects.filter(
+                invoice__business_id=business_id,
+                invoice__is_archived=False,
+                invoice__created_at__gte=start_date,
+                invoice__created_at__lte=end_date,
+            )
+            .select_related("product")
+            .values("product_id", "product__name")
+            .annotate(
+                total_quantity_sold=Sum("quantity"),
+                total_revenue=Sum("line_total"),
+                number_of_sales=Count("invoice_id", distinct=True),
+            )
+            .order_by("-total_revenue")[:10]
+        )
+
+        customer_stats = (
+            InvoiceModel.objects.filter(
+                business_id=business_id,
+                is_archived=False,
+                created_at__gte=start_date,
+                created_at__lte=end_date,
+                customer_id__isnull=False,
+            )
+            .values("customer_id", "customer_name")
+            .annotate(
+                total_purchases=Sum("total"),
+                number_of_invoices=Count("id"),
+            )
+            .order_by("-total_purchases")[:10]
+        )
+
+        payment_method_stats_list = list(payment_method_stats)
+        status_stats_list = list(status_stats)
+        product_stats_list = list(product_stats)
+        customer_stats_list = list(customer_stats)
+
+        return {
+            "total_revenue": Decimal(str(total_stats["total_revenue"] or 0)),
+            "total_invoices": total_stats["total_invoices"] or 0,
+            "total_items_sold": items_sold_stats["total_items_sold"] or 0,
+            "payment_method_stats": payment_method_stats_list,
+            "status_stats": status_stats_list,
+            "product_stats": product_stats_list,
+            "customer_stats": customer_stats_list,
+        }
 
     def delete(self, invoice_id: UUID) -> None:
         """Permanently delete an invoice (hard delete)."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from django.utils import timezone
@@ -376,6 +377,116 @@ class NotificationDomainService:
         for notification in owner_notifications:
             if (
                 notification.related_entity_id == product_id
+                and notification.business_id == business_id
+                and notification.created_at >= threshold_time
+            ):
+                return True
+
+        return False
+
+    def notify_payment_overdue(
+        self,
+        credit_id: UUID,
+        customer_name: str,
+        remaining_amount: Decimal,
+        due_date: datetime,
+        business_id: UUID,
+    ) -> list[Notification]:
+        """
+        Create notifications for business owner and managers about overdue credit payment.
+
+        Args:
+            credit_id: ID of the overdue credit
+            customer_name: Name of the customer
+            remaining_amount: Remaining amount to be paid
+            due_date: Due date of the credit
+            business_id: ID of the business
+
+        Returns:
+            List of created notifications
+        """
+        notifications: list[Notification] = []
+
+        business = self.business_repository.get_by_id(business_id)
+        if not business:
+            logger.warning(f"Business {business_id} not found for payment overdue notification")
+            return notifications
+
+        if self._has_recent_credit_notification(
+            credit_id=credit_id,
+            business_id=business_id,
+            hours_threshold=24,
+        ):
+            logger.info(
+                f"Recent notification already exists for overdue credit {credit_id}, skipping"
+            )
+            return notifications
+
+        due_date_str = due_date.strftime("%Y-%m-%d") if due_date else "N/A"
+        message = (
+            f"Credit for customer '{customer_name}' is overdue. "
+            f"Amount: {remaining_amount}, Due date: {due_date_str}."
+        )
+        title = f"Payment Overdue: {customer_name}"
+
+        if business.owner_id:
+            notification = self._create_notification(
+                user_id=business.owner_id,
+                business_id=business_id,
+                notification_type=NotificationType.PAYMENT_OVERDUE,
+                title=title,
+                message=message,
+                related_entity_type="credit",
+                related_entity_id=credit_id,
+            )
+            notifications.append(notification)
+
+        managers = self.business_member_repository.get_managers(business_id)
+        for manager in managers:
+            notification = self._create_notification(
+                user_id=manager.user_id,
+                business_id=business_id,
+                notification_type=NotificationType.PAYMENT_OVERDUE,
+                title=title,
+                message=message,
+                related_entity_type="credit",
+                related_entity_id=credit_id,
+            )
+            notifications.append(notification)
+
+        logger.info(f"Created {len(notifications)} notifications for overdue credit {credit_id}")
+        return notifications
+
+    def _has_recent_credit_notification(
+        self,
+        credit_id: UUID,
+        business_id: UUID,
+        hours_threshold: int = 24,
+    ) -> bool:
+        """
+        Check if a recent notification exists for the given credit.
+
+        Args:
+            credit_id: ID of the credit
+            business_id: ID of the business
+            hours_threshold: Number of hours to look back for recent notifications
+
+        Returns:
+            True if a recent notification exists, False otherwise
+        """
+        business = self.business_repository.get_by_id(business_id)
+        if not business or not business.owner_id:
+            return False
+        owner_notifications = self.notification_repository.get_by_user(
+            user_id=business.owner_id,
+            notification_type=NotificationType.PAYMENT_OVERDUE,
+            limit=100,
+        )
+
+        threshold_time = timezone.now() - timedelta(hours=hours_threshold)
+        for notification in owner_notifications:
+            if (
+                notification.related_entity_id == credit_id
                 and notification.business_id == business_id
                 and notification.created_at >= threshold_time
             ):

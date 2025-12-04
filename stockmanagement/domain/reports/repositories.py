@@ -13,7 +13,7 @@ class ReportRepository(ABC):
     """Report repository interface."""
 
     @abstractmethod
-    def get_by_id(self, report_id: UUID) -> Report | None:
+    def get_by_id(self, report_id: UUID, force_refresh: bool = False) -> Report | None:
         """Get report by ID."""
         pass
 

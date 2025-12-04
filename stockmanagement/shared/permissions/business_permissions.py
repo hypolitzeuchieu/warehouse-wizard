@@ -2,28 +2,47 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from rest_framework.permissions import BasePermission
 
 from domain.business.services import BusinessDomainService
-from infrastructure.persistence.repositories import (
-    BusinessMemberRepositoryImpl,
-    BusinessRepositoryImpl,
-)
+from shared.exceptions.specific import BadRequestError
+
+if TYPE_CHECKING:
+    pass
 
 
 class BusinessPermission(BasePermission):
     """Base permission class for business operations."""
 
-    def __init__(self, allowed_roles: list[str] | None = None) -> None:
-        """Initialize permission with allowed roles."""
+    def __init__(
+        self,
+        allowed_roles: list[str] | None = None,
+        business_domain_service: BusinessDomainService | None = None,
+    ) -> None:
+        """
+        Initialize permission with allowed roles.
+
+        Args:
+            allowed_roles: List of allowed roles
+        """
         self.allowed_roles = allowed_roles or []
-        self._business_domain_service: BusinessDomainService | None = None
+        self._business_domain_service = business_domain_service
 
     def _get_business_domain_service(self) -> BusinessDomainService:
-        """Get business domain service instance."""
+        """
+        Get business domain service instance.
+
+        Note: For Clean Architecture, BusinessDomainService should be injected via constructor.
+        """
         if self._business_domain_service is None:
+            from infrastructure.persistence.repositories import (
+                BusinessMemberRepositoryImpl,
+                BusinessRepositoryImpl,
+            )
+
             self._business_domain_service = BusinessDomainService(
                 business_repository=BusinessRepositoryImpl(),
                 business_member_repository=BusinessMemberRepositoryImpl(),
@@ -31,23 +50,49 @@ class BusinessPermission(BasePermission):
         return self._business_domain_service
 
     def _get_business_id_from_request(self, request) -> UUID | None:
-        """Extract business_id from request."""
-        # Try to get from URL kwargs
-        business_id = request.parser_context.get("kwargs", {}).get("business_id")
-        if business_id:
-            return UUID(business_id) if isinstance(business_id, str) else business_id
+        """
+        Extract business_id from request with security validation.
 
-        # Try to get from request data
-        business_id = request.data.get("business_id")
-        if business_id:
-            return UUID(business_id) if isinstance(business_id, str) else business_id
+        Validates that business_id is consistent across all sources (URL, body, query params)
+        to prevent security issues from conflicting values.
+        """
+        sources = {
+            "url": request.parser_context.get("kwargs", {}).get("business_id"),
+            "body": request.data.get("business_id") if hasattr(request, "data") else None,
+            "query": (
+                request.query_params.get("business_id")
+                if hasattr(request, "query_params")
+                else None
+            ),
+        }
 
-        # Try to get from query params
-        business_id = request.query_params.get("business_id")
-        if business_id:
-            return UUID(business_id) if isinstance(business_id, str) else business_id
+        # Find all non-None values
+        values = []
+        for source_name, value in sources.items():
+            if value is not None:
+                try:
+                    uuid_value = UUID(str(value)) if isinstance(value, str) else value
+                    values.append((source_name, uuid_value))
+                except (ValueError, TypeError):
+                    continue
 
-        return None
+        if not values:
+            return None
+
+        # Security: Validate consistency - all values must be the same
+        if len(values) > 1:
+            unique_values = {str(v[1]) for v in values}
+            if len(unique_values) > 1:
+                source_names = [v[0] for v in values]
+                raise BadRequestError(
+                    detail=(
+                        f"business_id must be consistent across all sources. "
+                        f"Found conflicting values in: {', '.join(source_names)}"
+                    ),
+                    code="INCONSISTENT_BUSINESS_ID",
+                )
+
+        return values[0][1]
 
     def _get_user_role_in_business(self, business_id: UUID, user_id: UUID) -> str | None:
         """Get user's role in a specific business."""

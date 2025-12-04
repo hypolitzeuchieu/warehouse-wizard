@@ -15,10 +15,9 @@ from application.dto.user_dto import (
     UserResponseDTO,
 )
 from domain.users.entities import AuthMethod, Device, User, UserRole
-from domain.users.repositories import DeviceRepository, UserRepository
+from domain.users.repositories import DeviceRepository, SessionRepository, UserRepository
 from domain.users.services import UserDomainService
 from infrastructure.external.google_oauth import GoogleOAuthService
-from infrastructure.persistence.repositories import SessionRepositoryImpl
 from shared.exceptions.base import BaseAPIException
 
 logger = logging.getLogger(__name__)
@@ -56,7 +55,7 @@ class GoogleOAuthCodeUseCase:
         self,
         user_repository: UserRepository,
         user_domain_service: UserDomainService,
-        session_repository: SessionRepositoryImpl,
+        session_repository: SessionRepository,
         device_repository: DeviceRepository,
         google_oauth_service: GoogleOAuthService,
     ):

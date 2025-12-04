@@ -43,11 +43,6 @@ from domain.inventory.repositories import (
 from domain.inventory.services import InventoryDomainService
 from domain.notifications.services import NotificationDomainService
 from domain.sales.services import DateRangeValidationService
-from infrastructure.persistence.repositories import (
-    BusinessMemberRepositoryImpl,
-    BusinessRepositoryImpl,
-    NotificationRepositoryImpl,
-)
 from shared.exceptions.specific import (
     BadRequestError,
     ForbiddenError,
@@ -55,8 +50,41 @@ from shared.exceptions.specific import (
 )
 from shared.services.barcode_service import BarcodeService
 from shared.services.s3_service import S3Service
+from shared.utils.validation import (
+    validate_business_access,
+    validate_entity_belongs_to_business,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _product_to_dto(product: Product) -> ProductResponseDTO:
+    """Convert product entity to DTO (shared utility function)."""
+    return ProductResponseDTO(
+        id=product.id,
+        business_id=product.business_id,
+        name=product.name,
+        description=product.description,
+        barcode=product.barcode,
+        barcode_image_url=product.barcode_image_url,
+        category_id=product.category_id,
+        subcategory_id=product.subcategory_id,
+        purchase_price=product.purchase_price,
+        unit_price=product.unit_price,
+        current_price=product.get_current_price(),
+        image_url=product.image_url,
+        quantity=product.quantity,
+        min_quantity=product.min_quantity,
+        is_low_stock=product.is_low_stock(),
+        expiry_date=product.expiry_date,
+        is_expired=product.is_expired,
+        on_promotion=product.on_promotion,
+        promotion_start_date=product.promotion_start_date,
+        promotion_end_date=product.promotion_end_date,
+        promo_price=product.promo_price,
+        created_at=product.created_at,
+        updated_at=product.updated_at,
+    )
 
 
 def _normalize_uuid(value: UUID | str | None) -> UUID | None:
@@ -101,6 +129,32 @@ def _compare_business_ids(
     return normalized_entity == normalized_target
 
 
+def _validate_subcategory_belongs_to_category(
+    subcategory: SubCategory,
+    category_id: UUID,
+) -> None:
+    """
+    Validate that subcategory belongs to the specified category.
+
+    Shared utility function to avoid code duplication.
+
+    Args:
+        subcategory: Subcategory entity
+        category_id: Expected category ID
+
+    Raises:
+        BadRequestError: If subcategory doesn't belong to category
+    """
+    normalized_subcategory_category = _normalize_uuid(subcategory.category_id)
+    normalized_target_category = _normalize_uuid(category_id)
+
+    if normalized_subcategory_category != normalized_target_category:
+        raise BadRequestError(
+            detail="Subcategory does not belong to the specified category",
+            code="SUBCATEGORY_MISMATCH",
+        )
+
+
 def _category_to_dto(category: Category) -> CategoryResponseDTO:
     """Convert category entity to response DTO."""
     return CategoryResponseDTO(
@@ -142,11 +196,11 @@ class ListCategoriesUseCase:
         self.user_id = user_id
 
     def execute(self) -> list[CategoryResponseDTO]:
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
         categories = self.category_repository.get_by_business(self.business_id)
         return [_category_to_dto(category) for category in categories]
 
@@ -213,11 +267,12 @@ class GetCategoryUseCase:
         if not category:
             raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.user_has_access(category.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this category",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=category.business_id,
+            user_id=self.user_id,
+            error_message="You don't have access to this category",
+        )
 
         return _category_to_dto(category)
 
@@ -320,11 +375,12 @@ class ListSubCategoriesUseCase:
         if not category:
             raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.user_has_access(category.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this category",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=category.business_id,
+            user_id=self.user_id,
+            error_message="You don't have access to this category",
+        )
 
         subcategories = self.subcategory_repository.get_by_category(self.category_id)
         return [_subcategory_to_dto(subcategory) for subcategory in subcategories]
@@ -411,11 +467,12 @@ class GetSubCategoryUseCase:
         if not subcategory:
             raise NotFoundError(detail="Subcategory not found", code="SUBCATEGORY_NOT_FOUND")
 
-        if not self.business_domain_service.user_has_access(subcategory.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this subcategory",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=subcategory.business_id,
+            user_id=self.user_id,
+            error_message="You don't have access to this subcategory",
+        )
 
         return _subcategory_to_dto(subcategory)
 
@@ -548,32 +605,14 @@ class CreateProductUseCase:
         subcategory_id = dto.subcategory_id
         if subcategory_id:
             subcategory = self.subcategory_repository.get_by_id(subcategory_id)
-            if not subcategory:
-                raise NotFoundError(
-                    detail="Subcategory not found",
-                    code="SUBCATEGORY_NOT_FOUND",
-                )
-
-            # Ensure subcategory belongs to the business
-            if not _compare_business_ids(subcategory.business_id, self.business_id):
-                logger.warning(
-                    f"Subcategory {subcategory_id} (business: {subcategory.business_id}) "
-                    f"does not belong to business {self.business_id}"
-                )
-                raise NotFoundError(
-                    detail=f"Subcategory {subcategory_id} does not belong to business {self.business_id}",
-                    code="SUBCATEGORY_NOT_FOUND",
-                )
+            validate_entity_belongs_to_business(
+                entity=subcategory,
+                business_id=self.business_id,
+                entity_name="Subcategory",
+            )
 
             # Ensure subcategory belongs to the specified category
-            normalized_subcategory_category = _normalize_uuid(subcategory.category_id)
-            normalized_dto_category = _normalize_uuid(dto.category_id)
-
-            if normalized_subcategory_category != normalized_dto_category:
-                raise BadRequestError(
-                    detail="Subcategory does not belong to the specified category",
-                    code="SUBCATEGORY_MISMATCH",
-                )
+            _validate_subcategory_belongs_to_category(subcategory, dto.category_id)
 
         existing_name = self.product_repository.get_by_name_in_scope(
             business_id=self.business_id,
@@ -664,31 +703,7 @@ class CreateProductUseCase:
 
     def _to_dto(self, product: Product) -> ProductResponseDTO:
         """Convert product entity to DTO."""
-        return ProductResponseDTO(
-            id=product.id,
-            business_id=product.business_id,
-            name=product.name,
-            description=product.description,
-            barcode=product.barcode,
-            barcode_image_url=product.barcode_image_url,
-            category_id=product.category_id,
-            subcategory_id=product.subcategory_id,
-            purchase_price=product.purchase_price,
-            unit_price=product.unit_price,
-            current_price=product.get_current_price(),
-            image_url=product.image_url,
-            quantity=product.quantity,
-            min_quantity=product.min_quantity,
-            is_low_stock=product.is_low_stock(),
-            expiry_date=product.expiry_date,
-            is_expired=product.is_expired,
-            on_promotion=product.on_promotion,
-            promotion_start_date=product.promotion_start_date,
-            promotion_end_date=product.promotion_end_date,
-            promo_price=product.promo_price,
-            created_at=product.created_at,
-            updated_at=product.updated_at,
-        )
+        return _product_to_dto(product)
 
 
 class RecordStockMovementUseCase:
@@ -711,11 +726,11 @@ class RecordStockMovementUseCase:
         """Execute stock movement recording."""
         # Validate product exists
         product = self.product_repository.get_by_id(dto.product_id)
-        if not product or not _compare_business_ids(product.business_id, self.business_id):
-            raise NotFoundError(
-                detail="Product not found",
-                code="PRODUCT_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=product,
+            business_id=self.business_id,
+            entity_name="Product",
+        )
 
         # Record movement based on type
         if dto.movement_type == "ENTRY":
@@ -864,48 +879,24 @@ class GetProductUseCase:
     def execute(self) -> ProductResponseDTO:
         """Execute getting product."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         product = self.product_repository.get_by_id(self.product_id)
-        if not product or not _compare_business_ids(product.business_id, self.business_id):
-            raise NotFoundError(
-                detail="Product not found",
-                code="PRODUCT_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=product,
+            business_id=self.business_id,
+            entity_name="Product",
+        )
 
         return self._to_dto(product)
 
     def _to_dto(self, product: Product) -> ProductResponseDTO:
         """Convert product entity to DTO."""
-        return ProductResponseDTO(
-            id=product.id,
-            business_id=product.business_id,
-            name=product.name,
-            description=product.description,
-            barcode=product.barcode,
-            barcode_image_url=product.barcode_image_url,
-            category_id=product.category_id,
-            subcategory_id=product.subcategory_id,
-            purchase_price=product.purchase_price,
-            unit_price=product.unit_price,
-            current_price=product.get_current_price(),
-            image_url=product.image_url,
-            quantity=product.quantity,
-            min_quantity=product.min_quantity,
-            is_low_stock=product.is_low_stock(),
-            expiry_date=product.expiry_date,
-            is_expired=product.is_expired,
-            on_promotion=product.on_promotion,
-            promotion_start_date=product.promotion_start_date,
-            promotion_end_date=product.promotion_end_date,
-            promo_price=product.promo_price,
-            created_at=product.created_at,
-            updated_at=product.updated_at,
-        )
+        return _product_to_dto(product)
 
 
 class ListProductsUseCase:
@@ -935,11 +926,11 @@ class ListProductsUseCase:
     def execute(self) -> list[ProductResponseDTO]:
         """Execute listing products."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         products = self.product_repository.get_by_business(
             business_id=self.business_id,
@@ -953,31 +944,7 @@ class ListProductsUseCase:
 
     def _to_dto(self, product: Product) -> ProductResponseDTO:
         """Convert product entity to DTO."""
-        return ProductResponseDTO(
-            id=product.id,
-            business_id=product.business_id,
-            name=product.name,
-            description=product.description,
-            barcode=product.barcode,
-            barcode_image_url=product.barcode_image_url,
-            category_id=product.category_id,
-            subcategory_id=product.subcategory_id,
-            purchase_price=product.purchase_price,
-            unit_price=product.unit_price,
-            current_price=product.get_current_price(),
-            image_url=product.image_url,
-            quantity=product.quantity,
-            min_quantity=product.min_quantity,
-            is_low_stock=product.is_low_stock(),
-            expiry_date=product.expiry_date,
-            is_expired=product.is_expired,
-            on_promotion=product.on_promotion,
-            promotion_start_date=product.promotion_start_date,
-            promotion_end_date=product.promotion_end_date,
-            promo_price=product.promo_price,
-            created_at=product.created_at,
-            updated_at=product.updated_at,
-        )
+        return _product_to_dto(product)
 
 
 class UpdateProductUseCase:
@@ -1012,20 +979,20 @@ class UpdateProductUseCase:
             )
 
         product = self.product_repository.get_by_id(self.product_id)
-        if not product or not _compare_business_ids(product.business_id, self.business_id):
-            raise NotFoundError(
-                detail="Product not found",
-                code="PRODUCT_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=product,
+            business_id=self.business_id,
+            entity_name="Product",
+        )
 
         target_category_id = product.category_id
         if dto.category_id is not None:
             category = self.category_repository.get_by_id(dto.category_id)
-            if not category or not _compare_business_ids(category.business_id, self.business_id):
-                raise NotFoundError(
-                    detail="Category not found",
-                    code="CATEGORY_NOT_FOUND",
-                )
+            validate_entity_belongs_to_business(
+                entity=category,
+                business_id=self.business_id,
+                entity_name="Category",
+            )
             target_category_id = dto.category_id
 
         if dto.subcategory_id_provided:
@@ -1037,23 +1004,14 @@ class UpdateProductUseCase:
 
         if target_subcategory_id:
             subcategory = self.subcategory_repository.get_by_id(target_subcategory_id)
-            if not subcategory or not _compare_business_ids(
-                subcategory.business_id, self.business_id
-            ):
-                raise NotFoundError(
-                    detail="Subcategory not found",
-                    code="SUBCATEGORY_NOT_FOUND",
-                )
+            validate_entity_belongs_to_business(
+                entity=subcategory,
+                business_id=self.business_id,
+                entity_name="Subcategory",
+            )
 
             # Ensure subcategory belongs to the specified category
-            normalized_subcategory_category = _normalize_uuid(subcategory.category_id)
-            normalized_target_category = _normalize_uuid(target_category_id)
-
-            if normalized_subcategory_category != normalized_target_category:
-                raise BadRequestError(
-                    detail="Subcategory does not belong to the specified category",
-                    code="SUBCATEGORY_MISMATCH",
-                )
+            _validate_subcategory_belongs_to_category(subcategory, target_category_id)
 
         target_name = dto.name if dto.name is not None else product.name
 
@@ -1110,31 +1068,7 @@ class UpdateProductUseCase:
 
     def _to_dto(self, product: Product) -> ProductResponseDTO:
         """Convert product entity to DTO."""
-        return ProductResponseDTO(
-            id=product.id,
-            business_id=product.business_id,
-            name=product.name,
-            description=product.description,
-            barcode=product.barcode,
-            barcode_image_url=product.barcode_image_url,
-            category_id=product.category_id,
-            subcategory_id=product.subcategory_id,
-            purchase_price=product.purchase_price,
-            unit_price=product.unit_price,
-            current_price=product.get_current_price(),
-            image_url=product.image_url,
-            quantity=product.quantity,
-            min_quantity=product.min_quantity,
-            is_low_stock=product.is_low_stock(),
-            expiry_date=product.expiry_date,
-            is_expired=product.is_expired,
-            on_promotion=product.on_promotion,
-            promotion_start_date=product.promotion_start_date,
-            promotion_end_date=product.promotion_end_date,
-            promo_price=product.promo_price,
-            created_at=product.created_at,
-            updated_at=product.updated_at,
-        )
+        return _product_to_dto(product)
 
 
 class DeleteProductUseCase:
@@ -1232,31 +1166,7 @@ class ScanBarcodeUseCase:
 
     def _to_dto(self, product: Product) -> ProductResponseDTO:
         """Convert product entity to DTO."""
-        return ProductResponseDTO(
-            id=product.id,
-            business_id=product.business_id,
-            name=product.name,
-            description=product.description,
-            barcode=product.barcode,
-            barcode_image_url=product.barcode_image_url,
-            category_id=product.category_id,
-            subcategory_id=product.subcategory_id,
-            purchase_price=product.purchase_price,
-            unit_price=product.unit_price,
-            current_price=product.get_current_price(),
-            image_url=product.image_url,
-            quantity=product.quantity,
-            min_quantity=product.min_quantity,
-            is_low_stock=product.is_low_stock(),
-            expiry_date=product.expiry_date,
-            is_expired=product.is_expired,
-            on_promotion=product.on_promotion,
-            promotion_start_date=product.promotion_start_date,
-            promotion_end_date=product.promotion_end_date,
-            promo_price=product.promo_price,
-            created_at=product.created_at,
-            updated_at=product.updated_at,
-        )
+        return _product_to_dto(product)
 
 
 class NotifyExpiringProductsUseCase:
@@ -1268,6 +1178,7 @@ class NotifyExpiringProductsUseCase:
         self,
         product_repository: ProductRepository,
         business_domain_service: BusinessDomainService,
+        notification_domain_service: NotificationDomainService,
         product_id: UUID,
         business_id: UUID,
     ) -> None:
@@ -1277,11 +1188,13 @@ class NotifyExpiringProductsUseCase:
         Args:
             product_repository: Repository for product operations
             business_domain_service: Service for business operations
+            notification_domain_service: Service for notification operations
             product_id: ID of the product to notify about
             business_id: ID of the business that owns the product
         """
         self.product_repository = product_repository
         self.business_domain_service = business_domain_service
+        self.notification_domain_service = notification_domain_service
         self.product_id = product_id
         self.business_id = business_id
 
@@ -1294,13 +1207,6 @@ class NotifyExpiringProductsUseCase:
             logger.warning(f"Product {self.product_id} not found for notification")
             return
 
-        # Initialize notification domain service
-        notification_domain_service = NotificationDomainService(
-            notification_repository=NotificationRepositoryImpl(),
-            business_repository=BusinessRepositoryImpl(),
-            business_member_repository=BusinessMemberRepositoryImpl(),
-        )
-
         # Calculate days until expiry
         days_until_expiry = None
         if product.expiry_date:
@@ -1311,7 +1217,7 @@ class NotifyExpiringProductsUseCase:
         try:
             if product.is_expired:
                 # Product is expired - notify about expiration
-                notifications = notification_domain_service.notify_product_expired(
+                notifications = self.notification_domain_service.notify_product_expired(
                     product_id=product.id,
                     product_name=product.name,
                     business_id=product.business_id,
@@ -1322,7 +1228,7 @@ class NotifyExpiringProductsUseCase:
                 )
             elif days_until_expiry is not None and days_until_expiry <= 15:
                 # Product is expiring soon - notify about upcoming expiration
-                notifications = notification_domain_service.notify_product_expiring(
+                notifications = self.notification_domain_service.notify_product_expiring(
                     product_id=product.id,
                     product_name=product.name,
                     business_id=product.business_id,
@@ -1378,11 +1284,11 @@ class GenerateInventoryReportUseCase:
     def execute(self) -> InventoryReportDTO:
         """Execute inventory report generation."""
         # Validate user access
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         # Validate and normalize date range (optional for inventory report)
         period_start = None
@@ -1523,11 +1429,11 @@ class GenerateStockReportUseCase:
     def execute(self) -> StockReportDTO:
         """Execute stock report generation."""
         # Validate user access
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         # Validate and normalize date range (required for stock report)
         try:
