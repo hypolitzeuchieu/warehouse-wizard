@@ -22,6 +22,10 @@ from shared.exceptions.specific import (
     ForbiddenError,
     NotFoundError,
 )
+from shared.utils.validation import (
+    validate_business_access,
+    validate_entity_belongs_to_business,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -230,18 +234,18 @@ class GetSalaryUseCase:
     def execute(self) -> SalaryResponseDTO:
         """Execute getting salary."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         salary = self.salary_repository.get_by_id(self.salary_id)
-        if not salary or salary.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Salary not found",
-                code="SALARY_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=salary,
+            business_id=self.business_id,
+            entity_name="Salary",
+        )
 
         return self._to_dto(salary)
 
@@ -286,11 +290,11 @@ class GetSalaryHistoryUseCase:
     def execute(self) -> list[SalaryResponseDTO]:
         """Execute getting salary history."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.requester_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.requester_id,
+        )
 
         # Users can only see their own salary history unless they're owner/manager
         if self.user_id != self.requester_id:
@@ -356,11 +360,11 @@ class UpdateSalaryUseCase:
             )
 
         salary = self.salary_repository.get_by_id(self.salary_id)
-        if not salary or salary.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Salary not found",
-                code="SALARY_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=salary,
+            business_id=self.business_id,
+            entity_name="Salary",
+        )
 
         # Update fields
         if dto.amount is not None:

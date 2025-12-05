@@ -50,6 +50,9 @@ from shared.exceptions.specific import (
     ForbiddenError,
     NotFoundError,
 )
+from shared.utils.validation import (
+    validate_entity_belongs_to_business,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -603,11 +606,11 @@ class GetProductStatisticsUseCase:
 
         # Validate product belongs to business
         product = self.product_repository.get_by_id(self.product_id)
-        if not product or product.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Product not found",
-                code="PRODUCT_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=product,
+            business_id=self.business_id,
+            entity_name="Product",
+        )
 
         start_date, end_date = self._validate_and_normalize_dates()
 
@@ -791,11 +794,11 @@ class GetCategoryStatisticsUseCase:
 
         # Validate category belongs to business
         category = self.category_repository.get_by_id(self.category_id)
-        if not category or category.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Category not found",
-                code="CATEGORY_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=category,
+            business_id=self.business_id,
+            entity_name="Category",
+        )
 
         start_date, end_date = self._validate_and_normalize_dates()
 
@@ -961,11 +964,11 @@ class GetSubCategoryStatisticsUseCase:
 
         # Validate subcategory belongs to business
         subcategory = self.subcategory_repository.get_by_id(self.subcategory_id)
-        if not subcategory or subcategory.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Subcategory not found",
-                code="SUBCATEGORY_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=subcategory,
+            business_id=self.business_id,
+            entity_name="Subcategory",
+        )
 
         start_date, end_date = self._validate_and_normalize_dates()
 

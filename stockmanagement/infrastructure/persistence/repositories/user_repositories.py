@@ -4,12 +4,24 @@ from uuid import UUID
 
 from django.utils import timezone
 
-from domain.users.entities import AuthMethod, Device, RefreshToken, Session, User, UserRole
+from domain.users.entities import (
+    AuthMethod,
+    Device,
+    PasswordResetToken,
+    RefreshToken,
+    Session,
+    User,
+    UserRole,
+)
 from domain.users.repositories import (
     DeviceRepository,
+    PasswordResetTokenRepository,
     RefreshTokenRepository,
     SessionRepository,
     UserRepository,
+)
+from infrastructure.persistence.models.password_reset_models import (
+    PasswordResetToken as PasswordResetTokenModel,
 )
 from infrastructure.persistence.models.user_models import (
     Device as DeviceModel,
@@ -127,6 +139,15 @@ class UserRepositoryImpl(UserRepository):
             return bool(password_valid)
         except UserModel.DoesNotExist:
             return False
+
+    def update_password(self, user_id: UUID, new_password: str) -> User:
+        """Update user password."""
+        user_model = UserModel.objects.get(id=user_id)
+        user_model.set_password(new_password)
+        user_model.save()
+        user = self._to_entity(user_model)
+        user.updated_at = timezone.now()
+        return self.update(user)
 
     def _to_entity(self, user_model: UserModel) -> User:
         """Convert Django model to domain entity."""
@@ -412,4 +433,101 @@ class DeviceRepositoryImpl(DeviceRepository):
             last_used_at=device_model.last_used_at,
             created_at=device_model.created_at,
             updated_at=device_model.updated_at,
+        )
+
+
+class PasswordResetTokenRepositoryImpl(PasswordResetTokenRepository):
+    """Django implementation of PasswordResetTokenRepository."""
+
+    def get_by_id(self, token_id: UUID) -> PasswordResetToken | None:
+        """Get password reset token by ID."""
+        try:
+            token_model = PasswordResetTokenModel.objects.get(id=token_id)
+            return self._to_entity(token_model)
+        except PasswordResetTokenModel.DoesNotExist:
+            return None
+
+    def get_by_token(self, token: str) -> PasswordResetToken | None:
+        """Get password reset token by token string."""
+        try:
+            token_model = PasswordResetTokenModel.objects.get(
+                token=token, used=False, reset_type="email"
+            )
+            return self._to_entity(token_model)
+        except PasswordResetTokenModel.DoesNotExist:
+            return None
+
+    def get_by_code(self, code: str) -> PasswordResetToken | None:
+        """Get password reset token by code (for SMS)."""
+        try:
+            token_model = PasswordResetTokenModel.objects.get(
+                code=code, used=False, reset_type="sms"
+            )
+            return self._to_entity(token_model)
+        except PasswordResetTokenModel.DoesNotExist:
+            return None
+
+    def get_latest_by_code(self, code: str) -> PasswordResetToken | None:
+        """Get latest password reset token by code (ordered by created_at desc)."""
+        token_model = (
+            PasswordResetTokenModel.objects.filter(code=code, used=False, reset_type="sms")
+            .order_by("-created_at")
+            .first()
+        )
+        if token_model:
+            return self._to_entity(token_model)
+        return None
+
+    def create(self, reset_token: PasswordResetToken) -> PasswordResetToken:
+        """Create a new password reset token."""
+        token_model = PasswordResetTokenModel.objects.create(
+            id=reset_token.id,
+            user_id=reset_token.user_id,
+            email=reset_token.email,
+            phone_number=reset_token.phone_number,
+            token=reset_token.token,
+            code=reset_token.code,
+            reset_type=reset_token.reset_type,
+            expires_at=reset_token.expires_at,
+            used=reset_token.used,
+            used_at=reset_token.used_at,
+            attempts=reset_token.attempts,
+            max_attempts=reset_token.max_attempts,
+        )
+        return self._to_entity(token_model)
+
+    def update(self, reset_token: PasswordResetToken) -> PasswordResetToken:
+        """Update an existing password reset token."""
+        token_model = PasswordResetTokenModel.objects.get(id=reset_token.id)
+        token_model.used = reset_token.used
+        token_model.used_at = reset_token.used_at
+        token_model.attempts = reset_token.attempts
+        token_model.save()
+        return self._to_entity(token_model)
+
+    def invalidate_user_tokens(self, user_id: UUID, reset_type: str | None = None) -> int:
+        """Invalidate all unused tokens for a user."""
+        query = PasswordResetTokenModel.objects.filter(user_id=user_id, used=False)
+        if reset_type:
+            query = query.filter(reset_type=reset_type)
+        count = query.update(used=True, used_at=timezone.now())
+        return count
+
+    def _to_entity(self, token_model: PasswordResetTokenModel) -> PasswordResetToken:
+        """Convert Django model to domain entity."""
+        return PasswordResetToken(
+            id=token_model.id,
+            user_id=token_model.user_id,
+            email=token_model.email,
+            phone_number=token_model.phone_number,
+            token=token_model.token,
+            code=token_model.code,
+            reset_type=token_model.reset_type,
+            expires_at=token_model.expires_at,
+            used=token_model.used,
+            used_at=token_model.used_at,
+            attempts=token_model.attempts,
+            max_attempts=token_model.max_attempts,
+            created_at=token_model.created_at,
+            updated_at=token_model.updated_at,
         )

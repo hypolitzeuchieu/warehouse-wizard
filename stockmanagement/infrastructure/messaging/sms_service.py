@@ -58,7 +58,7 @@ class SMSService:
             True if SMS sent successfully, False otherwise
         """
         try:
-            logger.info(f"Password reset SMS would be sent to {phone_number}: {code}")
+            logger.info(f"Password reset SMS would be sent to {phone_number}")
             message = (
                 f"Your RetailPulse password reset code is: {code}\n\n"
                 f"This code will expire in 10 minutes.\n\nI"

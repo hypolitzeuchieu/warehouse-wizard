@@ -26,6 +26,7 @@ class TasksConfig(AppConfig):
             import tasks.notification_tasks  # noqa: F401
             import tasks.otp_tasks  # noqa: F401
             import tasks.password_reset_tasks  # noqa: F401
+            import tasks.report_tasks  # noqa: F401
             import tasks.send_mail  # noqa: F401
         except ImportError as e:
             logger.warning(f"Could not import some tasks: {e}")

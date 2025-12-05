@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -18,12 +17,8 @@ from application.dto.credit_dto import (
 )
 from domain.credit.entities import Credit, CreditPayment, CreditStatus
 from domain.credit.repositories import CreditPaymentRepository, CreditRepository
-from infrastructure.persistence.models.business_models import Business as BusinessModel
-from infrastructure.persistence.models.business_models import (
-    BusinessMember as BusinessMemberModel,
-)
-from infrastructure.persistence.models.customer_models import Customer as CustomerModel
-from infrastructure.persistence.models.notification_models import Notification
+from domain.customer.repositories import CustomerRepository
+from domain.notifications.services import NotificationDomainService
 from shared.exceptions.base import BaseAPIException
 from shared.exceptions.specific import (
     BadRequestError,
@@ -31,6 +26,25 @@ from shared.exceptions.specific import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _credit_to_dto(credit: Credit) -> CreditResponseDTO:
+    """Convert credit entity to DTO (shared utility function)."""
+    return CreditResponseDTO(
+        id=credit.id,
+        business_id=credit.business_id,
+        customer_id=credit.customer_id,
+        invoice_id=credit.invoice_id,
+        amount=credit.amount,
+        paid_amount=credit.paid_amount,
+        remaining_amount=credit.remaining_amount,
+        due_date=credit.due_date,
+        status=credit.status.value,
+        notes=credit.notes,
+        is_overdue=credit.is_overdue(),
+        created_at=credit.created_at,
+        updated_at=credit.updated_at,
+    )
 
 
 class CreateCreditUseCase:
@@ -73,21 +87,7 @@ class CreateCreditUseCase:
 
     def _to_dto(self, credit: Credit) -> CreditResponseDTO:
         """Convert credit entity to DTO."""
-        return CreditResponseDTO(
-            id=credit.id,
-            business_id=credit.business_id,
-            customer_id=credit.customer_id,
-            invoice_id=credit.invoice_id,
-            amount=credit.amount,
-            paid_amount=credit.paid_amount,
-            remaining_amount=credit.remaining_amount,
-            due_date=credit.due_date,
-            status=credit.status.value,
-            notes=credit.notes,
-            is_overdue=credit.is_overdue(),
-            created_at=credit.created_at,
-            updated_at=credit.updated_at,
-        )
+        return _credit_to_dto(credit)
 
 
 class GetCreditUseCase:
@@ -115,21 +115,7 @@ class GetCreditUseCase:
 
     def _to_dto(self, credit: Credit) -> CreditResponseDTO:
         """Convert credit entity to DTO."""
-        return CreditResponseDTO(
-            id=credit.id,
-            business_id=credit.business_id,
-            customer_id=credit.customer_id,
-            invoice_id=credit.invoice_id,
-            amount=credit.amount,
-            paid_amount=credit.paid_amount,
-            remaining_amount=credit.remaining_amount,
-            due_date=credit.due_date,
-            status=credit.status.value,
-            notes=credit.notes,
-            is_overdue=credit.is_overdue(),
-            created_at=credit.created_at,
-            updated_at=credit.updated_at,
-        )
+        return _credit_to_dto(credit)
 
 
 class ListCreditsUseCase:
@@ -168,21 +154,7 @@ class ListCreditsUseCase:
 
     def _to_dto(self, credit: Credit) -> CreditResponseDTO:
         """Convert credit entity to DTO."""
-        return CreditResponseDTO(
-            id=credit.id,
-            business_id=credit.business_id,
-            customer_id=credit.customer_id,
-            invoice_id=credit.invoice_id,
-            amount=credit.amount,
-            paid_amount=credit.paid_amount,
-            remaining_amount=credit.remaining_amount,
-            due_date=credit.due_date,
-            status=credit.status.value,
-            notes=credit.notes,
-            is_overdue=credit.is_overdue(),
-            created_at=credit.created_at,
-            updated_at=credit.updated_at,
-        )
+        return _credit_to_dto(credit)
 
 
 class PayCreditUseCase:
@@ -250,21 +222,7 @@ class PayCreditUseCase:
 
     def _to_credit_dto(self, credit: Credit) -> CreditResponseDTO:
         """Convert credit entity to DTO."""
-        return CreditResponseDTO(
-            id=credit.id,
-            business_id=credit.business_id,
-            customer_id=credit.customer_id,
-            invoice_id=credit.invoice_id,
-            amount=credit.amount,
-            paid_amount=credit.paid_amount,
-            remaining_amount=credit.remaining_amount,
-            due_date=credit.due_date,
-            status=credit.status.value,
-            notes=credit.notes,
-            is_overdue=credit.is_overdue(),
-            created_at=credit.created_at,
-            updated_at=credit.updated_at,
-        )
+        return _credit_to_dto(credit)
 
     def _to_payment_dto(self, payment: CreditPayment) -> CreditPaymentResponseDTO:
         """Convert payment entity to DTO."""
@@ -315,10 +273,14 @@ class CheckOverdueCreditsUseCase:
     def __init__(
         self,
         credit_repository: CreditRepository,
+        customer_repository: CustomerRepository,
+        notification_domain_service: NotificationDomainService,
         business_id: UUID,
     ) -> None:
         """Initialize use case."""
         self.credit_repository = credit_repository
+        self.customer_repository = customer_repository
+        self.notification_domain_service = notification_domain_service
         self.business_id = business_id
 
     def execute(self) -> list[CreditResponseDTO]:
@@ -339,84 +301,43 @@ class CheckOverdueCreditsUseCase:
         for credit in overdue_credits:
             try:
                 # Get customer
-                customer = CustomerModel.objects.get(id=credit.customer_id)
-                business = BusinessModel.objects.get(id=self.business_id)
-
-                recent_notification = (
-                    Notification.objects.filter(
-                        notification_type="PAYMENT_OVERDUE",
-                        created_at__gte=timezone.now() - timedelta(hours=24),
+                customer = self.customer_repository.get_by_id(credit.customer_id)
+                if not customer:
+                    logger.warning(
+                        f"Customer {credit.customer_id} not found for credit {credit.id}"
                     )
-                    .filter(message__icontains=str(credit.id))
-                    .first()
+                    continue
+
+                notifications = self.notification_domain_service.notify_payment_overdue(
+                    credit_id=credit.id,
+                    customer_name=customer.name,
+                    remaining_amount=credit.remaining_amount,
+                    due_date=credit.due_date,
+                    business_id=self.business_id,
                 )
 
-                if not recent_notification:
-                    # Notify owner
-                    owner = business.owner
-                    if owner:
-                        notification = Notification.objects.create(
-                            product=None,  # No product for credit notifications
-                            user=owner,
-                            notification_type="PAYMENT_OVERDUE",
-                            message=f"Credit for customer '{customer.name}' is overdue. Amount: {credit.remaining_amount}, Due date: {credit.due_date.strftime('%Y-%m-%d')}.",
-                            status="UNREAD",
-                        )
-                        notifications_created.append(
-                            {
-                                "credit_id": str(credit.id),
-                                "customer_name": customer.name,
-                                "notification_id": str(notification.id),
-                            }
-                        )
+                for notification in notifications:
+                    notifications_created.append(
+                        {
+                            "credit_id": str(credit.id),
+                            "customer_name": customer.name,
+                            "notification_id": str(notification.id),
+                        }
+                    )
 
-                    # Notify managers
-                    managers = BusinessMemberModel.objects.filter(
-                        business_id=self.business_id,
-                        role="manager",
-                        is_active=True,
-                    ).select_related("user")
-
-                    for manager_member in managers:
-                        notification = Notification.objects.create(
-                            product=None,
-                            user=manager_member.user,
-                            notification_type="PAYMENT_OVERDUE",
-                            message=f"Credit for customer '{customer.name}' is overdue. Amount: {credit.remaining_amount}, Due date: {credit.due_date.strftime('%Y-%m-%d')}.",
-                            status="UNREAD",
-                        )
-                        notifications_created.append(
-                            {
-                                "credit_id": str(credit.id),
-                                "customer_name": customer.name,
-                                "notification_id": str(notification.id),
-                                "user_id": str(manager_member.user.id),
-                            }
-                        )
-
-                    logger.info(f"Created overdue credit notification for credit {credit.id}")
+                if notifications:
+                    logger.info(
+                        f"Created {len(notifications)} overdue credit notifications for credit {credit.id}"
+                    )
 
             except Exception as e:
                 logger.error(
-                    f"Error creating notification for overdue credit {credit.id}: {str(e)}"
+                    f"Error creating notification for overdue credit {credit.id}: {str(e)}",
+                    exc_info=True,
                 )
 
         return [self._to_dto(credit) for credit in overdue_credits]
 
     def _to_dto(self, credit: Credit) -> CreditResponseDTO:
         """Convert credit entity to DTO."""
-        return CreditResponseDTO(
-            id=credit.id,
-            business_id=credit.business_id,
-            customer_id=credit.customer_id,
-            invoice_id=credit.invoice_id,
-            amount=credit.amount,
-            paid_amount=credit.paid_amount,
-            remaining_amount=credit.remaining_amount,
-            due_date=credit.due_date,
-            status=credit.status.value,
-            notes=credit.notes,
-            is_overdue=credit.is_overdue(),
-            created_at=credit.created_at,
-            updated_at=credit.updated_at,
-        )
+        return _credit_to_dto(credit)

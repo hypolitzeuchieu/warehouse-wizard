@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from django.http import HttpResponse
+from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
@@ -109,7 +110,7 @@ class ReportViewSet(BaseViewSet):
         operation_description="Generate a report (sales, inventory, or stock) for a business within a date range and save it.",
         query_serializer=SalesReportQuerySerializer,
         responses={
-            201: ReportResponseSerializer(),
+            202: ReportResponseSerializer(),
             400: "Bad Request",
             403: "Permission denied",
             500: "Internal server error",
@@ -144,9 +145,12 @@ class ReportViewSet(BaseViewSet):
             report_dto = use_case.execute()
 
             return self.success(
-                message="Report generated successfully. Use the report ID to download it.",
-                data=ReportResponseSerializer.from_dto(report_dto),
-                status_code=status.HTTP_201_CREATED,
+                message="Report generation successfully. Use the report ID to check status and download.",
+                data={
+                    "report_id": str(report_dto.id),
+                    "status": report_dto.status,
+                },
+                status_code=status.HTTP_202_ACCEPTED,
             )
         except Exception as e:
             return self.handle_exception(e)
@@ -187,6 +191,111 @@ class ReportViewSet(BaseViewSet):
                 response = HttpResponse(content, content_type=content_type)
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
             return response
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Get report status",
+        operation_description="Get report generation status with progress percentage.",
+        responses={
+            200: openapi.Response(
+                "Report status",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "report_id": openapi.Schema(
+                            type=openapi.TYPE_STRING, format=openapi.FORMAT_UUID
+                        ),
+                        "status": openapi.Schema(
+                            type=openapi.TYPE_STRING, enum=["generating", "completed", "failed"]
+                        ),
+                        "progress_percentage": openapi.Schema(
+                            type=openapi.TYPE_INTEGER, description="Progress percentage (0-100)"
+                        ),
+                        "estimated_time_remaining_seconds": openapi.Schema(
+                            type=openapi.TYPE_INTEGER,
+                            description="Estimated time remaining in seconds",
+                            allow_null=True,
+                        ),
+                        "created_at": openapi.Schema(
+                            type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME
+                        ),
+                        "updated_at": openapi.Schema(
+                            type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME
+                        ),
+                        "error_message": openapi.Schema(type=openapi.TYPE_STRING, allow_null=True),
+                    },
+                ),
+            ),
+            404: "Report not found",
+            403: "Permission denied",
+        },
+        tags=["Reports"],
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="status",
+    )
+    def get_report_status(self, request: Request, pk: UUID) -> Response:
+        """Get report generation status with progress percentage."""
+        try:
+            report_repository = ReportRepositoryImpl()
+            report = report_repository.get_by_id(pk, force_refresh=True)
+
+            if not report:
+                return self.error(
+                    message="Report not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="REPORT_NOT_FOUND",
+                )
+
+            if not self._get_business_domain_service().user_has_access(
+                report.business_id, request.user.id
+            ):
+                return self.error(
+                    message="You don't have access to this report",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="PERMISSION_DENIED",
+                )
+
+            progress_percentage = 0
+            estimated_time_remaining = None
+
+            if report.status.value == "completed":
+                progress_percentage = 100
+                estimated_time_remaining = 0
+            elif report.status.value == "failed":
+                progress_percentage = 0
+                estimated_time_remaining = None
+            elif report.status.value == "generating":
+                time_elapsed = timezone.now() - report.created_at
+                estimated_total_time = 20
+
+                if time_elapsed.total_seconds() < estimated_total_time:
+                    progress_percentage = min(
+                        int((time_elapsed.total_seconds() / estimated_total_time) * 100), 95
+                    )
+                    estimated_time_remaining = max(
+                        int(estimated_total_time - time_elapsed.total_seconds()), 1
+                    )
+                else:
+                    progress_percentage = 95
+                    estimated_time_remaining = 5
+
+            return self.success(
+                message="Report status retrieved successfully",
+                data={
+                    "report_id": str(pk),
+                    "status": report.status.value,
+                    "progress_percentage": progress_percentage,
+                    "estimated_time_remaining_seconds": estimated_time_remaining,
+                    "created_at": report.created_at.isoformat(),
+                    "updated_at": report.updated_at.isoformat(),
+                    "error_message": report.error_message,
+                },
+                status_code=status.HTTP_200_OK,
+            )
         except Exception as e:
             return self.handle_exception(e)
 

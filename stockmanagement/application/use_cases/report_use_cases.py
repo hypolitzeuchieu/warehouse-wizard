@@ -30,6 +30,8 @@ from domain.reports.repositories import ReportRepository
 from domain.users.repositories import UserRepository
 from shared.exceptions.base import BaseAPIException
 from shared.exceptions.specific import ForbiddenError, NotFoundError
+from shared.utils.validation import validate_business_access
+from tasks.report_tasks import generate_report_task
 
 try:
     from weasyprint import HTML
@@ -98,6 +100,47 @@ def _prepare_payload_for_render(payload: dict) -> dict:
         if key in prepared:
             prepared[key] = _parse_iso_datetime(prepared[key])
     return prepared
+
+
+# Sentinel value to detect if file_url was provided
+class _Sentinel:
+    """Sentinel value to detect if file_url was provided."""
+
+
+_SENTINEL = _Sentinel()
+
+
+def _report_to_dto(
+    report: Report, file_url: str | None | _Sentinel = _SENTINEL
+) -> ReportResponseDTO:
+    """
+    Convert report entity to DTO (shared utility function).
+
+    Args:
+        report: Report entity to convert
+        file_url: Optional file URL. If not provided (default), uses report.file_url.
+                  If explicitly set to None, uses None.
+
+    Returns:
+        ReportResponseDTO instance
+    """
+    final_file_url = report.file_url if file_url is _SENTINEL else file_url
+    return ReportResponseDTO(
+        id=report.id,
+        business_id=report.business_id,
+        report_type=report.report_type.value,
+        format=report.format.value,
+        status=report.status.value,
+        start_date=report.start_date,
+        end_date=report.end_date,
+        file_url=final_file_url,
+        file_size=report.file_size,
+        generated_by=report.generated_by,
+        error_message=report.error_message,
+        metadata=_sanitize_metadata_for_response(report.metadata),
+        created_at=report.created_at,
+        updated_at=report.updated_at,
+    )
 
 
 def _render_report_html(
@@ -176,35 +219,190 @@ class GenerateAndSaveReportUseCase:
             return timezone.make_aware(dt)
         return dt
 
+    @staticmethod
+    def _build_base_payload(report_dto, report_type: str, title: str) -> dict:
+        """Build base payload structure common to all reports."""
+        return {
+            "report_type": report_type,
+            "title": title,
+            "business_id": str(report_dto.business_id),
+            "period_start": report_dto.period_start,
+            "period_end": report_dto.period_end,
+            "generated_at": report_dto.generated_at,
+        }
+
+    def _build_sales_payload(self, report_dto) -> dict:
+        """Build sales report payload."""
+        payload = self._build_base_payload(report_dto, "sales", "Sales Report")
+        payload.update(
+            {
+                "summary": [
+                    {"label": "Total Revenue", "value": str(report_dto.total_revenue)},
+                    {"label": "Total Invoices", "value": report_dto.total_invoices},
+                    {"label": "Items Sold", "value": report_dto.total_items_sold},
+                    {
+                        "label": "Average Invoice Value",
+                        "value": str(report_dto.average_invoice_value),
+                    },
+                ],
+                "payment_breakdown": [
+                    {
+                        "payment_method": item.payment_method,
+                        "total_amount": str(item.total_amount),
+                        "number_of_invoices": item.number_of_invoices,
+                    }
+                    for item in report_dto.sales_by_payment_method
+                ],
+                "status_breakdown": [
+                    {
+                        "status": item.status,
+                        "total_amount": str(item.total_amount),
+                        "number_of_invoices": item.number_of_invoices,
+                    }
+                    for item in report_dto.sales_by_status
+                ],
+                "top_products": [
+                    {
+                        "product_id": str(p.product_id),
+                        "product_name": p.product_name,
+                        "total_quantity_sold": p.total_quantity_sold,
+                        "total_revenue": str(p.total_revenue),
+                        "number_of_sales": p.number_of_sales,
+                    }
+                    for p in report_dto.top_products
+                ],
+                "top_customers": [
+                    {
+                        "customer_id": str(c.customer_id) if c.customer_id else None,
+                        "customer_name": c.customer_name,
+                        "total_purchases": str(c.total_purchases),
+                        "number_of_invoices": c.number_of_invoices,
+                    }
+                    for c in report_dto.top_customers
+                ],
+            }
+        )
+        return payload
+
+    def _build_inventory_payload(self, report_dto) -> dict:
+        """Build inventory report payload."""
+        payload = self._build_base_payload(report_dto, "inventory", "Inventory Report")
+        payload.update(
+            {
+                "summary": [
+                    {"label": "Total Products", "value": report_dto.total_products},
+                    {
+                        "label": "Inventory Value",
+                        "value": str(report_dto.total_inventory_value),
+                    },
+                    {"label": "Low Stock Items", "value": report_dto.low_stock_products},
+                    {"label": "Expired Products", "value": report_dto.expired_products},
+                ],
+                "products": [
+                    {
+                        "product_id": str(p.product_id),
+                        "product_name": p.product_name,
+                        "current_quantity": p.current_quantity,
+                        "unit_price": str(p.unit_price),
+                        "total_value": str(p.total_value),
+                        "is_low_stock": p.is_low_stock,
+                        "is_expired": p.is_expired,
+                        "expiry_date": p.expiry_date,
+                    }
+                    for p in report_dto.products
+                ],
+                "stock_movements_summary": [
+                    {
+                        "movement_type": s.movement_type,
+                        "total_quantity": s.total_quantity,
+                        "number_of_movements": s.number_of_movements,
+                        "products_affected": s.products_affected,
+                    }
+                    for s in report_dto.stock_movements_summary
+                ],
+            }
+        )
+        return payload
+
+    @staticmethod
+    def _build_product_info_dict(product) -> dict:
+        """Build product info dictionary (shared across reports)."""
+        return {
+            "product_id": str(product.product_id),
+            "product_name": product.product_name,
+            "current_quantity": product.current_quantity,
+            "min_quantity": product.min_quantity,
+            "unit_price": str(product.unit_price),
+            "total_value": str(product.total_value),
+            "is_low_stock": product.is_low_stock,
+            "is_expired": product.is_expired,
+            "expiry_date": product.expiry_date,
+        }
+
+    def _build_stock_payload(self, report_dto) -> dict:
+        """Build stock report payload."""
+        payload = self._build_base_payload(report_dto, "stock", "Stock Report")
+        payload.update(
+            {
+                "summary": [
+                    {
+                        "label": "Current Stock Value",
+                        "value": str(report_dto.current_stock_value),
+                    },
+                    {"label": "Movements In", "value": report_dto.stock_movements_in},
+                    {"label": "Movements Out", "value": report_dto.stock_movements_out},
+                    {"label": "Net Change", "value": report_dto.net_stock_change},
+                ],
+                "products_by_stock_level": {
+                    "low": [
+                        self._build_product_info_dict(p)
+                        for p in report_dto.products_by_stock_level.get("low", [])
+                    ],
+                    "normal": [
+                        self._build_product_info_dict(p)
+                        for p in report_dto.products_by_stock_level.get("normal", [])
+                    ],
+                    "high": [
+                        self._build_product_info_dict(p)
+                        for p in report_dto.products_by_stock_level.get("high", [])
+                    ],
+                },
+                "stock_movements_by_type": [
+                    {
+                        "movement_type": s.movement_type,
+                        "total_quantity": s.total_quantity,
+                        "number_of_movements": s.number_of_movements,
+                        "products_affected": s.products_affected,
+                    }
+                    for s in report_dto.stock_movements_by_type
+                ],
+            }
+        )
+        return payload
+
+    def _validate_report_permission(self) -> None:
+        """Validate user has permission to generate the requested report type."""
+        permission_map = {
+            ReportType.SALES: self.business_domain_service.can_generate_sales_report,
+            ReportType.INVENTORY: self.business_domain_service.can_generate_inventory_report,
+            ReportType.STOCK: self.business_domain_service.can_generate_stock_report,
+        }
+
+        check_permission = permission_map.get(self.report_type)
+        if not check_permission:
+            raise ValueError(f"Unknown report type: {self.report_type}")
+
+        if not check_permission(self.business_id, self.user_id):
+            report_type_name = self.report_type.value.lower()
+            raise ForbiddenError(
+                detail=f"You don't have permission to generate {report_type_name} reports for this business",
+                code="PERMISSION_DENIED",
+            )
+
     @transaction.atomic
     def execute(self) -> ReportResponseDTO:
         """Execute report generation and saving."""
-        if self.report_type == ReportType.SALES:
-            if not self.business_domain_service.can_generate_sales_report(
-                self.business_id, self.user_id
-            ):
-                raise ForbiddenError(
-                    detail="You don't have permission to generate sales reports for this business",
-                    code="PERMISSION_DENIED",
-                )
-        elif self.report_type == ReportType.INVENTORY:
-            if not self.business_domain_service.can_generate_inventory_report(
-                self.business_id, self.user_id
-            ):
-                raise ForbiddenError(
-                    detail="You don't have permission to generate inventory reports for this business",
-                    code="PERMISSION_DENIED",
-                )
-        elif self.report_type == ReportType.STOCK:
-            if not self.business_domain_service.can_generate_stock_report(
-                self.business_id, self.user_id
-            ):
-                raise ForbiddenError(
-                    detail="You don't have permission to generate stock reports for this business",
-                    code="PERMISSION_DENIED",
-                )
-        else:
-            raise ValueError(f"Unknown report type: {self.report_type}")
+        self._validate_report_permission()
 
         self._ensure_date_range()
         self.generated_by_label = self._get_generated_by_label()
@@ -241,6 +439,76 @@ class GenerateAndSaveReportUseCase:
         )
 
         report = self.report_repository.create(report)
+
+        try:
+            generate_report_task.delay(
+                report_id=report_id,
+                business_id=self.business_id,
+                user_id=self.user_id,
+                report_type=self.report_type.value,
+                format=self.format.value,
+                start_date=self.start_date.isoformat() if self.start_date else None,
+                end_date=self.end_date.isoformat() if self.end_date else None,
+            )
+
+            logger.info(
+                f"Report {report_id} generation queued for async processing "
+                f"(type: {self.report_type.value}, format: {self.format.value})"
+            )
+            return self._to_dto(report)
+
+        except Exception as celery_error:
+            logger.error(
+                f"Failed to queue report generation task for {report_id}: {str(celery_error)}. "
+                f"Celery worker must be running for report generation.",
+                exc_info=True,
+                extra={"report_id": str(report_id)},
+            )
+
+            report.status = ReportStatus.FAILED
+            report.error_message = (
+                f"Failed to queue report generation: {str(celery_error)}. "
+                f"Please ensure Celery worker is running."
+            )
+            report.updated_at = timezone.now()
+            self.report_repository.update(report)
+
+            raise BaseAPIException(
+                detail="Report generation service is unavailable. Please try again later.",
+                code="CELERY_UNAVAILABLE",
+                status_code=503,
+            ) from celery_error
+
+    def generate_and_save_report_content(self, report_id: UUID) -> ReportResponseDTO:
+        """
+        Generate report content and update the existing report.
+
+        This method is called by the Celery task to actually generate the report content.
+        It should only be called from within an async task context.
+
+        Args:
+            report_id: ID of the report to generate content for
+
+        Returns:
+            ReportResponseDTO with completed report information
+        """
+        report = self.report_repository.get_by_id(report_id)
+        if not report:
+            raise NotFoundError(
+                detail="Report not found",
+                code="REPORT_NOT_FOUND",
+            )
+
+        if not self.business:
+            self.business = self.business_domain_service.get_business(self.business_id)
+            if not self.business:
+                raise NotFoundError(
+                    detail="Business not found",
+                    code="BUSINESS_NOT_FOUND",
+                )
+
+        if not self.generated_by_label:
+            self.generated_by_label = self._get_generated_by_label()
 
         try:
             if self.report_type == ReportType.SALES:
@@ -296,59 +564,7 @@ class GenerateAndSaveReportUseCase:
             end_date=self.end_date,
         )
         report_dto = use_case.execute()
-
-        payload = {
-            "report_type": "sales",
-            "title": "Sales Report",
-            "business_id": str(report_dto.business_id),
-            "period_start": report_dto.period_start,
-            "period_end": report_dto.period_end,
-            "generated_at": report_dto.generated_at,
-            "summary": [
-                {"label": "Total Revenue", "value": str(report_dto.total_revenue)},
-                {"label": "Total Invoices", "value": report_dto.total_invoices},
-                {"label": "Items Sold", "value": report_dto.total_items_sold},
-                {
-                    "label": "Average Invoice Value",
-                    "value": str(report_dto.average_invoice_value),
-                },
-            ],
-            "payment_breakdown": [
-                {
-                    "payment_method": item.payment_method,
-                    "total_amount": str(item.total_amount),
-                    "number_of_invoices": item.number_of_invoices,
-                }
-                for item in report_dto.sales_by_payment_method
-            ],
-            "status_breakdown": [
-                {
-                    "status": item.status,
-                    "total_amount": str(item.total_amount),
-                    "number_of_invoices": item.number_of_invoices,
-                }
-                for item in report_dto.sales_by_status
-            ],
-            "top_products": [
-                {
-                    "product_id": str(p.product_id),
-                    "product_name": p.product_name,
-                    "total_quantity_sold": p.total_quantity_sold,
-                    "total_revenue": str(p.total_revenue),
-                    "number_of_sales": p.number_of_sales,
-                }
-                for p in report_dto.top_products
-            ],
-            "top_customers": [
-                {
-                    "customer_id": str(c.customer_id) if c.customer_id else None,
-                    "customer_name": c.customer_name,
-                    "total_purchases": str(c.total_purchases),
-                    "number_of_invoices": c.number_of_invoices,
-                }
-                for c in report_dto.top_customers
-            ],
-        }
+        payload = self._build_sales_payload(report_dto)
         return self._prepare_report_payload(payload)
 
     def _generate_inventory_report(self) -> bytes | str | dict:
@@ -363,46 +579,7 @@ class GenerateAndSaveReportUseCase:
             end_date=self.end_date,
         )
         report_dto = use_case.execute()
-
-        payload = {
-            "report_type": "inventory",
-            "title": "Inventory Report",
-            "business_id": str(report_dto.business_id),
-            "period_start": report_dto.period_start,
-            "period_end": report_dto.period_end,
-            "generated_at": report_dto.generated_at,
-            "summary": [
-                {"label": "Total Products", "value": report_dto.total_products},
-                {
-                    "label": "Inventory Value",
-                    "value": str(report_dto.total_inventory_value),
-                },
-                {"label": "Low Stock Items", "value": report_dto.low_stock_products},
-                {"label": "Expired Products", "value": report_dto.expired_products},
-            ],
-            "products": [
-                {
-                    "product_id": str(p.product_id),
-                    "product_name": p.product_name,
-                    "current_quantity": p.current_quantity,
-                    "unit_price": str(p.unit_price),
-                    "total_value": str(p.total_value),
-                    "is_low_stock": p.is_low_stock,
-                    "is_expired": p.is_expired,
-                    "expiry_date": p.expiry_date,
-                }
-                for p in report_dto.products
-            ],
-            "stock_movements_summary": [
-                {
-                    "movement_type": s.movement_type,
-                    "total_quantity": s.total_quantity,
-                    "number_of_movements": s.number_of_movements,
-                    "products_affected": s.products_affected,
-                }
-                for s in report_dto.stock_movements_summary
-            ],
-        }
+        payload = self._build_inventory_payload(report_dto)
         return self._prepare_report_payload(payload)
 
     def _generate_stock_report(self) -> bytes | str | dict:
@@ -417,77 +594,7 @@ class GenerateAndSaveReportUseCase:
             end_date=self.end_date,
         )
         report_dto = use_case.execute()
-
-        payload = {
-            "report_type": "stock",
-            "title": "Stock Report",
-            "business_id": str(report_dto.business_id),
-            "period_start": report_dto.period_start,
-            "period_end": report_dto.period_end,
-            "generated_at": report_dto.generated_at,
-            "summary": [
-                {
-                    "label": "Current Stock Value",
-                    "value": str(report_dto.current_stock_value),
-                },
-                {"label": "Movements In", "value": report_dto.stock_movements_in},
-                {"label": "Movements Out", "value": report_dto.stock_movements_out},
-                {"label": "Net Change", "value": report_dto.net_stock_change},
-            ],
-            "products_by_stock_level": {
-                "low": [
-                    {
-                        "product_id": str(p.product_id),
-                        "product_name": p.product_name,
-                        "current_quantity": p.current_quantity,
-                        "min_quantity": p.min_quantity,
-                        "unit_price": str(p.unit_price),
-                        "total_value": str(p.total_value),
-                        "is_low_stock": p.is_low_stock,
-                        "is_expired": p.is_expired,
-                        "expiry_date": p.expiry_date,
-                    }
-                    for p in report_dto.products_by_stock_level.get("low", [])
-                ],
-                "normal": [
-                    {
-                        "product_id": str(p.product_id),
-                        "product_name": p.product_name,
-                        "current_quantity": p.current_quantity,
-                        "min_quantity": p.min_quantity,
-                        "unit_price": str(p.unit_price),
-                        "total_value": str(p.total_value),
-                        "is_low_stock": p.is_low_stock,
-                        "is_expired": p.is_expired,
-                        "expiry_date": p.expiry_date,
-                    }
-                    for p in report_dto.products_by_stock_level.get("normal", [])
-                ],
-                "high": [
-                    {
-                        "product_id": str(p.product_id),
-                        "product_name": p.product_name,
-                        "current_quantity": p.current_quantity,
-                        "min_quantity": p.min_quantity,
-                        "unit_price": str(p.unit_price),
-                        "total_value": str(p.total_value),
-                        "is_low_stock": p.is_low_stock,
-                        "is_expired": p.is_expired,
-                        "expiry_date": p.expiry_date,
-                    }
-                    for p in report_dto.products_by_stock_level.get("high", [])
-                ],
-            },
-            "stock_movements_by_type": [
-                {
-                    "movement_type": s.movement_type,
-                    "total_quantity": s.total_quantity,
-                    "number_of_movements": s.number_of_movements,
-                    "products_affected": s.products_affected,
-                }
-                for s in report_dto.stock_movements_by_type
-            ],
-        }
+        payload = self._build_stock_payload(report_dto)
         return self._prepare_report_payload(payload)
 
     def _ensure_date_range(self) -> None:
@@ -524,22 +631,7 @@ class GenerateAndSaveReportUseCase:
 
     def _to_dto(self, report: Report) -> ReportResponseDTO:
         """Convert report entity to DTO."""
-        return ReportResponseDTO(
-            id=report.id,
-            business_id=report.business_id,
-            report_type=report.report_type.value,
-            format=report.format.value,
-            status=report.status.value,
-            start_date=report.start_date,
-            end_date=report.end_date,
-            file_url=None,
-            file_size=report.file_size,
-            generated_by=report.generated_by,
-            error_message=report.error_message,
-            metadata=_sanitize_metadata_for_response(report.metadata),
-            created_at=report.created_at,
-            updated_at=report.updated_at,
-        )
+        return _report_to_dto(report, file_url=None)
 
 
 class DownloadReportUseCase:
@@ -578,11 +670,12 @@ class DownloadReportUseCase:
                 code="REPORT_NOT_READY",
                 status_code=400,
             )
-        if not self.business_domain_service.user_has_access(report.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this report",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=report.business_id,
+            user_id=self.user_id,
+            error_message="You don't have access to this report",
+        )
 
         metadata = report.metadata or {}
         payload = metadata.get("payload")
@@ -653,11 +746,12 @@ class DeleteReportUseCase:
                 code="REPORT_NOT_FOUND",
             )
 
-        if not self.business_domain_service.user_has_access(report.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this report",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=report.business_id,
+            user_id=self.user_id,
+            error_message="You don't have access to this report",
+        )
 
         self.report_repository.delete(report.id)
 
@@ -689,11 +783,11 @@ class ListReportsUseCase:
 
     def execute(self) -> list[ReportResponseDTO]:
         """Return reports after verifying access."""
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         reports = self.report_repository.get_by_business(
             business_id=self.business_id,
@@ -707,19 +801,4 @@ class ListReportsUseCase:
 
     def _to_dto(self, report: Report) -> ReportResponseDTO:
         """Convert entity to DTO."""
-        return ReportResponseDTO(
-            id=report.id,
-            business_id=report.business_id,
-            report_type=report.report_type.value,
-            format=report.format.value,
-            status=report.status.value,
-            start_date=report.start_date,
-            end_date=report.end_date,
-            file_url=report.file_url,
-            file_size=report.file_size,
-            generated_by=report.generated_by,
-            error_message=report.error_message,
-            metadata=_sanitize_metadata_for_response(report.metadata),
-            created_at=report.created_at,
-            updated_at=report.updated_at,
-        )
+        return _report_to_dto(report, file_url=report.file_url)

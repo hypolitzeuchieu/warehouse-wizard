@@ -27,8 +27,35 @@ from domain.finance.repositories import ExpenseAuditLogRepository, ExpenseReposi
 from shared.exceptions.specific import (
     BadRequestError,
     ForbiddenError,
-    NotFoundError,
 )
+from shared.utils.validation import (
+    validate_business_access,
+    validate_entity_belongs_to_business,
+    validate_enum,
+)
+
+
+def _expense_to_dto(expense: Expense) -> ExpenseResponseDTO:
+    """Convert expense entity to DTO (shared utility function)."""
+    return ExpenseResponseDTO(
+        id=expense.id,
+        business_id=expense.business_id,
+        expense_type=expense.expense_type.value,
+        amount=expense.amount,
+        reason=expense.reason,
+        reason_details=expense.reason_details,
+        user_id=expense.user_id,
+        user_name=None,
+        approved_by=expense.approved_by,
+        is_approved=expense.is_approved,
+        payment_method=expense.payment_method.value,
+        payment_reference=expense.payment_reference,
+        payee_type=expense.payee_type.value,
+        payee_name=expense.payee_name,
+        justification_metadata=expense.justification_metadata,
+        created_at=expense.created_at,
+        updated_at=expense.updated_at,
+    )
 
 
 class CreateExpenseUseCase:
@@ -52,37 +79,34 @@ class CreateExpenseUseCase:
     def execute(self, dto: ExpenseCreateDTO) -> ExpenseResponseDTO:
         """Execute expense creation."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         # Validate expense type
-        try:
-            expense_type = ExpenseType(dto.expense_type)
-        except ValueError as err:
-            raise BadRequestError(
-                detail="Invalid expense type",
-                code="INVALID_EXPENSE_TYPE",
-            ) from err
+        expense_type = validate_enum(
+            value=dto.expense_type,
+            enum_class=ExpenseType,
+            error_detail="Invalid expense type",
+            error_code="INVALID_EXPENSE_TYPE",
+        )
 
         # Validate payment metadata
-        try:
-            payment_method = ExpensePaymentMethod(dto.payment_method)
-        except ValueError as err:
-            raise BadRequestError(
-                detail="Invalid payment method",
-                code="INVALID_PAYMENT_METHOD",
-            ) from err
+        payment_method = validate_enum(
+            value=dto.payment_method,
+            enum_class=ExpensePaymentMethod,
+            error_detail="Invalid payment method",
+            error_code="INVALID_PAYMENT_METHOD",
+        )
 
-        try:
-            payee_type = ExpensePayeeType(dto.payee_type)
-        except ValueError as err:
-            raise BadRequestError(
-                detail="Invalid payee type",
-                code="INVALID_PAYEE_TYPE",
-            ) from err
+        payee_type = validate_enum(
+            value=dto.payee_type,
+            enum_class=ExpensePayeeType,
+            error_detail="Invalid payee type",
+            error_code="INVALID_PAYEE_TYPE",
+        )
 
         # Create expense entity
         expense = Expense(
@@ -110,25 +134,7 @@ class CreateExpenseUseCase:
 
     def _to_dto(self, expense: Expense) -> ExpenseResponseDTO:
         """Convert expense entity to DTO."""
-        return ExpenseResponseDTO(
-            id=expense.id,
-            business_id=expense.business_id,
-            expense_type=expense.expense_type.value,
-            amount=expense.amount,
-            reason=expense.reason,
-            reason_details=expense.reason_details,
-            user_id=expense.user_id,
-            user_name=None,
-            approved_by=expense.approved_by,
-            is_approved=expense.is_approved,
-            payment_method=expense.payment_method.value,
-            payment_reference=expense.payment_reference,
-            payee_type=expense.payee_type.value,
-            payee_name=expense.payee_name,
-            justification_metadata=expense.justification_metadata,
-            created_at=expense.created_at,
-            updated_at=expense.updated_at,
-        )
+        return _expense_to_dto(expense)
 
     def _record_audit(
         self,
@@ -184,42 +190,24 @@ class GetExpenseUseCase:
     def execute(self) -> ExpenseResponseDTO:
         """Execute getting expense."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         expense = self.expense_repository.get_by_id(self.expense_id)
-        if not expense or expense.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Expense not found",
-                code="EXPENSE_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=expense,
+            business_id=self.business_id,
+            entity_name="Expense",
+        )
 
         return self._to_dto(expense)
 
     def _to_dto(self, expense: Expense) -> ExpenseResponseDTO:
         """Convert expense entity to DTO."""
-        return ExpenseResponseDTO(
-            id=expense.id,
-            business_id=expense.business_id,
-            expense_type=expense.expense_type.value,
-            amount=expense.amount,
-            reason=expense.reason,
-            reason_details=expense.reason_details,
-            user_id=expense.user_id,
-            user_name=None,
-            approved_by=expense.approved_by,
-            is_approved=expense.is_approved,
-            payment_method=expense.payment_method.value,
-            payment_reference=expense.payment_reference,
-            payee_type=expense.payee_type.value,
-            payee_name=expense.payee_name,
-            justification_metadata=expense.justification_metadata,
-            created_at=expense.created_at,
-            updated_at=expense.updated_at,
-        )
+        return _expense_to_dto(expense)
 
 
 class ListExpensesUseCase:
@@ -259,11 +247,11 @@ class ListExpensesUseCase:
     def execute(self) -> list[ExpenseResponseDTO]:
         """Execute listing expenses."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         expenses = self.expense_repository.get_by_business(
             business_id=self.business_id,
@@ -282,25 +270,7 @@ class ListExpensesUseCase:
 
     def _to_dto(self, expense: Expense) -> ExpenseResponseDTO:
         """Convert expense entity to DTO."""
-        return ExpenseResponseDTO(
-            id=expense.id,
-            business_id=expense.business_id,
-            expense_type=expense.expense_type.value,
-            amount=expense.amount,
-            reason=expense.reason,
-            reason_details=expense.reason_details,
-            user_id=expense.user_id,
-            user_name=None,
-            approved_by=expense.approved_by,
-            is_approved=expense.is_approved,
-            payment_method=expense.payment_method.value,
-            payment_reference=expense.payment_reference,
-            payee_type=expense.payee_type.value,
-            payee_name=expense.payee_name,
-            justification_metadata=expense.justification_metadata,
-            created_at=expense.created_at,
-            updated_at=expense.updated_at,
-        )
+        return _expense_to_dto(expense)
 
 
 class UpdateExpenseUseCase:
@@ -326,18 +296,18 @@ class UpdateExpenseUseCase:
     def execute(self, dto: ExpenseUpdateDTO) -> ExpenseResponseDTO:
         """Execute expense update."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         expense = self.expense_repository.get_by_id(self.expense_id)
-        if not expense or expense.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Expense not found",
-                code="EXPENSE_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=expense,
+            business_id=self.business_id,
+            entity_name="Expense",
+        )
 
         before_state = deepcopy(expense)
 
@@ -406,25 +376,7 @@ class UpdateExpenseUseCase:
 
     def _to_dto(self, expense: Expense) -> ExpenseResponseDTO:
         """Convert expense entity to DTO."""
-        return ExpenseResponseDTO(
-            id=expense.id,
-            business_id=expense.business_id,
-            expense_type=expense.expense_type.value,
-            amount=expense.amount,
-            reason=expense.reason,
-            reason_details=expense.reason_details,
-            user_id=expense.user_id,
-            user_name=None,
-            approved_by=expense.approved_by,
-            is_approved=expense.is_approved,
-            payment_method=expense.payment_method.value,
-            payment_reference=expense.payment_reference,
-            payee_type=expense.payee_type.value,
-            payee_name=expense.payee_name,
-            justification_metadata=expense.justification_metadata,
-            created_at=expense.created_at,
-            updated_at=expense.updated_at,
-        )
+        return _expense_to_dto(expense)
 
     def _record_audit(
         self,
@@ -481,18 +433,18 @@ class DeleteExpenseUseCase:
     def execute(self) -> None:
         """Execute expense deletion."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         expense = self.expense_repository.get_by_id(self.expense_id)
-        if not expense or expense.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Expense not found",
-                code="EXPENSE_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=expense,
+            business_id=self.business_id,
+            entity_name="Expense",
+        )
 
         self.expense_repository.delete(self.expense_id)
         if self.audit_log_repository:
@@ -537,11 +489,11 @@ class GetExpenseHistoryUseCase:
         self.user_id = user_id
 
     def execute(self) -> list[ExpenseAuditLogDTO]:
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         logs = self.audit_log_repository.list_for_expense(self.expense_id)
         return [
@@ -593,11 +545,11 @@ class GetExpenseSummaryUseCase:
         self.end_date = end_date
 
     def execute(self) -> ExpenseSummaryDTO:
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         summary_data = self.expense_repository.get_summary(
             business_id=self.business_id,

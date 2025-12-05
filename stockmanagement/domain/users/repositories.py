@@ -3,7 +3,15 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from domain.users.entities import OTP, Device, RefreshToken, Session, User, UserRole
+from domain.users.entities import (
+    OTP,
+    Device,
+    PasswordResetToken,
+    RefreshToken,
+    Session,
+    User,
+    UserRole,
+)
 
 
 class UserRepository(ABC):
@@ -52,6 +60,11 @@ class UserRepository(ABC):
     @abstractmethod
     def verify_password(self, user_id: UUID, password: str) -> bool:
         """Verify user password."""
+        pass
+
+    @abstractmethod
+    def update_password(self, user_id: UUID, new_password: str) -> User:
+        """Update user password."""
         pass
 
 
@@ -218,5 +231,52 @@ class OTPRepository(ABC):
 
         Returns:
             Number of OTPs invalidated
+        """
+        pass
+
+
+class PasswordResetTokenRepository(ABC):
+    """Password reset token repository interface."""
+
+    @abstractmethod
+    def get_by_id(self, token_id: UUID) -> PasswordResetToken | None:
+        """Get password reset token by ID."""
+        pass
+
+    @abstractmethod
+    def get_by_token(self, token: str) -> PasswordResetToken | None:
+        """Get password reset token by token string."""
+        pass
+
+    @abstractmethod
+    def get_by_code(self, code: str) -> PasswordResetToken | None:
+        """Get password reset token by code (for SMS)."""
+        pass
+
+    @abstractmethod
+    def get_latest_by_code(self, code: str) -> PasswordResetToken | None:
+        """Get latest password reset token by code (ordered by created_at desc)."""
+        pass
+
+    @abstractmethod
+    def create(self, reset_token: PasswordResetToken) -> PasswordResetToken:
+        """Create a new password reset token."""
+        pass
+
+    @abstractmethod
+    def update(self, reset_token: PasswordResetToken) -> PasswordResetToken:
+        """Update an existing password reset token."""
+        pass
+
+    @abstractmethod
+    def invalidate_user_tokens(self, user_id: UUID, reset_type: str | None = None) -> int:
+        """Invalidate all unused tokens for a user.
+
+        Args:
+            user_id: User ID
+            reset_type: Reset type filter (optional)
+
+        Returns:
+            Number of tokens invalidated
         """
         pass

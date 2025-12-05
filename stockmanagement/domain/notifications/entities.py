@@ -17,6 +17,7 @@ class NotificationType(str, Enum):
     ORDER = "ORDER"
     MEETING = "MEETING"
     SYSTEM = "SYSTEM"
+    PAYMENT_OVERDUE = "PAYMENT_OVERDUE"
 
 
 class NotificationStatus(str, Enum):
@@ -32,13 +33,13 @@ class Notification:
     """Notification entity."""
 
     id: UUID
-    user_id: UUID | None  # None for broadcast notifications
+    user_id: UUID | None
     business_id: UUID | None
     notification_type: NotificationType
     status: NotificationStatus
     title: str
     message: str
-    related_entity_type: str | None  # product, order, meeting, etc.
+    related_entity_type: str | None
     related_entity_id: UUID | None
     created_at: datetime
     read_at: datetime | None = None

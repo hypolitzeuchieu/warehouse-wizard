@@ -40,6 +40,7 @@ from infrastructure.persistence.repositories import (
     BusinessRepositoryImpl,
     DeviceRepositoryImpl,
     OTPRepositoryImpl,
+    PasswordResetTokenRepositoryImpl,
     RefreshTokenRepositoryImpl,
     SessionRepositoryImpl,
     UserRepositoryImpl,
@@ -508,8 +509,6 @@ def google_callback_view(request: Request) -> Response:
 
         login_response = use_case.execute(dto, generate_tokens)
 
-        from presentation.serializers.user_serializers import UserResponseSerializer
-
         return helper.success(
             message="Google OAuth authentication successful",
             data={
@@ -760,6 +759,7 @@ def forgot_password_view(request: Request) -> Response:
         dto = serializer.to_dto()
         use_case = ForgotPasswordUseCase(
             user_repository=UserRepositoryImpl(),
+            password_reset_token_repository=PasswordResetTokenRepositoryImpl(),
         )
         result = use_case.execute(dto)
 
@@ -807,7 +807,10 @@ def reset_password_view(request: Request) -> Response:
 
     try:
         dto = serializer.to_dto()
-        use_case = ResetPasswordUseCase(user_repository=UserRepositoryImpl())
+        use_case = ResetPasswordUseCase(
+            user_repository=UserRepositoryImpl(),
+            password_reset_token_repository=PasswordResetTokenRepositoryImpl(),
+        )
         result = use_case.execute(dto)
 
         return helper.success(
@@ -838,8 +841,6 @@ def profile_view(request: Request) -> Response:
         logger.info(f"Profile request for user {request.user.id}")
         use_case = GetProfileUseCase(user_repository=UserRepositoryImpl())
         user_dto = use_case.execute(request.user.id)
-
-        from presentation.serializers.user_serializers import UserResponseSerializer
 
         return helper.success(
             message="Profile retrieved successfully",
@@ -881,8 +882,6 @@ def update_profile_view(request: Request) -> Response:
         dto = serializer.to_dto()
         use_case = UpdateProfileUseCase(user_repository=UserRepositoryImpl())
         user_dto = use_case.execute(request.user.id, dto)
-
-        from presentation.serializers.user_serializers import UserResponseSerializer
 
         return helper.success(
             message="Profile updated successfully",

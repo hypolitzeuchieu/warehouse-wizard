@@ -34,6 +34,12 @@ class S3Service:
         "logo": ALLOWED_IMAGE_FORMATS,
     }
 
+    # Security: Maximum file size limits (in bytes)
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_BARCODE_SIZE = 5 * 1024 * 1024  # 5 MB
+    MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5 MB
+
     def __init__(self) -> None:
         """Initialize S3 service."""
         self.aws_access_key_id = getattr(settings, "AWS_ACCESS_KEY_ID", None)
@@ -147,6 +153,19 @@ class S3Service:
             )
 
         try:
+            max_size = {
+                "image": self.MAX_IMAGE_SIZE,
+                "barcode": self.MAX_BARCODE_SIZE,
+                "logo": self.MAX_LOGO_SIZE,
+            }.get(file_type, self.MAX_FILE_SIZE)
+
+            if hasattr(file, "size") and file.size > max_size:
+                max_size_mb = max_size / (1024 * 1024)
+                raise BaseAPIException(
+                    detail=f"File size exceeds maximum allowed size of {max_size_mb:.1f}MB",
+                    code="FILE_TOO_LARGE",
+                    status_code=400,
+                )
             # Validate file format
             file_extension = self.validate_file_format(file, file_type)
 

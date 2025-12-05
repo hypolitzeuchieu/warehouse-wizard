@@ -70,6 +70,10 @@ from shared.exceptions.specific import (
     ForbiddenError,
     NotFoundError,
 )
+from shared.utils.validation import (
+    validate_business_access,
+    validate_entity_belongs_to_business,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +96,73 @@ def _get_product_name(product_repository: ProductRepository | None, product_id: 
         return None
     product = product_repository.get_by_id(product_id)
     return product.name if product else None
+
+
+def _invoice_to_dto(
+    invoice: Invoice,
+    lines: list[InvoiceLine],
+    user_repository: UserRepository | None = None,
+    product_repository: ProductRepository | None = None,
+) -> InvoiceResponseDTO:
+    """
+    Convert invoice entity to DTO.
+
+    Shared utility function to avoid code duplication across use cases.
+
+    Args:
+        invoice: Invoice entity to convert
+        lines: List of invoice lines
+        user_repository: Optional user repository for fetching cashier name
+        product_repository: Optional product repository for fetching product names
+
+    Returns:
+        InvoiceResponseDTO instance
+    """
+    cashier_name = _get_cashier_name(user_repository, invoice.cashier_id)
+
+    invoice_lines = []
+    for line in lines:
+        product_name = _get_product_name(product_repository, line.product_id)
+        invoice_lines.append(
+            InvoiceLineResponseDTO(
+                id=line.id,
+                invoice_id=line.invoice_id,
+                product_id=line.product_id,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                discount=line.discount,
+                line_total=line.line_total,
+                created_at=line.created_at,
+                product_name=product_name,
+            )
+        )
+
+    refund_amount = _calculate_refund_amount(invoice.advance_paid, invoice.total)
+
+    return InvoiceResponseDTO(
+        id=invoice.id,
+        business_id=invoice.business_id,
+        number=invoice.number,
+        customer_name=invoice.customer_name,
+        customer_id=invoice.customer_id,
+        cashier_id=invoice.cashier_id,
+        cashier_name=cashier_name,
+        status=invoice.status.value,
+        total=invoice.total,
+        tax=invoice.tax,
+        total_discount=invoice.total_discount,
+        advance_paid=invoice.advance_paid,
+        remaining_amount=invoice.get_remaining_amount(),
+        payment_method=invoice.payment_method.value,
+        due_date=invoice.due_date,
+        is_credit_settled=invoice.is_credit_settled,
+        reason=invoice.reason,
+        lines=invoice_lines,
+        is_archived=invoice.is_archived,
+        created_at=invoice.created_at,
+        updated_at=invoice.updated_at,
+        refund_amount=refund_amount,
+    )
 
 
 def _calculate_refund_amount(advance_paid: Decimal, total: Decimal) -> Decimal | None:
@@ -135,6 +206,36 @@ def _payment_to_response_dto(
         created_by=payment.created_by,
         created_by_name=created_by_name,
     )
+
+
+def _create_and_save_invoice_log(
+    log_data: dict,
+    invoice_id: UUID,
+    invoice_log_repository: InvoiceLogRepository,
+) -> InvoiceLog:
+    """
+    Create and save invoice log (shared utility function).
+
+    Args:
+        log_data: Dictionary with log data from InvoiceLoggingService.create_log()
+        invoice_id: ID of the invoice
+        invoice_log_repository: Repository for saving the log
+
+    Returns:
+        Created InvoiceLog entity
+    """
+    invoice_log = InvoiceLog(
+        id=uuid4(),
+        invoice_id=invoice_id,
+        action=log_data["action"],
+        old_value=log_data["old_value"],
+        new_value=log_data["new_value"],
+        description=log_data["description"],
+        created_at=timezone.now(),
+        updated_at=timezone.now(),
+        created_by=log_data["user_id"],
+    )
+    return invoice_log_repository.create(invoice_log)
 
 
 class CreateInvoiceUseCase:
@@ -294,12 +395,17 @@ class CreateInvoiceUseCase:
 
         for line_dto in line_dtos:
             product = self.product_repository.get_by_id_for_update(line_dto.product_id)
-            if not product or product.business_id != self.business_id:
+            if not product:
                 raise BaseAPIException(
                     detail=f"Product {line_dto.product_id} not found",
                     code="PRODUCT_NOT_FOUND",
                     status_code=404,
                 )
+            validate_entity_belongs_to_business(
+                entity=product,
+                business_id=self.business_id,
+                entity_name="Product",
+            )
 
             if product.quantity < line_dto.quantity:
                 raise BaseAPIException(
@@ -620,67 +726,21 @@ class CreateInvoiceUseCase:
             description=f"Invoice {invoice.number} created",
             user_id=self.cashier_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
     def _to_dto(
         self, invoice: Invoice, lines: list[InvoiceLine] | None = None
     ) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines or []:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        refund_amount = _calculate_refund_amount(invoice.advance_paid, invoice.total)
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=refund_amount,
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines or [],
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -718,48 +778,11 @@ class GetInvoiceUseCase:
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -836,48 +859,11 @@ class ListInvoicesUseCase:
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -988,66 +974,22 @@ class UpdateInvoiceUseCase:
             description=f"Invoice updated by user {self.user_id}",
             user_id=self.user_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
         lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
         return self._to_dto(invoice, lines)
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -1095,11 +1037,6 @@ class PayInvoiceUseCase:
                 raise ForbiddenError(
                     detail="You don't have permission to process payments for this business",
                     code="PERMISSION_DENIED",
-                )
-            if not invoice:
-                raise NotFoundError(
-                    detail="Invoice not found",
-                    code="INVOICE_NOT_FOUND",
                 )
 
             if dto.idempotency_key:
@@ -1157,14 +1094,15 @@ class PayInvoiceUseCase:
                     customer_id=invoice.customer_id,
                     business_id=invoice.business_id,
                 )
-                for credit in credits:
-                    if credit.invoice_id == invoice.id:
-                        credit.paid_amount += payment_result["amount_applied"]
-                        credit.remaining_amount -= payment_result["amount_applied"]
-                        credit.updated_at = timezone.now()
-                        credit.update_status()
-                        self.credit_repository.update(credit)
-                        break
+                for credit_temp in credits:
+                    if credit_temp.invoice_id == invoice.id:
+                        credit = self.credit_repository.get_by_id_for_update(credit_temp.id)
+                        if credit:
+                            credit.paid_amount += payment_result["amount_applied"]
+                            credit.remaining_amount -= payment_result["amount_applied"]
+                            credit.updated_at = timezone.now()
+                            credit.update_status()
+                            self.credit_repository.update(credit)
 
             log_data = InvoiceLoggingService.create_log(
                 invoice_id=invoice.id,
@@ -1174,18 +1112,11 @@ class PayInvoiceUseCase:
                 description=f"Payment of {dto.amount} received via {dto.payment_method}. Change: {payment_result['change_amount']}",
                 user_id=self.user_id,
             )
-            invoice_log = InvoiceLog(
-                id=uuid4(),
+            _create_and_save_invoice_log(
+                log_data=log_data,
                 invoice_id=invoice.id,
-                action=log_data["action"],
-                old_value=log_data["old_value"],
-                new_value=log_data["new_value"],
-                description=log_data["description"],
-                created_at=timezone.now(),
-                updated_at=timezone.now(),
-                created_by=log_data["user_id"],
+                invoice_log_repository=self.invoice_log_repository,
             )
-            self.invoice_log_repository.create(invoice_log)
 
             lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
             invoice_dto = self._to_invoice_dto(invoice, lines)
@@ -1201,39 +1132,11 @@ class PayInvoiceUseCase:
 
     def _to_invoice_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=[
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                )
-                for line in lines
-            ],
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            is_archived=invoice.is_archived,
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
     def _to_payment_dto(self, payment: InvoicePayment) -> PaymentResponseDTO:
@@ -1329,65 +1232,21 @@ class CancelInvoiceUseCase:
             description=f"Invoice cancelled. Reason: {invoice.reason}",
             user_id=self.user_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
         return self._to_dto(invoice, lines)
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -1453,65 +1312,22 @@ class ArchiveInvoiceUseCase:
             description=reason or "Invoice archived",
             user_id=self.user_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
         lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
         return self._to_dto(invoice, lines)
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert archived invoice to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -1543,11 +1359,12 @@ class DeleteInvoiceUseCase:
                 code="INVOICE_NOT_FOUND",
             )
 
-        if not self.business_domain_service.user_has_access(invoice.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="Only owners or managers can permanently delete invoices",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=invoice.business_id,
+            user_id=self.user_id,
+            error_message="Only owners or managers can permanently delete invoices",
+        )
 
         credit = self.credit_repository.get_by_invoice(self.invoice_id)
         if credit:
@@ -1641,18 +1458,11 @@ class ProcessRefundUseCase:
             description=f"Refund of {refund_result['refund_amount']} processed. Reason: {dto.reason or 'No reason provided'}",
             user_id=self.user_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
         return RefundResponseDTO(
             id=payment.id,
@@ -1744,65 +1554,21 @@ class DeleteInvoiceLineUseCase:
             description=f"Line removed from invoice. Product: {line_to_delete.product_id}, Quantity: {line_to_delete.quantity}",
             user_id=self.user_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
         return self._to_dto(invoice, remaining_lines)
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -1856,7 +1622,7 @@ class ApplyCreditToInvoiceUseCase:
                 status_code=400,
             )
 
-        credit = self.credit_repository.get_by_invoice(self.invoice_id)
+        credit = self.credit_repository.get_by_id_for_update(self.invoice_id)
 
         if not credit:
             raise NotFoundError(
@@ -1931,66 +1697,22 @@ class ApplyCreditToInvoiceUseCase:
             + (f", Refund: {refund_amount}" if refund_amount > Decimal("0.00") else ""),
             user_id=self.user_id,
         )
-        invoice_log = InvoiceLog(
-            id=uuid4(),
+        _create_and_save_invoice_log(
+            log_data=log_data,
             invoice_id=invoice.id,
-            action=log_data["action"],
-            old_value=log_data["old_value"],
-            new_value=log_data["new_value"],
-            description=log_data["description"],
-            created_at=timezone.now(),
-            updated_at=timezone.now(),
-            created_by=log_data["user_id"],
+            invoice_log_repository=self.invoice_log_repository,
         )
-        self.invoice_log_repository.create(invoice_log)
 
         lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
         return self._to_dto(invoice, lines)
 
     def _to_dto(self, invoice: Invoice, lines: list[InvoiceLine]) -> InvoiceResponseDTO:
         """Convert invoice entity to DTO."""
-        cashier_name = _get_cashier_name(self.user_repository, invoice.cashier_id)
-
-        invoice_lines = []
-        for line in lines:
-            product_name = _get_product_name(self.product_repository, line.product_id)
-            invoice_lines.append(
-                InvoiceLineResponseDTO(
-                    id=line.id,
-                    invoice_id=line.invoice_id,
-                    product_id=line.product_id,
-                    quantity=line.quantity,
-                    unit_price=line.unit_price,
-                    discount=line.discount,
-                    line_total=line.line_total,
-                    created_at=line.created_at,
-                    product_name=product_name,
-                )
-            )
-
-        return InvoiceResponseDTO(
-            id=invoice.id,
-            business_id=invoice.business_id,
-            number=invoice.number,
-            customer_name=invoice.customer_name,
-            customer_id=invoice.customer_id,
-            cashier_id=invoice.cashier_id,
-            cashier_name=cashier_name,
-            status=invoice.status.value,
-            total=invoice.total,
-            tax=invoice.tax,
-            total_discount=invoice.total_discount,
-            advance_paid=invoice.advance_paid,
-            remaining_amount=invoice.get_remaining_amount(),
-            payment_method=invoice.payment_method.value,
-            due_date=invoice.due_date,
-            is_credit_settled=invoice.is_credit_settled,
-            reason=invoice.reason,
-            lines=invoice_lines,
-            is_archived=invoice.is_archived,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            refund_amount=_calculate_refund_amount(invoice.advance_paid, invoice.total),
+        return _invoice_to_dto(
+            invoice=invoice,
+            lines=lines,
+            user_repository=self.user_repository,
+            product_repository=self.product_repository,
         )
 
 
@@ -2161,18 +1883,18 @@ class GenerateInvoiceReceiptUseCase:
 
     def execute(self) -> ReceiptResponseDTO:
         """Execute receipt generation."""
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         invoice = self.invoice_repository.get_by_id(self.invoice_id)
-        if not invoice or invoice.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Invoice not found",
-                code="INVOICE_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=invoice,
+            business_id=self.business_id,
+            entity_name="Invoice",
+        )
 
         invoice_lines = self.invoice_line_repository.get_by_invoice(self.invoice_id)
 
@@ -2270,24 +1992,93 @@ class GenerateSalesReportUseCase:
     @transaction.atomic
     def execute(self) -> SalesReportDTO:
         """Execute sales report generation."""
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
+
+        start_date, end_date = DateRangeValidationService.validate_date_range(
+            start_date=self.start_date,
+            end_date=self.end_date,
+            allow_future=False,
+        )
+
+        if hasattr(self.invoice_repository, "get_sales_aggregations_for_report"):
+            aggregations = self.invoice_repository.get_sales_aggregations_for_report(
+                business_id=self.business_id,
+                start_date=start_date,
+                end_date=end_date,
             )
 
-        try:
-            start_date, end_date = DateRangeValidationService.validate_date_range(
-                start_date=self.start_date,
-                end_date=self.end_date,
-                allow_future=False,
+            sales_by_payment_method_dtos = [
+                SalesByPaymentMethodDTO(
+                    payment_method=item["payment_method"],
+                    total_amount=Decimal(str(item["total_amount"])),
+                    number_of_invoices=item["invoice_count"],
+                )
+                for item in aggregations["payment_method_stats"]
+            ]
+
+            sales_by_status_dtos = [
+                SalesByStatusDTO(
+                    status=item["status"],
+                    total_amount=Decimal(str(item["total_amount"])),
+                    number_of_invoices=item["invoice_count"],
+                )
+                for item in aggregations["status_stats"]
+            ]
+
+            product_stats_list = list(aggregations["product_stats"])
+            top_products = []
+            for item in product_stats_list:
+                product_id = item.get("product_id")
+                if product_id is None:
+                    continue
+
+                top_products.append(
+                    TopProductReportDTO(
+                        product_id=product_id,
+                        product_name=item.get("product__name") or f"Product {product_id}",
+                        total_quantity_sold=item.get("total_quantity_sold", 0),
+                        total_revenue=Decimal(str(item.get("total_revenue", 0))),
+                        number_of_sales=item.get("number_of_sales", 0),
+                    )
+                )
+
+            customer_stats_list = list(aggregations["customer_stats"])
+            top_customers = []
+            for item in customer_stats_list:
+                customer_id = item.get("customer_id")
+                top_customers.append(
+                    TopCustomerReportDTO(
+                        customer_id=customer_id,
+                        customer_name=item.get("customer_name") or "Walk-in Customer",
+                        total_purchases=Decimal(str(item.get("total_purchases", 0))),
+                        number_of_invoices=item.get("number_of_invoices", 0),
+                    )
+                )
+
+            average_invoice_value = (
+                aggregations["total_revenue"] / aggregations["total_invoices"]
+                if aggregations["total_invoices"] > 0
+                else Decimal("0.00")
             )
-        except ValueError as e:
-            raise BaseAPIException(
-                detail=str(e),
-                code="INVALID_DATE_RANGE",
-                status_code=400,
-            ) from e
+
+            return SalesReportDTO(
+                business_id=self.business_id,
+                period_start=start_date,
+                period_end=end_date,
+                total_revenue=aggregations["total_revenue"],
+                total_invoices=aggregations["total_invoices"],
+                total_items_sold=aggregations["total_items_sold"],
+                average_invoice_value=average_invoice_value,
+                sales_by_payment_method=sales_by_payment_method_dtos,
+                sales_by_status=sales_by_status_dtos,
+                top_products=top_products,
+                top_customers=top_customers,
+                generated_at=timezone.now(),
+            )
 
         invoices = self.invoice_repository.get_by_business(
             business_id=self.business_id,
@@ -2381,13 +2172,14 @@ class GenerateSalesReportUseCase:
         top_products = sorted(
             [
                 TopProductReportDTO(
-                    product_id=data["product_id"],
-                    product_name=data["product_name"],
-                    total_quantity_sold=data["total_quantity_sold"],
-                    total_revenue=data["total_revenue"],
-                    number_of_sales=data["number_of_sales"],
+                    product_id=product_id,
+                    product_name=data.get("product_name", ""),
+                    total_quantity_sold=data.get("total_quantity_sold", 0),
+                    total_revenue=data.get("total_revenue", Decimal("0.00")),
+                    number_of_sales=data.get("number_of_sales", 0),
                 )
                 for data in product_sales.values()
+                if (product_id := data.get("product_id")) is not None
             ],
             key=lambda x: x.total_revenue,
             reverse=True,
@@ -2396,10 +2188,10 @@ class GenerateSalesReportUseCase:
         top_customers = sorted(
             [
                 TopCustomerReportDTO(
-                    customer_id=data["customer_id"],
-                    customer_name=data["customer_name"],
-                    total_purchases=data["total_purchases"],
-                    number_of_invoices=data["number_of_invoices"],
+                    customer_id=data.get("customer_id"),
+                    customer_name=data.get("customer_name", "Walk-in Customer"),
+                    total_purchases=data.get("total_purchases", Decimal("0.00")),
+                    number_of_invoices=data.get("number_of_invoices", 0),
                 )
                 for data in customer_sales.values()
             ],

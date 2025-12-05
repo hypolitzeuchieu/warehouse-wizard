@@ -3,6 +3,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from django.db import connection
+
 from domain.reports.entities import (
     Report,
     ReportFormat,
@@ -16,10 +18,39 @@ from infrastructure.persistence.models.report_models import Report as ReportMode
 class ReportRepositoryImpl(ReportRepository):
     """Django implementation of ReportRepository."""
 
-    def get_by_id(self, report_id: UUID) -> Report | None:
-        """Get report by ID."""
+    def get_by_id(self, report_id: UUID, force_refresh: bool = False) -> Report | None:
+        """
+        Get report by ID.
+
+        Args:
+            report_id: Report ID
+            force_refresh: If True, force a fresh read from database (bypass all caches)
+        """
         try:
-            model = ReportModel.objects.get(id=report_id)
+            if force_refresh:
+                connection.close()
+                connection.ensure_connection()
+                model = ReportModel.objects.only(
+                    "id",
+                    "business_id",
+                    "report_type",
+                    "format",
+                    "status",
+                    "start_date",
+                    "end_date",
+                    "file_path",
+                    "file_url",
+                    "file_size",
+                    "generated_by_id",
+                    "error_message",
+                    "metadata",
+                    "created_at",
+                    "updated_at",
+                ).get(id=report_id)
+                model.refresh_from_db()
+            else:
+                model = ReportModel.objects.get(id=report_id)
+
             return self._to_entity(model)
         except ReportModel.DoesNotExist:
             return None
@@ -67,20 +98,48 @@ class ReportRepositoryImpl(ReportRepository):
         return self._to_entity(model)
 
     def update(self, report: Report) -> Report:
-        """Update an existing report."""
-        model = ReportModel.objects.get(id=report.id)
-        model.report_type = report.report_type.value
-        model.format = report.format.value
-        model.status = report.status.value
-        model.start_date = report.start_date
-        model.end_date = report.end_date
-        model.file_path = report.file_path
-        model.file_url = report.file_url
-        model.file_size = report.file_size
-        model.generated_by_id = report.generated_by
-        model.error_message = report.error_message
-        model.metadata = report.metadata
-        model.save()
+        """
+        Update an existing report.
+
+        """
+        rows_updated = ReportModel.objects.filter(id=report.id).update(
+            report_type=report.report_type.value,
+            format=report.format.value,
+            status=report.status.value,
+            start_date=report.start_date,
+            end_date=report.end_date,
+            file_path=report.file_path,
+            file_url=report.file_url,
+            file_size=report.file_size,
+            generated_by_id=report.generated_by,
+            error_message=report.error_message,
+            metadata=report.metadata,
+            updated_at=report.updated_at,
+        )
+
+        if rows_updated == 0:
+            raise ValueError(f"Report {report.id} not found for update")
+        connection.commit()
+
+        connection.close()
+        model = ReportModel.objects.only(
+            "id",
+            "business_id",
+            "report_type",
+            "format",
+            "status",
+            "start_date",
+            "end_date",
+            "file_path",
+            "file_url",
+            "file_size",
+            "generated_by_id",
+            "error_message",
+            "metadata",
+            "created_at",
+            "updated_at",
+        ).get(id=report.id)
+
         return self._to_entity(model)
 
     def delete(self, report_id: UUID) -> None:

@@ -14,9 +14,67 @@ from domain.customer.entities import Customer, CustomerType
 from domain.customer.repositories import CustomerRepository
 from shared.exceptions.specific import (
     BadRequestError,
-    ForbiddenError,
-    NotFoundError,
 )
+from shared.utils.validation import (
+    validate_business_access,
+    validate_entity_belongs_to_business,
+)
+
+
+def _validate_customer_email_phone_uniqueness(
+    customer_repository: CustomerRepository,
+    email: str | None,
+    phone_number: str | None,
+    business_id: UUID,
+    exclude_customer_id: UUID | None = None,
+) -> None:
+    """
+    Validate that customer email/phone doesn't already exist.
+
+    Shared utility function to avoid code duplication.
+
+    Args:
+        customer_repository: Customer repository
+        email: Email to validate
+        phone_number: Phone number to validate
+        business_id: Business ID
+        exclude_customer_id: Optional customer ID to exclude from check (for updates)
+
+    Raises:
+        BadRequestError: If email/phone already exists
+    """
+    if email:
+        existing = customer_repository.get_by_email(email, business_id)
+        if existing and (exclude_customer_id is None or existing.id != exclude_customer_id):
+            raise BadRequestError(
+                detail="Customer with this email already exists",
+                code="CUSTOMER_EXISTS",
+            )
+
+    if phone_number:
+        existing = customer_repository.get_by_phone(phone_number, business_id)
+        if existing and (exclude_customer_id is None or existing.id != exclude_customer_id):
+            raise BadRequestError(
+                detail="Customer with this phone number already exists",
+                code="CUSTOMER_EXISTS",
+            )
+
+
+def _customer_to_dto(customer: Customer) -> CustomerResponseDTO:
+    """Convert customer entity to DTO (shared utility function)."""
+    return CustomerResponseDTO(
+        id=customer.id,
+        business_id=customer.business_id,
+        name=customer.name,
+        email=customer.email,
+        phone_number=customer.phone_number,
+        address=customer.address,
+        customer_type=customer.customer_type.value,
+        loyalty_points=customer.loyalty_points,
+        total_purchases=customer.total_purchases,
+        created_at=customer.created_at,
+        updated_at=customer.updated_at,
+    )
 
 
 class CreateCustomerUseCase:
@@ -38,28 +96,19 @@ class CreateCustomerUseCase:
     def execute(self, dto: CustomerCreateDTO) -> CustomerResponseDTO:
         """Execute customer creation."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         # Check if customer with email/phone already exists
-        if dto.email:
-            existing = self.customer_repository.get_by_email(dto.email, self.business_id)
-            if existing:
-                raise BadRequestError(
-                    detail="Customer with this email already exists",
-                    code="CUSTOMER_EXISTS",
-                )
-
-        if dto.phone_number:
-            existing = self.customer_repository.get_by_phone(dto.phone_number, self.business_id)
-            if existing:
-                raise BadRequestError(
-                    detail="Customer with this phone number already exists",
-                    code="CUSTOMER_EXISTS",
-                )
+        _validate_customer_email_phone_uniqueness(
+            customer_repository=self.customer_repository,
+            email=dto.email,
+            phone_number=dto.phone_number,
+            business_id=self.business_id,
+        )
 
         # Create customer entity
         customer = Customer(
@@ -81,19 +130,7 @@ class CreateCustomerUseCase:
 
     def _to_dto(self, customer: Customer) -> CustomerResponseDTO:
         """Convert customer entity to DTO."""
-        return CustomerResponseDTO(
-            id=customer.id,
-            business_id=customer.business_id,
-            name=customer.name,
-            email=customer.email,
-            phone_number=customer.phone_number,
-            address=customer.address,
-            customer_type=customer.customer_type.value,
-            loyalty_points=customer.loyalty_points,
-            total_purchases=customer.total_purchases,
-            created_at=customer.created_at,
-            updated_at=customer.updated_at,
-        )
+        return _customer_to_dto(customer)
 
 
 class GetCustomerUseCase:
@@ -117,36 +154,24 @@ class GetCustomerUseCase:
     def execute(self) -> CustomerResponseDTO:
         """Execute getting customer."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         customer = self.customer_repository.get_by_id(self.customer_id)
-        if not customer or customer.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Customer not found",
-                code="CUSTOMER_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=customer,
+            business_id=self.business_id,
+            entity_name="Customer",
+        )
 
         return self._to_dto(customer)
 
     def _to_dto(self, customer: Customer) -> CustomerResponseDTO:
         """Convert customer entity to DTO."""
-        return CustomerResponseDTO(
-            id=customer.id,
-            business_id=customer.business_id,
-            name=customer.name,
-            email=customer.email,
-            phone_number=customer.phone_number,
-            address=customer.address,
-            customer_type=customer.customer_type.value,
-            loyalty_points=customer.loyalty_points,
-            total_purchases=customer.total_purchases,
-            created_at=customer.created_at,
-            updated_at=customer.updated_at,
-        )
+        return _customer_to_dto(customer)
 
 
 class ListCustomersUseCase:
@@ -170,30 +195,18 @@ class ListCustomersUseCase:
     def execute(self) -> list[CustomerResponseDTO]:
         """Execute listing customers."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         customers = self.customer_repository.get_by_business(self.business_id, limit=self.limit)
         return [self._to_dto(customer) for customer in customers]
 
     def _to_dto(self, customer: Customer) -> CustomerResponseDTO:
         """Convert customer entity to DTO."""
-        return CustomerResponseDTO(
-            id=customer.id,
-            business_id=customer.business_id,
-            name=customer.name,
-            email=customer.email,
-            phone_number=customer.phone_number,
-            address=customer.address,
-            customer_type=customer.customer_type.value,
-            loyalty_points=customer.loyalty_points,
-            total_purchases=customer.total_purchases,
-            created_at=customer.created_at,
-            updated_at=customer.updated_at,
-        )
+        return _customer_to_dto(customer)
 
 
 class UpdateCustomerUseCase:
@@ -217,39 +230,41 @@ class UpdateCustomerUseCase:
     def execute(self, dto: CustomerUpdateDTO) -> CustomerResponseDTO:
         """Execute customer update."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         customer = self.customer_repository.get_by_id(self.customer_id)
-        if not customer or customer.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Customer not found",
-                code="CUSTOMER_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=customer,
+            business_id=self.business_id,
+            entity_name="Customer",
+        )
 
         # Update fields
         if dto.name is not None:
             customer.name = dto.name
         if dto.email is not None:
             # Check if email already exists for another customer
-            existing = self.customer_repository.get_by_email(dto.email, self.business_id)
-            if existing and existing.id != customer.id:
-                raise BadRequestError(
-                    detail="Customer with this email already exists",
-                    code="CUSTOMER_EXISTS",
-                )
+            _validate_customer_email_phone_uniqueness(
+                customer_repository=self.customer_repository,
+                email=dto.email,
+                phone_number=None,
+                business_id=self.business_id,
+                exclude_customer_id=customer.id,
+            )
             customer.email = dto.email
         if dto.phone_number is not None:
             # Check if phone already exists for another customer
-            existing = self.customer_repository.get_by_phone(dto.phone_number, self.business_id)
-            if existing and existing.id != customer.id:
-                raise BadRequestError(
-                    detail="Customer with this phone number already exists",
-                    code="CUSTOMER_EXISTS",
-                )
+            _validate_customer_email_phone_uniqueness(
+                customer_repository=self.customer_repository,
+                email=None,
+                phone_number=dto.phone_number,
+                business_id=self.business_id,
+                exclude_customer_id=customer.id,
+            )
             customer.phone_number = dto.phone_number
         if dto.address is not None:
             customer.address = dto.address
@@ -262,19 +277,7 @@ class UpdateCustomerUseCase:
 
     def _to_dto(self, customer: Customer) -> CustomerResponseDTO:
         """Convert customer entity to DTO."""
-        return CustomerResponseDTO(
-            id=customer.id,
-            business_id=customer.business_id,
-            name=customer.name,
-            email=customer.email,
-            phone_number=customer.phone_number,
-            address=customer.address,
-            customer_type=customer.customer_type.value,
-            loyalty_points=customer.loyalty_points,
-            total_purchases=customer.total_purchases,
-            created_at=customer.created_at,
-            updated_at=customer.updated_at,
-        )
+        return _customer_to_dto(customer)
 
 
 class DeleteCustomerUseCase:
@@ -298,17 +301,17 @@ class DeleteCustomerUseCase:
     def execute(self) -> None:
         """Execute customer deletion."""
         # Check if user has access to business
-        if not self.business_domain_service.user_has_access(self.business_id, self.user_id):
-            raise ForbiddenError(
-                detail="You don't have access to this business",
-                code="PERMISSION_DENIED",
-            )
+        validate_business_access(
+            business_domain_service=self.business_domain_service,
+            business_id=self.business_id,
+            user_id=self.user_id,
+        )
 
         customer = self.customer_repository.get_by_id(self.customer_id)
-        if not customer or customer.business_id != self.business_id:
-            raise NotFoundError(
-                detail="Customer not found",
-                code="CUSTOMER_NOT_FOUND",
-            )
+        validate_entity_belongs_to_business(
+            entity=customer,
+            business_id=self.business_id,
+            entity_name="Customer",
+        )
 
         self.customer_repository.delete(self.customer_id)

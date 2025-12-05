@@ -217,8 +217,6 @@ class SalaryCreateSerializer(serializers.Serializer):
 
     def to_dto(self) -> SalaryCreateDTO:
         """Convert to DTO."""
-        from application.dto.finance_dto import SalaryCreateDTO
-
         return SalaryCreateDTO(
             user_id=self.validated_data["user_id"],
             amount=self.validated_data["amount"],

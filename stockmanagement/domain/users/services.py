@@ -6,16 +6,13 @@ from uuid import UUID, uuid4
 
 from django.utils import timezone
 
+from domain.business.repositories import BusinessMemberRepository, BusinessRepository
 from domain.users.entities import RefreshToken, Session, User
 from domain.users.repositories import (
     DeviceRepository,
     RefreshTokenRepository,
     SessionRepository,
     UserRepository,
-)
-from infrastructure.persistence.repositories import BusinessRepositoryImpl
-from infrastructure.persistence.repositories.business_repositories import (
-    BusinessMemberRepositoryImpl,
 )
 from shared.exceptions.base import BaseAPIException
 
@@ -31,12 +28,16 @@ class UserDomainService:
         session_repository: SessionRepository,
         refresh_token_repository: RefreshTokenRepository,
         device_repository: DeviceRepository,
+        business_repository: BusinessRepository | None = None,
+        business_member_repository: BusinessMemberRepository | None = None,
     ) -> None:
         """Initialize user domain service."""
         self.user_repository = user_repository
         self.session_repository = session_repository
         self.refresh_token_repository = refresh_token_repository
         self.device_repository = device_repository
+        self.business_repository = business_repository
+        self.business_member_repository = business_member_repository
 
     def start_session(
         self,
@@ -124,9 +125,14 @@ class UserDomainService:
         """
 
         if user.role.value not in ["owner", "customer", "wholesaler", "partner"]:
-            member_repo = BusinessMemberRepositoryImpl()
-            business_repo = BusinessRepositoryImpl()
-            memberships = member_repo.get_user_businesses(user.id)
+            if not self.business_member_repository or not self.business_repository:
+                logger.warning(
+                    f"Business repositories not injected for user {user.id}, "
+                    f"skipping business access validation"
+                )
+                return
+
+            memberships = self.business_member_repository.get_user_businesses(user.id)
 
             if not memberships:
                 logger.warning(
@@ -147,7 +153,7 @@ class UserDomainService:
                     status_code=403,
                 )
 
-            business = business_repo.get_by_id(active_membership.business_id)
+            business = self.business_repository.get_by_id(active_membership.business_id)
             if business and not business.is_active:
                 logger.warning(
                     f"Login attempt for member of inactive business: {user.id}, business: {business.id}"
@@ -159,8 +165,14 @@ class UserDomainService:
                 )
 
         if user.role.value == "owner":
-            business_repo = BusinessRepositoryImpl()
-            businesses = business_repo.get_by_owner(user.id)
+            if not self.business_repository:
+                logger.warning(
+                    f"Business repository not injected for owner {user.id}, "
+                    f"skipping business access validation"
+                )
+                return
+
+            businesses = self.business_repository.get_by_owner(user.id)
             if businesses:
                 active_business = next((b for b in businesses if b.is_active), None)
                 if not active_business:
