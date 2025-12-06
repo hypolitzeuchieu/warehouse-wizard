@@ -22,6 +22,9 @@ from infrastructure.persistence.repositories.dashboard_repositories import (
 from infrastructure.persistence.repositories.delivery_repositories import (
     DeliveryRepositoryImpl,
 )
+from infrastructure.persistence.repositories.doc_credential_repositories import (
+    DocumentationCredentialRepositoryImpl,
+)
 from infrastructure.persistence.repositories.finance_repositories import (
     ExpenseAuditLogRepositoryImpl,
     ExpenseRepositoryImpl,
@@ -108,4 +111,6 @@ __all__ = [
     "DashboardCategoryStatisticsRepositoryImpl",
     "DashboardSubCategoryStatisticsRepositoryImpl",
     "DashboardCashierStatisticsRepositoryImpl",
+    # Documentation repositories
+    "DocumentationCredentialRepositoryImpl",
 ]

@@ -6,6 +6,8 @@ from drf_yasg.generators import OpenAPISchemaGenerator
 from drf_yasg.views import get_schema_view
 from rest_framework.permissions import AllowAny
 
+from presentation.views.doc_auth_views import doc_login_view, doc_logout_view
+
 
 class CustomSchemaGenerator(OpenAPISchemaGenerator):
     def get_operation(self, view, path, prefix, method, components, request):
@@ -37,6 +39,10 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path("v1/", include("presentation.api.urls")),
+    # Documentation authentication routes (must be before docs routes)
+    path("v1/docs/login/", doc_login_view, name="doc-login"),
+    path("v1/docs/logout/", doc_logout_view, name="doc-logout"),
+    # Documentation routes
     path(
         "v1/docs/",
         schema_view.with_ui("swagger", cache_timeout=0),

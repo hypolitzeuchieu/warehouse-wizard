@@ -39,4 +39,6 @@ __all__ = [
     # Credit models
     "Credit",
     "CreditPayment",
+    # Documentation models
+    "DocumentationCredential",
 ]
