@@ -28,6 +28,15 @@ if DEBUG and ENVIRONMENT == "production":
         "Set ALLOW_DEBUG_IN_PRODUCTION=True only for emergency debugging."
     )
 
+# ALLOWED_HOSTS configuration
+ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+
+# Security: ALLOWED_HOSTS must be configured in production
+if ENVIRONMENT == "production" and not ALLOWED_HOSTS:
+    raise ValueError(
+        "ALLOWED_HOSTS must be configured in production environment. "
+        "Set ALLOWED_HOSTS environment variable with comma-separated list of allowed hosts."
+    )
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -38,6 +47,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "infrastructure.persistence.models.apps.PersistenceModelsConfig",
     "tasks.apps.TasksConfig",
+    "management.apps.ManagementConfig",
     "rest_framework",
     "corsheaders",
     "rest_framework.authtoken",
