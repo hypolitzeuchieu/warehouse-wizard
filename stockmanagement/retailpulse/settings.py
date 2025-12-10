@@ -341,6 +341,10 @@ LOGGING = get_logging_config(debug=DEBUG)
 DOC_USERNAME = os.getenv("DOC_USERNAME", None)
 DOC_PASSWORD = os.getenv("DOC_PASSWORD", None)
 
+# Documentation Login Rate Limiting
+DOC_LOGIN_RATE_LIMIT_REQUESTS = int(os.getenv("DOC_LOGIN_RATE_LIMIT_REQUESTS", "5"))
+DOC_LOGIN_RATE_LIMIT_PERIOD = int(os.getenv("DOC_LOGIN_RATE_LIMIT_PERIOD", "900"))  # 15 minutes
+
 # Google OAuth Settings
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", None)
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", None)

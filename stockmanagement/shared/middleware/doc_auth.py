@@ -1,16 +1,17 @@
 """Middleware for Swagger/ReDoc authentication."""
 
-import base64
+import logging
 
-from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.utils.deprecation import MiddlewareMixin
 
-from shared.response.mixin import ResponseMixin
+from infrastructure.persistence.repositories import DocumentationCredentialRepositoryImpl
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentationAuthMiddleware(MiddlewareMixin):
-    """Middleware to protect Swagger/ReDoc endpoints with basic authentication."""
+    """Middleware to protect Swagger/ReDoc endpoints with session-based authentication."""
 
     def process_request(self, request: HttpRequest) -> HttpResponse | None:
         """Process request and check authentication for documentation endpoints.
@@ -27,44 +28,33 @@ class DocumentationAuthMiddleware(MiddlewareMixin):
         ):
             return None
 
-        # Check if authentication is required
-        doc_username = getattr(settings, "DOC_USERNAME", None)
-        doc_password = getattr(settings, "DOC_PASSWORD", None)
-
-        if not doc_username or not doc_password:
-            # If credentials are not set, allow access (for development)
+        # Allow access to login and logout endpoints
+        if request.path in ["/api/v1/docs/login/", "/api/v1/docs/logout/"]:
             return None
 
-        # Check for Authorization header
-        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+        # Check session authentication
+        if request.session.get("doc_authenticated", False):
+            # Verify that the credential still exists and is valid
+            repository = DocumentationCredentialRepositoryImpl()
+            username = request.session.get("doc_username")
+            if username:
+                credential = repository.get_by_username(username)
+                if credential and credential.is_valid():
+                    # Session is valid
+                    return None
+                else:
+                    # Credential expired or invalid, clear session
+                    logger.info(f"Documentation credential expired/invalid for {username}")
+                    request.session.pop("doc_authenticated", None)
+                    request.session.pop("doc_username", None)
 
-        if not auth_header.startswith("Basic "):
-            return self._unauthorized_response()
+        # Not authenticated - redirect to login
+        login_url = "/api/v1/docs/login/"
+        if request.path not in [login_url]:
+            # Preserve the original URL for redirect after login
+            next_url = request.path
+            if request.GET:
+                next_url += "?" + request.GET.urlencode()
+            login_url += f"?next={next_url}"
 
-        # Decode credentials
-        try:
-            encoded = auth_header.split(" ")[1]
-            decoded = base64.b64decode(encoded).decode("utf-8")
-            username, password = decoded.split(":", 1)
-        except (ValueError, IndexError):
-            return self._unauthorized_response()
-
-        # Authenticate - check credentials directly
-        if username != doc_username or password != doc_password:
-            return self._unauthorized_response()
-
-        return None
-
-    def _unauthorized_response(self) -> HttpResponse:
-        """Return 401 Unauthorized response.
-
-        Returns:
-            HttpResponse with 401 status
-        """
-        response = ResponseMixin.error(
-            message="Authentication required to access documentation",
-            status_code=401,
-            code="UNAUTHORIZED",
-        )
-        response["WWW-Authenticate"] = 'Basic realm="Documentation"'
-        return response
+        return HttpResponseRedirect(login_url)
