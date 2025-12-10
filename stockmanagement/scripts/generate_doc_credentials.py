@@ -16,13 +16,16 @@ from management.commands.generate_doc_credentials import Command  # noqa: E402
 
 def main():
     """Main function."""
-    if len(sys.argv) < 2:
-        print("Error: Username is required.")
-        print("Usage: python scripts/generate_doc_credentials.py <username> [--days N]")
-        sys.exit(1)
-
-    username = sys.argv[1]
+    username = None
     days = None
+
+    # Parse arguments if provided
+    if len(sys.argv) >= 2:
+        # Check if first arg is --days
+        if sys.argv[1] == "--days" and len(sys.argv) >= 3:
+            days = sys.argv[2]
+        elif sys.argv[1] != "--days":
+            username = sys.argv[1]
 
     # Parse optional --days argument
     if "--days" in sys.argv:
@@ -32,7 +35,9 @@ def main():
 
     # Create command instance and call handle
     cmd = Command()
-    options = {"username": username}
+    options = {}
+    if username:
+        options["username"] = username
     if days:
         options["days"] = int(days)
     cmd.handle(**options)
