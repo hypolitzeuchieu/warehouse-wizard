@@ -16,10 +16,6 @@ from shared.rate_limiting.decorators import get_client_ip, rate_limit
 
 logger = logging.getLogger(__name__)
 
-# Rate limiting settings for documentation login
-DOC_LOGIN_RATE_LIMIT_REQUESTS = getattr(settings, "DOC_LOGIN_RATE_LIMIT_REQUESTS", 5)
-DOC_LOGIN_RATE_LIMIT_PERIOD = getattr(settings, "DOC_LOGIN_RATE_LIMIT_PERIOD", 900)  # 15 minutes
-
 # Validation constants
 USERNAME_MIN_LENGTH = 3
 USERNAME_MAX_LENGTH = 150
@@ -30,8 +26,8 @@ USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 @require_http_methods(["GET", "POST"])
 @csrf_protect
 @rate_limit(
-    requests_per_period=DOC_LOGIN_RATE_LIMIT_REQUESTS,
-    period_seconds=DOC_LOGIN_RATE_LIMIT_PERIOD,
+    requests_per_period=settings.DOC_LOGIN_RATE_LIMIT_REQUESTS,
+    period_seconds=settings.DOC_LOGIN_RATE_LIMIT_PERIOD,
 )
 def doc_login_view(request):
     """Documentation login view.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Script to generate documentation credentials."""
 
 import os
@@ -6,12 +5,13 @@ import sys
 
 import django
 
-from management.commands.generate_doc_credentials import Command
-
 # Setup Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "retailpulse.settings")
 
+
 django.setup()
+
+from management.commands.generate_doc_credentials import Command  # noqa: E402
 
 
 def main():

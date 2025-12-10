@@ -49,7 +49,7 @@ class ForgotPasswordUseCase:
 
         frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
 
-        generic_message = "If the email or phone number exists, a reset link/code has been sent."
+        generic_message = "If this user exists, a reset link/code has been sent."
 
         user = None
         if dto.email:
