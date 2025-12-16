@@ -30,6 +30,17 @@ jobs:
 
       - name: Run tests with pytest
         working-directory: stockmanagement
+        env:
+          SECRET_KEY: "test-secret-key-for-ci-cd-only-not-for-production"
+          JWT_SECRET_KEY: "test-jwt-secret-key-for-ci-cd-only-not-for-production"
+          ENVIRONMENT: "development"
+          DEBUG: "True"
+          DATABASE_NAME: "test_db"
+          DATABASE_USER: "test_user"
+          DATABASE_PASSWORD: "test_password"
+          DATABASE_HOST: "localhost"
+          DATABASE_PORT: "5432"
+          REDIS_URL: "redis://localhost:6379/0"
         run: uv run pytest
 
   deploy_code:
