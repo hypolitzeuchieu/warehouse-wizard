@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 
+from django.core.validators import validate_email
 from rest_framework import serializers
 
 from application.dto.user_dto import (
@@ -104,24 +105,20 @@ def validate_phone_number_format(value: str, check_uniqueness: bool = False) -> 
 
 def validate_email_or_phone_number(attrs: dict) -> None:
     """
-    Validate that exactly one of email or phone_number is provided.
+    Validate that at least one of email or phone_number is provided.
+    Both can be provided, and email will be prioritized for OTP sending.
 
     Args:
         attrs: Dictionary of validated attributes
 
     Raises:
-        serializers.ValidationError: If both or neither are provided
+        serializers.ValidationError: If neither email nor phone_number is provided
     """
     email = attrs.get("email")
     phone_number = attrs.get("phone_number")
 
     if not email and not phone_number:
         raise serializers.ValidationError("Either email or phone_number must be provided") from None
-
-    if email and phone_number:
-        raise serializers.ValidationError(
-            "Provide either email or phone_number, not both"
-        ) from None
 
 
 class UserCreateSerializer(serializers.Serializer):
@@ -216,32 +213,34 @@ class UserCreateSerializer(serializers.Serializer):
     def to_dto(self) -> UserCreateDTO:
         """Convert to DTO."""
         name = self.validated_data.get("name")
+        email = self.validated_data.get("email")
+        phone_number = self.validated_data.get("phone_number")
+
         if not name:
-            email = self.validated_data.get("email")
             if email:
                 name = email.split("@")[0]
+            elif phone_number:
+                name = f"user_{phone_number[-4:]}"
             else:
-                phone_number = self.validated_data.get("phone_number")
-                if phone_number:
-                    name = f"user_{phone_number[-4:]}"
-                else:
-                    name = "user"
+                name = "user"
 
         return UserCreateDTO(
-            email=self.validated_data.get("email"),
+            email=email,
             name=name,
             password=self.validated_data.get("password"),
-            phone_number=self.validated_data.get("phone_number"),
+            phone_number=phone_number,
             role=UserRole(self.validated_data.get("role", UserRole.CUSTOMER.value)),
             address=self.validated_data.get("address"),
         )
 
 
 class LoginSerializer(serializers.Serializer):
-    """Serializer for login - supports email+password or phone+password."""
+    """Serializer for login - supports identifier (email or phone) + password."""
 
-    email = serializers.EmailField(required=False)
-    phone_number = serializers.CharField(max_length=30, required=False)
+    identifier = serializers.CharField(
+        required=True,
+        help_text="Email address or phone number in international format (E.164).",
+    )
     password = serializers.CharField(
         write_only=True,
         required=True,
@@ -251,9 +250,27 @@ class LoginSerializer(serializers.Serializer):
     device_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
     device_type = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
+    def validate_identifier(self, value):
+        """Validate and normalize identifier (email or phone number)."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Identifier cannot be empty") from None
+
+        identifier = value.strip()
+
+        # Check if it's an email (contains @)
+        if "@" in identifier:
+            # Validate email format
+            try:
+                validate_email(identifier)
+                return identifier.lower()
+            except Exception:
+                raise serializers.ValidationError("Invalid email format") from None
+        else:
+            # Validate phone number format
+            return validate_phone_number_format(identifier, check_uniqueness=False)
+
     def validate(self, attrs):
-        """Validate that either email or phone_number is provided."""
-        validate_email_or_phone_number(attrs)
+        """Validate serializer data."""
         if not attrs.get("password"):
             raise serializers.ValidationError("Password is required") from None
         return attrs
@@ -264,9 +281,18 @@ class LoginSerializer(serializers.Serializer):
         provided_device_type = self.validated_data.get("device_type")
         device_type = get_or_detect_device_type(provided_device_type, user_agent)
 
+        identifier = self.validated_data.get("identifier")
+        email = None
+        phone_number = None
+
+        if "@" in identifier:
+            email = identifier
+        else:
+            phone_number = identifier
+
         return LoginDTO(
-            email=self.validated_data.get("email"),
-            phone_number=self.validated_data.get("phone_number"),
+            email=email,
+            phone_number=phone_number,
             password=self.validated_data.get("password"),
             device_id=self.validated_data.get("device_id"),
             device_name=self.validated_data.get("device_name"),
@@ -319,21 +345,43 @@ class LogoutSerializer(serializers.Serializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    """Serializer for OTP request."""
+    """Serializer for OTP request - supports identifier (email or phone)."""
 
-    email = serializers.EmailField(required=False)
-    phone_number = serializers.CharField(max_length=30, required=False)
+    identifier = serializers.CharField(
+        required=True,
+        help_text="Email address or phone number in international format (E.164).",
+    )
 
-    def validate(self, attrs):
-        """Validate that either email or phone_number is provided."""
-        validate_email_or_phone_number(attrs)
-        return attrs
+    def validate_identifier(self, value):
+        """Validate and normalize identifier (email or phone number)."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Identifier cannot be empty") from None
+
+        identifier = value.strip()
+
+        if "@" in identifier:
+            try:
+                validate_email(identifier)
+                return identifier.lower()
+            except Exception:
+                raise serializers.ValidationError("Invalid email format") from None
+        else:
+            return validate_phone_number_format(identifier, check_uniqueness=False)
 
     def to_dto(self) -> OTPRequestDTO:
         """Convert to DTO."""
+        identifier = self.validated_data.get("identifier")
+        email = None
+        phone_number = None
+
+        if "@" in identifier:
+            email = identifier
+        else:
+            phone_number = identifier
+
         return OTPRequestDTO(
-            email=self.validated_data.get("email"),
-            phone_number=self.validated_data.get("phone_number"),
+            email=email,
+            phone_number=phone_number,
         )
 
 
@@ -433,32 +481,40 @@ class GoogleOAuthSerializer(serializers.Serializer):
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    """Serializer for forgot password request with strict validation."""
+    """Serializer for forgot password request - supports identifier (email or phone)."""
 
-    email = serializers.EmailField(required=False)
-    phone_number = serializers.CharField(
-        max_length=30, required=False, help_text="Phone number in international format"
+    identifier = serializers.CharField(
+        required=True,
+        help_text="Email address or phone number in international format (E.164).",
     )
 
-    def validate_email(self, value):
-        """Validate email format."""
-        if value:
-            return value.strip().lower()
-        return value
+    def validate_identifier(self, value):
+        """Validate and normalize identifier (email or phone number)."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Identifier cannot be empty") from None
 
-    def validate_phone_number(self, value):
-        """Validate phone number in E.164 format."""
-        return validate_phone_number_format(value, check_uniqueness=False)
+        identifier = value.strip()
 
-    def validate(self, attrs):
-        """Validate that either email or phone_number is provided."""
-        validate_email_or_phone_number(attrs)
-        return attrs
+        if "@" in identifier:
+            try:
+                validate_email(identifier)
+                return identifier.lower()
+            except Exception:
+                raise serializers.ValidationError("Invalid email format") from None
+        else:
+            return validate_phone_number_format(identifier, check_uniqueness=False)
 
     def to_dto(self) -> ForgotPasswordDTO:
         """Convert to DTO."""
-        email = self.validated_data.get("email")
-        phone_number = self.validated_data.get("phone_number")
+        identifier = self.validated_data.get("identifier")
+        email = None
+        phone_number = None
+
+        if "@" in identifier:
+            email = identifier
+        else:
+            phone_number = identifier
+
         reset_type = "email" if email else "sms"
 
         return ForgotPasswordDTO(

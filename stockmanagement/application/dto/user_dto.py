@@ -11,7 +11,7 @@ from domain.users.entities import UserRole
 class UserCreateDTO:
     """DTO for creating a user."""
 
-    email: str
+    email: str | None = None
     name: str | None = None
     password: str = ""
     phone_number: str | None = None

@@ -9,14 +9,15 @@ from infrastructure.persistence.repositories import DocumentationCredentialRepos
 class Command(BaseCommand):
     """Generate credentials for documentation access."""
 
-    help = "Generate credentials for Swagger/ReDoc authentication. Username is required, password will be auto-generated."
+    help = "Generate credentials for Swagger/ReDoc authentication. Username will be prompted if not provided, password will be auto-generated."
 
     def add_arguments(self, parser):
         """Add command arguments."""
         parser.add_argument(
             "username",
             type=str,
-            help="Username for documentation access (required)",
+            nargs="?",
+            help="Username for documentation access (will be prompted if not provided)",
         )
         parser.add_argument(
             "--days",
@@ -31,13 +32,27 @@ class Command(BaseCommand):
         days_valid = options.get("days", 7)
 
         if not username:
-            self.stdout.write(self.style.ERROR("\nError: Username is required.\n"))
-            self.stdout.write(
-                self.style.WARNING(
-                    "Usage: python manage.py generate_doc_credentials <username> [--days N]\n"
-                )
-            )
-            return
+            self.stdout.write(self.style.SUCCESS("\n" + "=" * 60))
+            self.stdout.write(self.style.SUCCESS("Documentation Credentials Generator"))
+            self.stdout.write(self.style.SUCCESS("=" * 60 + "\n"))
+            username = input(self.style.WARNING("Enter username: ")).strip()
+
+            if not username:
+                self.stdout.write(self.style.ERROR("\nError: Username cannot be empty.\n"))
+                return
+
+            if days_valid == 7:
+                days_input = input(
+                    self.style.WARNING("Enter number of days (default: 7): ")
+                ).strip()
+                if days_input:
+                    try:
+                        days_valid = int(days_input)
+                    except ValueError:
+                        self.stdout.write(
+                            self.style.ERROR("\nInvalid number of days. Using default: 7\n")
+                        )
+                        days_valid = 7
 
         try:
             repository = DocumentationCredentialRepositoryImpl()

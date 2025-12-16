@@ -1,4 +1,4 @@
-.PHONY: start stop makemigrations migrate start-celery start-celery-beat start-runserver check-migrations check-and-create-migrations
+.PHONY: start stop makemigrations migrate start-celery start-celery-beat start-runserver check-migrations check-and-create-migrations generate-doc-credentials
 
 UV ?= uv
 PYTHON ?= python
@@ -37,6 +37,10 @@ makemigrations:
 migrate:
 	@echo "Running migrations..."
 	@$(MANAGE) migrate
+
+generate-doc-credentials:
+	@echo "Starting documentation credentials generator..."
+	@$(UV) run $(PYTHON) scripts/generate_doc_credentials.py $(if $(USERNAME),$(USERNAME),) $(if $(DAYS),--days $(DAYS),)
 
 start-celery:
 	@mkdir -p $(PID_DIR) $(LOG_DIR)

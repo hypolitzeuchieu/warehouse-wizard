@@ -179,67 +179,64 @@ def login_view(request: Request) -> Response:
             logger.debug(f"User lookup by phone: {dto.phone_number} - found: {user is not None}")
 
         if not user:
-            logger.warning(f"Login failed - user not found: {identifier}")
+            logger.warning(f"Login attempt with invalid identifier: {identifier}")
             return helper.error(
                 message="Invalid credentials",
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 code="INVALID_CREDENTIALS",
             )
 
-        user_repository = UserRepositoryImpl()
-        if not user_repository.verify_password(user.id, dto.password):
-            logger.warning(f"Login failed - invalid password for user: {user.id} ({identifier})")
+        if not UserRepositoryImpl().verify_password(user.id, dto.password):
+            logger.warning(
+                f"Login attempt with invalid password for user: {user.id} ({identifier})"
+            )
             return helper.error(
                 message="Invalid credentials",
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 code="INVALID_CREDENTIALS",
             )
 
         if not user.is_active:
-            logger.warning(f"Login failed - account disabled: {user.id} ({identifier})")
+            logger.warning(f"Login attempt for disabled account: {user.id} ({identifier})")
             return helper.error(
                 message="Your account has been disabled. Please contact support.",
                 status_code=status.HTTP_403_FORBIDDEN,
                 code="ACCOUNT_DISABLED",
             )
 
-        if not user.email_verified:
-            logger.info(
-                f"Login with unverified email - sending OTP to verify: {user.id} ({identifier})"
-            )
-        else:
-            logger.debug(f"Credentials verified for user: {user.id} ({identifier})")
-
         otp_use_case = RequestOTPUseCase(
             otp_repository=OTPRepositoryImpl(),
             user_repository=UserRepositoryImpl(),
         )
 
+        otp_type = None
+        otp_request_dto = None
+
         if dto.email:
             otp_type = "email"
-            otp_request_dto = OTPRequestDTO(
-                email=user.email,
-            )
+            otp_request_dto = OTPRequestDTO(email=dto.email)
         elif dto.phone_number:
             otp_type = "sms"
-            otp_request_dto = OTPRequestDTO(
-                phone_number=user.phone_number,
-            )
+            otp_request_dto = OTPRequestDTO(phone_number=dto.phone_number)
         else:
-            otp_type = "email" if user.email else "sms"
+            # Fallback (should not happen)
+            otp_type = "email"
             otp_request_dto = OTPRequestDTO(
-                email=user.email if user.email else None,
-                phone_number=user.phone_number if not user.email else None,
+                email=dto.email if dto.email else None,
+                phone_number=dto.phone_number if dto.phone_number else None,
             )
 
         result = otp_use_case.execute(otp_request_dto)
+
+        # Log OTP sent (but don't reveal if user exists)
         logger.info(
-            f"OTP sent for login - user: {user.id} ({identifier}), "
+            f"OTP sent for login attempt - identifier: {identifier}, "
             f"type: {otp_type}, expires in: {result.get('expires_in_minutes')} minutes"
         )
 
+        # Always return success message (don't reveal if user exists)
         return helper.success(
-            message="Credentials verified. OTP sent successfully. Please verify OTP to complete login.",
+            message="OTP sent successfully. Please verify OTP to complete login.",
             data={
                 "expires_in_minutes": result["expires_in_minutes"],
             },
@@ -749,7 +746,7 @@ def forgot_password_view(request: Request) -> Response:
 
     validation_error = helper.handle_serializer_validation(
         serializer=serializer,
-        message="Validation failed. Please check your email or phone number.",
+        message="Validation failed. Please check your identifier (email or phone number).",
         code="VALIDATION_ERROR",
     )
     if validation_error:

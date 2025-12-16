@@ -212,7 +212,7 @@ class SignupUseCase:
             if otp_type == "email":
                 destination_description = f"your email ({otp_destination})"
                 check_instruction = "Please check your inbox and verify your account."
-            else:  # SMS
+            else:
                 destination_description = f"your phone number ({otp_destination})"
                 check_instruction = "Please check your messages and verify your account."
             message = (
@@ -222,7 +222,6 @@ class SignupUseCase:
                 f"The OTP will expire in {expires_in_minutes} minutes."
             )
         else:
-            # Fallback if OTP sending failed
             message = (
                 "Account created successfully, but we encountered an issue "
                 "sending the OTP. Please request a new OTP using the "

@@ -7,6 +7,8 @@ from django.contrib import admin
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import include, path
 
+from shared.views.error_views import mahplan_404_view, mahplan_500_view
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("retailpulse.api_url")),
@@ -21,3 +23,6 @@ if settings.DEBUG:
     urlpatterns = [
         path("__debug__/", include(debug_toolbar.urls)),
     ] + urlpatterns
+
+handler404 = mahplan_404_view
+handler500 = mahplan_500_view
