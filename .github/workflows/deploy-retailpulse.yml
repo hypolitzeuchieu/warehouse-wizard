@@ -39,6 +39,24 @@ jobs:
 
       - name: Upload archive to S3 and deploy to EC2
         run: |
+          # Validate required secrets
+          if [ -z "${{ secrets.AWS_S3_DEPLOY_BUCKET }}" ]; then
+            echo "❌ Error: AWS_S3_DEPLOY_BUCKET secret is not set in GitHub repository secrets"
+            echo "Please add AWS_S3_DEPLOY_BUCKET to your repository secrets at:"
+            echo "https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.AWS_EC2_INSTANCE_ID }}" ]; then
+            echo "❌ Error: AWS_EC2_INSTANCE_ID secret is not set"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.EC2_TARGET_DIR }}" ]; then
+            echo "❌ Error: EC2_TARGET_DIR secret is not set"
+            exit 1
+          fi
+
           TIMESTAMP=$(date +%s)
           DEPLOY_KEY="deploy-${TIMESTAMP}.tar.gz"
           aws s3 cp deploy.tar.gz s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/$DEPLOY_KEY
