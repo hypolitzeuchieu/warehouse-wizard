@@ -14,59 +14,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
-
-      - name: Deploy to EC2
-        run: |
-          set -e
-
-          EC2_HOST="${{ secrets.EC2_HOST }}"
-          EC2_USER="${{ secrets.EC2_USER }}"
-          TARGET_DIR="${{ secrets.EC2_TARGET_DIR }}"
-
-          # Validate required variables
-          if [ -z "$EC2_HOST" ]; then
-            echo "❌ Error: EC2_HOST secret is not set"
-            exit 1
-          fi
-
-          if [ -z "$EC2_USER" ]; then
-            echo "❌ Error: EC2_USER secret is not set"
-            exit 1
-          fi
-
-          if [ -z "$TARGET_DIR" ]; then
-            echo "❌ Error: EC2_TARGET_DIR secret is not set"
-            exit 1
-          fi
-
-          echo "🚀 Deploying to $EC2_USER@$EC2_HOST:$TARGET_DIR"
-          echo "📋 Configuration:"
-          echo "   Host: $EC2_HOST"
-          echo "   User: $EC2_USER"
-          echo "   Target: $TARGET_DIR"
-
-          # Deploy using rsync
-          echo "📤 Syncing files to EC2..."
-          rsync -avz --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='__pycache__' \
-            --exclude='*.pyc' \
-            --exclude='.pytest_cache' \
-            --exclude='db.sqlite3' \
-            --exclude='celerybeat-schedule.db' \
-            --exclude='*.log' \
-            --exclude='.env' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-            stockmanagement/ "$EC2_USER@$EC2_HOST:$TARGET_DIR/"
-
-          echo "✅ Deployment completed!"
+      - name: Copy files via SCP
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          source: "stockmanagement/,.gitignore"
+          target: ${{ secrets.EC2_TARGET_DIR }}
+          strip_components: 0
+          rm: false
+          overwrite: true
+          exclude: |
+            .git
+            .github
+            __pycache__
+            *.pyc
+            .pytest_cache
+            db.sqlite3
+            celerybeat-schedule.db
+            *.log
+            .env
 
   test_configuration:
     name: Test production configuration on EC2
@@ -74,76 +43,59 @@ jobs:
     needs: deploy_code
 
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
-
       - name: Test configuration on EC2
-        run: |
-          set -e
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          script: |
+            cd ${{ secrets.EC2_TARGET_DIR }}
 
-          EC2_HOST="${{ secrets.EC2_HOST }}"
-          EC2_USER="${{ secrets.EC2_USER }}"
-          TARGET_DIR="${{ secrets.EC2_TARGET_DIR }}"
-          PROD_ENV="${{ secrets.PROD_ENV }}"
+            echo "📝 Writing .env file..."
+            echo "${{ secrets.PROD_ENV }}" > .env
 
-          echo "🧪 Testing production configuration..."
-
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            $EC2_USER@$EC2_HOST bash -c "
-            set -e
-            export TARGET_DIR=\"$TARGET_DIR\"
-            export PROD_ENV=\"$PROD_ENV\"
-
-            echo '📝 Writing .env file...'
-            cd \"\$TARGET_DIR\"
-            echo \"\$PROD_ENV\" > .env
-
-            echo '📦 Checking/installing uv...'
+            echo "📦 Checking/installing uv..."
             if ! /home/ubuntu/.local/bin/uv --version >/dev/null 2>&1; then
               curl -LsSf https://astral.sh/uv/install.sh | sh
             fi
-            export PATH=\"/home/ubuntu/.local/bin:\$PATH\"
+            export PATH="/home/ubuntu/.local/bin:$PATH"
 
-            echo '📦 Installing/updating dependencies...'
-            cd \"\$TARGET_DIR\"
+            echo "📦 Installing/updating dependencies..."
             uv sync --frozen
 
-            echo '🔍 Checking required environment variables...'
+            echo "🔍 Checking required environment variables..."
             set -a
             . ./.env
             set +a
             required_vars=(SECRET_KEY JWT_SECRET_KEY DATABASE_NAME DATABASE_USER DATABASE_PASSWORD DATABASE_HOST DATABASE_PORT REDIS_URL)
-            for var in \"\${required_vars[@]}\"; do
-              if [ -z \"\${!var}\" ]; then
-                echo \"❌ Missing required environment variable: \$var\"
+            for var in "${required_vars[@]}"; do
+              if [ -z "${!var}" ]; then
+                echo "❌ Missing required environment variable: $var"
                 exit 1
               fi
             done
 
-            echo '🔍 Checking for pending migrations...'
+            echo "🔍 Checking for pending migrations..."
             if ! uv run python manage.py makemigrations --check; then
-              echo '❌ Pending migrations detected'
+              echo "❌ Pending migrations detected"
               exit 1
             fi
 
-            echo '🔍 Testing collectstatic (dry-run)...'
+            echo "🔍 Testing collectstatic (dry-run)..."
             if ! uv run python manage.py collectstatic --noinput --dry-run; then
-              echo '❌ collectstatic dry-run failed'
+              echo "❌ collectstatic dry-run failed"
               exit 1
             fi
 
-            echo '🔍 Running Django deploy checks...'
+            echo "🔍 Running Django deploy checks..."
             if ! uv run python manage.py check --deploy; then
-              echo '❌ Django deploy checks failed'
+              echo "❌ Django deploy checks failed"
               exit 1
             fi
 
-            echo '✅ Configuration tests passed successfully.'
-            "
+            echo "✅ Configuration tests passed successfully."
 
   remote_setup_and_launch:
     name: Apply migrations and launch services on EC2
@@ -151,82 +103,68 @@ jobs:
     needs: test_configuration
 
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
-
       - name: Setup and deploy on EC2
-        run: |
-          set -e
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          script: |
+            cd ${{ secrets.EC2_TARGET_DIR }}
+            export PATH="/home/ubuntu/.local/bin:$PATH"
 
-          EC2_HOST="${{ secrets.EC2_HOST }}"
-          EC2_USER="${{ secrets.EC2_USER }}"
-          TARGET_DIR="${{ secrets.EC2_TARGET_DIR }}"
-
-          echo "🚀 Setting up and launching services..."
-
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            $EC2_USER@$EC2_HOST bash -c "
-            set -e
-            export TARGET_DIR=\"$TARGET_DIR\"
-            export PATH=\"/home/ubuntu/.local/bin:\$PATH\"
-
-            echo '📦 Installing/updating dependencies...'
-            cd \"\$TARGET_DIR\"
+            echo "📦 Installing/updating dependencies..."
             uv sync --frozen
 
-            echo '🗄️  Applying database migrations...'
+            echo "🗄️  Applying database migrations..."
             set -a
             . ./.env
             set +a
             uv run python manage.py migrate
 
-            echo '📁 Collecting static files...'
+            echo "📁 Collecting static files..."
             uv run python manage.py collectstatic --noinput
 
-            echo '📋 Supervisor status before restart...'
+            echo "📋 Supervisor status before restart..."
             sudo supervisorctl status || true
             sudo supervisorctl reread
             sudo supervisorctl update
 
-            echo '🔄 Restarting maahbusiness services...'
+            echo "🔄 Restarting maahbusiness services..."
             sudo supervisorctl restart maahbusiness-web maahbusiness-celery maahbusiness-celerybeat || true
             sleep 5
 
-            echo '📋 Supervisor status after restart...'
+            echo "📋 Supervisor status after restart..."
             sudo supervisorctl status maahbusiness-web maahbusiness-celery maahbusiness-celerybeat || true
 
-            echo '🔍 Verifying services are running...'
-            if ! sudo supervisorctl status maahbusiness-web | grep -q 'RUNNING'; then
-              echo '❌ maahbusiness-web failed to start!'
+            echo "🔍 Verifying services are running..."
+            if ! sudo supervisorctl status maahbusiness-web | grep -q "RUNNING"; then
+              echo "❌ maahbusiness-web failed to start!"
               sudo supervisorctl tail -100 maahbusiness-web stderr || true
               exit 1
             fi
 
-            if ! sudo supervisorctl status maahbusiness-celery | grep -q 'RUNNING'; then
-              echo '❌ maahbusiness-celery failed to start!'
+            if ! sudo supervisorctl status maahbusiness-celery | grep -q "RUNNING"; then
+              echo "❌ maahbusiness-celery failed to start!"
               sudo supervisorctl tail -100 maahbusiness-celery stderr || true
               exit 1
             fi
 
-            if ! sudo supervisorctl status maahbusiness-celerybeat | grep -q 'RUNNING'; then
-              echo '❌ maahbusiness-celerybeat failed to start!'
+            if ! sudo supervisorctl status maahbusiness-celerybeat | grep -q "RUNNING"; then
+              echo "❌ maahbusiness-celerybeat failed to start!"
               sudo supervisorctl tail -100 maahbusiness-celerybeat stderr || true
               exit 1
             fi
 
-            echo '✅ All Supervisor services are running'
+            echo "✅ All Supervisor services are running"
 
             if sudo nginx -t; then
               sudo systemctl reload nginx
-              echo '✅ nginx reloaded successfully'
+              echo "✅ nginx reloaded successfully"
             else
-              echo '❌ nginx configuration test failed!'
+              echo "❌ nginx configuration test failed!"
               exit 1
             fi
 
-            echo '✅ Deployment completed successfully.'
-            "
+            echo "✅ Deployment completed successfully."
