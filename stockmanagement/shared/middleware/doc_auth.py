@@ -2,7 +2,7 @@
 
 import logging
 
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 
 from infrastructure.persistence.repositories import DocumentationCredentialRepositoryImpl
@@ -47,6 +47,12 @@ class DocumentationAuthMiddleware(MiddlewareMixin):
                     logger.info(f"Documentation credential expired/invalid for {username}")
                     request.session.pop("doc_authenticated", None)
                     request.session.pop("doc_username", None)
+
+        if request.path == "/api/v1/docs/" and request.GET.get("format") == "openapi":
+            return JsonResponse(
+                {"detail": "Authentication required for API documentation schema."},
+                status=401,
+            )
 
         # Not authenticated - redirect to login
         login_url = "/api/v1/docs/login/"
