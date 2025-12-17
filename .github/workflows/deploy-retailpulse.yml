@@ -68,20 +68,28 @@ jobs:
           echo "Instance ID: $INSTANCE_ID"
           echo "Region: $AWS_REGION"
 
-          # First, check EC2 instance state
+          # First, check EC2 instance state (optional - may fail if permissions are missing)
           echo "📋 Checking EC2 instance state..."
-          INSTANCE_STATE=$(aws ec2 describe-instances \
+          EC2_CHECK_OUTPUT=$(aws ec2 describe-instances \
             --instance-ids "$INSTANCE_ID" \
             --region "$AWS_REGION" \
             --query "Reservations[0].Instances[0].State.Name" \
-            --output text 2>/dev/null || echo "unknown")
+            --output text 2>&1)
+          EC2_CHECK_EXIT=$?
 
-          echo "Instance state: $INSTANCE_STATE"
-
-          if [ "$INSTANCE_STATE" != "running" ]; then
-            echo "❌ Error: Instance is not in 'running' state. Current state: $INSTANCE_STATE"
-            echo "Please ensure the instance is running before deploying."
-            exit 1
+          if [ $EC2_CHECK_EXIT -eq 0 ]; then
+            INSTANCE_STATE="$EC2_CHECK_OUTPUT"
+            echo "Instance state: $INSTANCE_STATE"
+            if [ "$INSTANCE_STATE" != "running" ]; then
+              echo "⚠️  Warning: Instance is not in 'running' state. Current state: $INSTANCE_STATE"
+              echo "Continuing anyway - SSM will handle the error if instance is not accessible."
+            fi
+          else
+            echo "⚠️  Warning: Could not check EC2 instance state (this is optional)"
+            echo "Error: $EC2_CHECK_OUTPUT"
+            echo "This may be due to missing EC2 permissions. Continuing with SSM check..."
+            echo ""
+            echo "💡 To fix: Add 'ec2:DescribeInstances' permission to IAM user 'maahbusinessuser'"
           fi
 
           # Check if instance is registered in SSM
