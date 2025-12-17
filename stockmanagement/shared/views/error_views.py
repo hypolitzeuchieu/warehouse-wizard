@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from shared.exceptions.specific import InternalServerError, NotFoundError
+from django.http import JsonResponse
+
+from shared.exceptions.specific import NotFoundError
 
 
 def mahplan_404_view(request, exception):
@@ -33,21 +35,24 @@ def mahplan_500_view(request):
     Custom view for 500 errors (Internal server error).
 
     This view is called when an unhandled exception occurs in the application.
-    It raises an InternalServerError which will be handled by the custom exception
-    handler to return a standardized error response.
+    IMPORTANT: Do NOT raise another exception here. Django is already handling
+    an unhandled exception; re-raising will mask the original error and can
+    cause recursive 500 handling.
 
     Args:
         request: The HTTP request object
 
-    Raises:
-        InternalServerError: Custom exception with standardized format
+    Returns:
+        JsonResponse: Standardized 500 response
     """
-    raise InternalServerError(
-        detail="An unexpected error occurred on the server. Please try again later or contact support if the problem persists.",
-        code="INTERNAL_SERVER_ERROR",
-        details={
-            "originalError": "Internal server error",
-            "path": request.path,
-            "method": request.method,
+    return JsonResponse(
+        {
+            "detail": "Internal server error",
+            "code": "INTERNAL_SERVER_ERROR",
+            "details": {
+                "path": request.path,
+                "method": request.method,
+            },
         },
+        status=500,
     )

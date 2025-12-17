@@ -56,7 +56,4 @@ jobs:
             sudo supervisorctl reread
             sudo supervisorctl update
             sudo supervisorctl restart maahbusiness-web maahbusiness-celery maahbusiness-celerybeat
-            sleep 3
-            sudo supervisorctl status
-            sudo supervisorctl tail -50 maahbusiness-web stderr || true
             sudo nginx -t && sudo systemctl reload nginx
