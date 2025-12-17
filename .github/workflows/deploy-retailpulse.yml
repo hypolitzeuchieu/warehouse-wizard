@@ -19,10 +19,52 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
+
+          EC2_HOST="${{ secrets.EC2_HOST }}"
+          EC2_PORT="${{ secrets.EC2_PORT || 22 }}"
+
+          if [ -z "$EC2_HOST" ]; then
+            echo "❌ Error: EC2_HOST secret is not set"
+            exit 1
+          fi
+
+          echo "🔍 Testing SSH connection to $EC2_HOST:$EC2_PORT..."
+          ssh-keyscan -H -p "$EC2_PORT" "$EC2_HOST" >> ~/.ssh/known_hosts || true
 
       - name: Copy backend files via rsync
         run: |
+          set -e
+
+          EC2_HOST="${{ secrets.EC2_HOST }}"
+          EC2_USER="${{ secrets.EC2_USER }}"
+          EC2_PORT="${{ secrets.EC2_PORT || 22 }}"
+          TARGET_DIR="${{ secrets.EC2_TARGET_DIR }}"
+
+          # Validate required variables
+          if [ -z "$EC2_HOST" ]; then
+            echo "❌ Error: EC2_HOST secret is not set"
+            exit 1
+          fi
+
+          if [ -z "$EC2_USER" ]; then
+            echo "❌ Error: EC2_USER secret is not set"
+            exit 1
+          fi
+
+          if [ -z "$TARGET_DIR" ]; then
+            echo "❌ Error: EC2_TARGET_DIR secret is not set"
+            exit 1
+          fi
+
+          echo "🚀 Deploying to $EC2_USER@$EC2_HOST:$TARGET_DIR"
+          echo "📋 Configuration:"
+          echo "   Host: $EC2_HOST"
+          echo "   User: $EC2_USER"
+          echo "   Port: $EC2_PORT"
+          echo "   Target: $TARGET_DIR"
+
+          # Copy files using rsync
+          echo "📤 Syncing files to EC2..."
           rsync -avz --delete \
             --exclude='.git' \
             --exclude='.github' \
@@ -33,8 +75,10 @@ jobs:
             --exclude='celerybeat-schedule.db' \
             --exclude='*.log' \
             --exclude='.env' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p ${{ secrets.EC2_PORT || 22 }}" \
-            stockmanagement/ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_TARGET_DIR }}/
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $EC2_PORT" \
+            stockmanagement/ "$EC2_USER@$EC2_HOST:$TARGET_DIR/"
+
+          echo "✅ Files copied successfully!"
 
   test_configuration:
     name: Test production configuration
