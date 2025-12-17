@@ -146,12 +146,29 @@ jobs:
             --region "$AWS_REGION" \
             --document-name "AWS-RunShellScript" \
             --parameters "commands=[
+              'set -e',
+              'echo \"📦 Starting deployment...\"',
+              'echo \"📁 Creating target directory...\"',
               'mkdir -p ${{ secrets.EC2_TARGET_DIR }}',
               'cd ${{ secrets.EC2_TARGET_DIR }}',
-              'aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/$DEPLOY_KEY /tmp/deploy.tar.gz',
+              'echo \"🔍 Checking AWS CLI installation...\"',
+              'if ! command -v aws &> /dev/null; then',
+              '  echo \"❌ AWS CLI is not installed. Installing...\"',
+              '  curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"/tmp/awscliv2.zip\"',
+              '  unzip -q /tmp/awscliv2.zip -d /tmp',
+              '  sudo /tmp/aws/install',
+              '  rm -rf /tmp/aws /tmp/awscliv2.zip',
+              'fi',
+              'echo \"✅ AWS CLI version: $(aws --version)\"',
+              'echo \"📥 Downloading deployment archive from S3...\"',
+              'aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/$DEPLOY_KEY /tmp/deploy.tar.gz || {',
+              '  echo \"❌ Failed to download from S3. Check IAM role permissions.\";',
+              '  exit 1;',
+              '}',
+              'echo \"📦 Extracting deployment archive...\"',
               'tar -xzf /tmp/deploy.tar.gz',
               'rm -f /tmp/deploy.tar.gz',
-              'echo \"Files deployed successfully\"'
+              'echo \"✅ Files deployed successfully\"'
             ]" \
             --output text \
             --query "Command.CommandId" 2>&1)
@@ -211,35 +228,78 @@ jobs:
           echo "Command ID: $COMMAND_ID"
           echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
 
-          # Wait for command to complete
-          sleep 10
+          # Wait for command to complete with polling
+          echo "⏳ Waiting for command to complete..."
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          STATUS="InProgress"
 
-          # Get command output
-          aws ssm get-command-invocation \
+          while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "❌ Timeout: Command took too long to complete"
+              exit 1
+            fi
+
+            sleep 5
+            ATTEMPT=$((ATTEMPT + 1))
+
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --region "$AWS_REGION" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Unknown")
+
+            echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS - Status: $STATUS"
+          done
+
+          echo ""
+          echo "📋 Command completed with status: $STATUS"
+          echo ""
+
+          # Get full command output
+          echo "📄 Standard Output:"
+          echo "----------------------------------------"
+          OUTPUT=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
             --region "$AWS_REGION" \
             --query "StandardOutputContent" \
-            --output text
+            --output text 2>/dev/null || echo "(empty)")
+          echo "$OUTPUT"
+          echo "----------------------------------------"
+          echo ""
 
-          # Check status
-          STATUS=$(aws ssm get-command-invocation \
+          # Get error output
+          ERROR=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
             --region "$AWS_REGION" \
-            --query "Status" \
-            --output text)
+            --query "StandardErrorContent" \
+            --output text 2>/dev/null || echo "(empty)")
 
+          if [ -n "$ERROR" ] && [ "$ERROR" != "(empty)" ]; then
+            echo "📄 Standard Error:"
+            echo "----------------------------------------"
+            echo "$ERROR"
+            echo "----------------------------------------"
+            echo ""
+          fi
+
+          # Check final status
           if [ "$STATUS" != "Success" ]; then
-            echo "❌ Deployment failed"
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --region "$AWS_REGION" \
-              --query "StandardErrorContent" \
-              --output text
+            echo "❌ Deployment failed with status: $STATUS"
+            echo ""
+            echo "🔧 Troubleshooting:"
+            echo "1. Check the error output above"
+            echo "2. Verify the instance has AWS CLI installed and configured"
+            echo "3. Verify the instance IAM role has S3 read permissions for the deployment bucket"
+            echo "4. Check the target directory exists and is writable"
+            echo "5. Connect to the instance via SSM Session Manager and check logs manually"
             exit 1
           fi
+
+          echo "✅ Deployment completed successfully!"
 
   test_configuration:
     name: Test production configuration on EC2
