@@ -37,8 +37,13 @@ jobs:
             .
           cd ..
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Upload archive to S3 and deploy to EC2
         run: |
+          set +e  # Don't exit on error immediately
+
           # Validate required secrets
           if [ -z "${{ secrets.AWS_S3_DEPLOY_BUCKET }}" ]; then
             echo "❌ Error: AWS_S3_DEPLOY_BUCKET secret is not set in GitHub repository secrets"
@@ -59,7 +64,7 @@ jobs:
 
           TIMESTAMP=$(date +%s)
           DEPLOY_KEY="deploy-${TIMESTAMP}.tar.gz"
-          aws s3 cp deploy.tar.gz s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/$DEPLOY_KEY
+          aws s3 cp deploy.tar.gz s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/$DEPLOY_KEY || exit 1
 
           # Debug: Verify instance is accessible via SSM
           echo "🔍 Checking if instance is accessible via SSM..."
@@ -94,39 +99,31 @@ jobs:
 
           # Check if instance is registered in SSM
           echo "📋 Checking SSM registration..."
+          set -e  # Re-enable exit on error for critical commands
           INSTANCE_INFO=$(aws ssm describe-instance-information \
             --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
             --region "$AWS_REGION" \
             --output json 2>/dev/null || echo '{"InstanceInformationList":[]}')
 
-          INSTANCE_COUNT=$(echo "$INSTANCE_INFO" | jq '.InstanceInformationList | length' 2>/dev/null || echo "0")
+          INSTANCE_COUNT=$(echo "$INSTANCE_INFO" | jq -r '.InstanceInformationList | length' 2>/dev/null || echo "0")
 
           if [ "$INSTANCE_COUNT" -eq 0 ]; then
-            echo "❌ Error: Instance $INSTANCE_ID is not registered in SSM Fleet Manager."
+            echo "⚠️  Warning: Instance $INSTANCE_ID not found in SSM Fleet Manager via describe-instance-information"
+            echo "However, the instance may still be accessible via SSM send-command."
+            echo "Attempting to send command anyway..."
             echo ""
-            echo "🔧 Troubleshooting steps:"
-            echo "1. Verify SSM Agent is installed and running on the instance:"
-            echo "   sudo snap services amazon-ssm-agent"
-            echo ""
-            echo "2. Check SSM Agent logs for errors:"
-            echo "   sudo snap logs amazon-ssm-agent --lines=50 | grep -i error"
-            echo ""
-            echo "3. Verify the instance has an IAM role with 'AmazonSSMManagedInstanceCore' policy"
-            echo ""
-            echo "4. Check Security Groups allow outbound HTTPS (443) to AWS SSM endpoints"
-            echo ""
-            echo "5. Try restarting the EC2 instance to force SSM Agent re-registration"
-            echo ""
-            echo "6. Wait 5-10 minutes after instance start for SSM Agent to register"
-            echo ""
-            echo "Once the instance appears in Systems Manager → Fleet Manager, retry the deployment."
-            exit 1
+            echo "💡 If this fails, check:"
+            echo "1. SSM Agent is running: sudo snap services amazon-ssm-agent"
+            echo "2. IAM role has 'AmazonSSMManagedInstanceCore' policy"
+            echo "3. Security Groups allow outbound HTTPS (443)"
+          else
+            echo "✅ Instance is registered in SSM"
+            echo "$INSTANCE_INFO" | jq '.InstanceInformationList[0]' 2>/dev/null || echo "$INSTANCE_INFO"
           fi
 
-          echo "✅ Instance is registered in SSM"
-          echo "$INSTANCE_INFO" | jq '.InstanceInformationList[0]' || echo "$INSTANCE_INFO"
-
-          COMMAND_ID=$(aws ssm send-command \
+          echo "📤 Sending deployment command to instance..."
+          set +e  # Don't exit on error for send-command check
+          COMMAND_OUTPUT=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --region "$AWS_REGION" \
             --document-name "AWS-RunShellScript" \
@@ -139,8 +136,24 @@ jobs:
               'echo \"Files deployed successfully\"'
             ]" \
             --output text \
-            --query "Command.CommandId")
+            --query "Command.CommandId" 2>&1)
+          SEND_COMMAND_EXIT=$?
+          set -e
 
+          if [ $SEND_COMMAND_EXIT -ne 0 ]; then
+            echo "❌ Error: Failed to send command to instance"
+            echo "Error output: $COMMAND_OUTPUT"
+            echo ""
+            echo "🔧 Troubleshooting:"
+            echo "1. Verify the instance IAM role 'maahbusiness-ec2' has 'AmazonSSMManagedInstanceCore' policy"
+            echo "2. Check SSM Agent is running: sudo snap services amazon-ssm-agent"
+            echo "3. Verify Security Groups allow outbound HTTPS (443)"
+            echo "4. Try restarting the EC2 instance"
+            exit 1
+          fi
+
+          COMMAND_ID="$COMMAND_OUTPUT"
+          echo "✅ Command sent successfully"
           echo "Command ID: $COMMAND_ID"
           echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
 
