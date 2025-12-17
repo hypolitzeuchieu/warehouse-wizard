@@ -29,7 +29,27 @@ jobs:
           EC2_USER="${{ secrets.EC2_USER }}"
           TARGET_DIR="${{ secrets.EC2_TARGET_DIR }}"
 
+          # Validate required variables
+          if [ -z "$EC2_HOST" ]; then
+            echo "❌ Error: EC2_HOST secret is not set"
+            exit 1
+          fi
+
+          if [ -z "$EC2_USER" ]; then
+            echo "❌ Error: EC2_USER secret is not set"
+            exit 1
+          fi
+
+          if [ -z "$TARGET_DIR" ]; then
+            echo "❌ Error: EC2_TARGET_DIR secret is not set"
+            exit 1
+          fi
+
           echo "🚀 Deploying to $EC2_USER@$EC2_HOST:$TARGET_DIR"
+          echo "📋 Configuration:"
+          echo "   Host: $EC2_HOST"
+          echo "   User: $EC2_USER"
+          echo "   Target: $TARGET_DIR"
 
           # Deploy using rsync
           echo "📤 Syncing files to EC2..."
@@ -43,8 +63,8 @@ jobs:
             --exclude='celerybeat-schedule.db' \
             --exclude='*.log' \
             --exclude='.env' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-            stockmanagement/ $EC2_USER@$EC2_HOST:$TARGET_DIR/
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            stockmanagement/ "$EC2_USER@$EC2_HOST:$TARGET_DIR/"
 
           echo "✅ Deployment completed!"
 
