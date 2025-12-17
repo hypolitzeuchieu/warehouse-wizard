@@ -64,16 +64,63 @@ jobs:
           # Debug: Verify instance is accessible via SSM
           echo "🔍 Checking if instance is accessible via SSM..."
           INSTANCE_ID="${{ secrets.AWS_EC2_INSTANCE_ID }}"
+          AWS_REGION="${{ secrets.AWS_REGION }}"
           echo "Instance ID: $INSTANCE_ID"
+          echo "Region: $AWS_REGION"
+
+          # First, check EC2 instance state
+          echo "📋 Checking EC2 instance state..."
+          INSTANCE_STATE=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query "Reservations[0].Instances[0].State.Name" \
+            --output text 2>/dev/null || echo "unknown")
+
+          echo "Instance state: $INSTANCE_STATE"
+
+          if [ "$INSTANCE_STATE" != "running" ]; then
+            echo "❌ Error: Instance is not in 'running' state. Current state: $INSTANCE_STATE"
+            echo "Please ensure the instance is running before deploying."
+            exit 1
+          fi
 
           # Check if instance is registered in SSM
-          aws ssm describe-instance-information \
+          echo "📋 Checking SSM registration..."
+          INSTANCE_INFO=$(aws ssm describe-instance-information \
             --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
-            --region ${{ secrets.AWS_REGION }} || echo "⚠️  Instance not found in SSM Fleet Manager"
+            --region "$AWS_REGION" \
+            --output json 2>/dev/null || echo '{"InstanceInformationList":[]}')
+
+          INSTANCE_COUNT=$(echo "$INSTANCE_INFO" | jq '.InstanceInformationList | length' 2>/dev/null || echo "0")
+
+          if [ "$INSTANCE_COUNT" -eq 0 ]; then
+            echo "❌ Error: Instance $INSTANCE_ID is not registered in SSM Fleet Manager."
+            echo ""
+            echo "🔧 Troubleshooting steps:"
+            echo "1. Verify SSM Agent is installed and running on the instance:"
+            echo "   sudo snap services amazon-ssm-agent"
+            echo ""
+            echo "2. Check SSM Agent logs for errors:"
+            echo "   sudo snap logs amazon-ssm-agent --lines=50 | grep -i error"
+            echo ""
+            echo "3. Verify the instance has an IAM role with 'AmazonSSMManagedInstanceCore' policy"
+            echo ""
+            echo "4. Check Security Groups allow outbound HTTPS (443) to AWS SSM endpoints"
+            echo ""
+            echo "5. Try restarting the EC2 instance to force SSM Agent re-registration"
+            echo ""
+            echo "6. Wait 5-10 minutes after instance start for SSM Agent to register"
+            echo ""
+            echo "Once the instance appears in Systems Manager → Fleet Manager, retry the deployment."
+            exit 1
+          fi
+
+          echo "✅ Instance is registered in SSM"
+          echo "$INSTANCE_INFO" | jq '.InstanceInformationList[0]' || echo "$INSTANCE_INFO"
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "$AWS_REGION" \
             --document-name "AWS-RunShellScript" \
             --parameters "commands=[
               'mkdir -p ${{ secrets.EC2_TARGET_DIR }}',
@@ -96,7 +143,7 @@ jobs:
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "$AWS_REGION" \
             --query "StandardOutputContent" \
             --output text
 
@@ -104,7 +151,7 @@ jobs:
           STATUS=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "$AWS_REGION" \
             --query "Status" \
             --output text)
 
@@ -113,7 +160,7 @@ jobs:
             aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$INSTANCE_ID" \
-              --region ${{ secrets.AWS_REGION }} \
+              --region "$AWS_REGION" \
               --query "StandardErrorContent" \
               --output text
             exit 1
@@ -135,9 +182,10 @@ jobs:
       - name: Test configuration on EC2 via SSM
         run: |
           INSTANCE_ID="${{ secrets.AWS_EC2_INSTANCE_ID }}"
+          AWS_REGION="${{ secrets.AWS_REGION }}"
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "$AWS_REGION" \
             --document-name "AWS-RunShellScript" \
             --parameters "commands=[
               'set -e',
@@ -225,9 +273,10 @@ jobs:
       - name: Setup and deploy on EC2 via SSM
         run: |
           INSTANCE_ID="${{ secrets.AWS_EC2_INSTANCE_ID }}"
+          AWS_REGION="${{ secrets.AWS_REGION }}"
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "$AWS_REGION" \
             --document-name "AWS-RunShellScript" \
             --parameters "commands=[
               'set -e',
