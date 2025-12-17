@@ -20,11 +20,19 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
-          EC2_HOST="${{ secrets.EC2_HOST }}"
-          EC2_PORT="${{ secrets.EC2_PORT || 22 }}"
+          # Get and clean variables (remove leading/trailing whitespace)
+          EC2_HOST=$(echo "${{ secrets.EC2_HOST }}" | xargs)
+          EC2_PORT=$(echo "${{ secrets.EC2_PORT || 22 }}" | xargs)
 
           if [ -z "$EC2_HOST" ]; then
-            echo "❌ Error: EC2_HOST secret is not set"
+            echo "❌ Error: EC2_HOST secret is not set or is empty"
+            exit 1
+          fi
+
+          # Validate hostname format
+          if [[ "$EC2_HOST" =~ [[:space:]] ]]; then
+            echo "❌ Error: EC2_HOST contains spaces. Please remove spaces from the secret."
+            echo "   Current value: '$EC2_HOST'"
             exit 1
           fi
 
@@ -35,33 +43,41 @@ jobs:
         run: |
           set -e
 
-          EC2_HOST="${{ secrets.EC2_HOST }}"
-          EC2_USER="${{ secrets.EC2_USER }}"
-          EC2_PORT="${{ secrets.EC2_PORT || 22 }}"
-          TARGET_DIR="${{ secrets.EC2_TARGET_DIR }}"
+          # Get and clean variables (remove leading/trailing whitespace)
+          EC2_HOST=$(echo "${{ secrets.EC2_HOST }}" | xargs)
+          EC2_USER=$(echo "${{ secrets.EC2_USER }}" | xargs)
+          EC2_PORT=$(echo "${{ secrets.EC2_PORT || 22 }}" | xargs)
+          TARGET_DIR=$(echo "${{ secrets.EC2_TARGET_DIR }}" | xargs)
 
           # Validate required variables
           if [ -z "$EC2_HOST" ]; then
-            echo "❌ Error: EC2_HOST secret is not set"
+            echo "❌ Error: EC2_HOST secret is not set or is empty"
             exit 1
           fi
 
           if [ -z "$EC2_USER" ]; then
-            echo "❌ Error: EC2_USER secret is not set"
+            echo "❌ Error: EC2_USER secret is not set or is empty"
             exit 1
           fi
 
           if [ -z "$TARGET_DIR" ]; then
-            echo "❌ Error: EC2_TARGET_DIR secret is not set"
+            echo "❌ Error: EC2_TARGET_DIR secret is not set or is empty"
+            exit 1
+          fi
+
+          # Validate hostname format (should not contain spaces or invalid chars)
+          if [[ "$EC2_HOST" =~ [[:space:]] ]]; then
+            echo "❌ Error: EC2_HOST contains spaces. Please remove spaces from the secret."
+            echo "   Current value: '$EC2_HOST'"
             exit 1
           fi
 
           echo "🚀 Deploying to $EC2_USER@$EC2_HOST:$TARGET_DIR"
           echo "📋 Configuration:"
-          echo "   Host: $EC2_HOST"
-          echo "   User: $EC2_USER"
-          echo "   Port: $EC2_PORT"
-          echo "   Target: $TARGET_DIR"
+          echo "   Host: '$EC2_HOST'"
+          echo "   User: '$EC2_USER'"
+          echo "   Port: '$EC2_PORT'"
+          echo "   Target: '$TARGET_DIR'"
 
           # Copy files using rsync
           echo "📤 Syncing files to EC2..."
