@@ -39,48 +39,23 @@ jobs:
           echo "🔍 Testing SSH connection to $EC2_HOST:$EC2_PORT..."
           ssh-keyscan -H -p "$EC2_PORT" "$EC2_HOST" >> ~/.ssh/known_hosts || true
 
-      - name: Copy backend files via rsync
+      - name: Fix permissions on target directory
         run: |
-          set -e
-
-          # Get and clean variables (remove leading/trailing whitespace)
           EC2_HOST=$(echo "${{ secrets.EC2_HOST }}" | xargs)
           EC2_USER=$(echo "${{ secrets.EC2_USER }}" | xargs)
           EC2_PORT=$(echo "${{ secrets.EC2_PORT || 22 }}" | xargs)
           TARGET_DIR=$(echo "${{ secrets.EC2_TARGET_DIR }}" | xargs)
 
-          # Validate required variables
-          if [ -z "$EC2_HOST" ]; then
-            echo "❌ Error: EC2_HOST secret is not set or is empty"
-            exit 1
-          fi
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p $EC2_PORT $EC2_USER@$EC2_HOST \
+            "chown -R $EC2_USER:$EC2_USER $TARGET_DIR && chmod -R 755 $TARGET_DIR"
 
-          if [ -z "$EC2_USER" ]; then
-            echo "❌ Error: EC2_USER secret is not set or is empty"
-            exit 1
-          fi
+      - name: Copy backend files via rsync
+        run: |
+          EC2_HOST=$(echo "${{ secrets.EC2_HOST }}" | xargs)
+          EC2_USER=$(echo "${{ secrets.EC2_USER }}" | xargs)
+          EC2_PORT=$(echo "${{ secrets.EC2_PORT || 22 }}" | xargs)
+          TARGET_DIR=$(echo "${{ secrets.EC2_TARGET_DIR }}" | xargs)
 
-          if [ -z "$TARGET_DIR" ]; then
-            echo "❌ Error: EC2_TARGET_DIR secret is not set or is empty"
-            exit 1
-          fi
-
-          # Validate hostname format (should not contain spaces or invalid chars)
-          if [[ "$EC2_HOST" =~ [[:space:]] ]]; then
-            echo "❌ Error: EC2_HOST contains spaces. Please remove spaces from the secret."
-            echo "   Current value: '$EC2_HOST'"
-            exit 1
-          fi
-
-          echo "🚀 Deploying to $EC2_USER@$EC2_HOST:$TARGET_DIR"
-          echo "📋 Configuration:"
-          echo "   Host: '$EC2_HOST'"
-          echo "   User: '$EC2_USER'"
-          echo "   Port: '$EC2_PORT'"
-          echo "   Target: '$TARGET_DIR'"
-
-          # Copy files using rsync
-          echo "📤 Syncing files to EC2..."
           rsync -avz --delete \
             --exclude='.git' \
             --exclude='.github' \
@@ -91,10 +66,8 @@ jobs:
             --exclude='celerybeat-schedule.db' \
             --exclude='*.log' \
             --exclude='.env' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $EC2_PORT" \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p $EC2_PORT" \
             stockmanagement/ "$EC2_USER@$EC2_HOST:$TARGET_DIR/"
-
-          echo "✅ Files copied successfully!"
 
   test_configuration:
     name: Test production configuration
