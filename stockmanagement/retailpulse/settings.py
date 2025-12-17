@@ -259,8 +259,8 @@ if ENVIRONMENT == "production":
             "BACKEND": "django_redis.cache.RedisCache",
             "LOCATION": os.getenv("REDIS_URL"),
             "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
-            "TIMEOUT": 300,
             "KEY_PREFIX": "retailpulse",
+            "TIMEOUT": 300,
         }
     }
 
