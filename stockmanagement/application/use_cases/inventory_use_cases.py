@@ -641,6 +641,7 @@ class CreateProductUseCase:
                 code="PRODUCT_NAME_EXISTS",
             )
 
+        product_id = uuid4()
         barcode_value = dto.barcode
         barcode_image_url = None
 
@@ -654,7 +655,9 @@ class CreateProductUseCase:
             try:
                 barcode_service = BarcodeService()
                 barcode_value, barcode_image_url = barcode_service.generate_and_upload_barcode(
-                    product_repository=self.product_repository
+                    product_repository=self.product_repository,
+                    product_name=dto.name,
+                    product_id=str(product_id),
                 )
                 logger.info(f"Generated unique barcode for product: {barcode_value}")
             except Exception as e:
@@ -685,7 +688,7 @@ class CreateProductUseCase:
 
         # Create product entity
         product = Product(
-            id=uuid4(),
+            id=product_id,
             business_id=self.business_id,
             name=dto.name,
             description=dto.description,

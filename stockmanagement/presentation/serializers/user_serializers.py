@@ -24,6 +24,7 @@ from application.dto.user_dto import (
 from domain.users.entities import UserRole
 from infrastructure.persistence.repositories import UserRepositoryImpl
 from shared.rate_limiting.decorators import get_client_ip
+from shared.services.s3_service import S3Service
 from shared.utils.device import get_or_detect_device_type
 
 
@@ -130,6 +131,8 @@ class UserCreateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
     )
+    profile_pict = serializers.ImageField(required=False, allow_null=True)
+    avatar_url = serializers.URLField(max_length=10000, required=False, allow_blank=True)
     password = serializers.CharField(
         write_only=True,
         min_length=8,
@@ -202,6 +205,10 @@ class UserCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     {"confirm_password": "Passwords do not match"}
                 ) from None
+        if attrs.get("profile_pict") and attrs.get("avatar_url"):
+            raise serializers.ValidationError(
+                "Provide either 'profile_pict' or 'avatar_url', not both."
+            ) from None
 
         validate_email_or_phone_number(attrs)
 
@@ -231,6 +238,8 @@ class UserCreateSerializer(serializers.Serializer):
             phone_number=phone_number,
             role=UserRole(self.validated_data.get("role", UserRole.CUSTOMER.value)),
             address=self.validated_data.get("address"),
+            avatar_file=self.validated_data.get("profile_pict"),
+            avatar_url=(self.validated_data.get("avatar_url") or None),
         )
 
 
@@ -666,6 +675,12 @@ class UserResponseSerializer(serializers.Serializer):
         Returns:
             Dictionary with serialized user data (ready for JSON response)
         """
+        signed_avatar_url = None
+        if dto.avatar_url:
+            signed_avatar_url = (
+                S3Service().generate_presigned_get_url(dto.avatar_url) or dto.avatar_url
+            )
+
         serializer = cls(
             data={
                 "id": str(dto.id),
@@ -681,7 +696,7 @@ class UserResponseSerializer(serializers.Serializer):
                 "phone_number": dto.phone_number,
                 "last_login": dto.last_login,
                 "address": dto.address,
-                "avatar_url": dto.avatar_url,
+                "avatar_url": signed_avatar_url,
             }
         )
         serializer.is_valid(raise_exception=True)

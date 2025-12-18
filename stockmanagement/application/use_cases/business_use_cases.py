@@ -191,7 +191,11 @@ class CreateBusinessUseCase:
                 s3 = S3Service()
                 logo_file = dto.logo_file
                 logo_file.content_type = getattr(logo_file, "content_type", None) or "image/png"
-                uploaded_logo_url = s3.upload_logo(file=logo_file, business_id=str(business.id))
+                uploaded_logo_url = s3.upload_logo(
+                    file=logo_file,
+                    business_id=str(business.id),
+                    business_name=business.unique_name or business.name,
+                )
                 business.logo_url = uploaded_logo_url
                 business = self.business_repository.update(business)
                 logger.info(f"Logo uploaded for business {business.id}")
@@ -210,7 +214,11 @@ class CreateBusinessUseCase:
         try:
             qr_service = QRCodeService()
             base_url = os.getenv("BASE_URL", "https://maahbusiness.com")
-            qr_code_url = qr_service.upload_business_qr_code(business.id, base_url=base_url)
+            qr_code_url = qr_service.upload_business_qr_code(
+                business.id,
+                business_name=business.unique_name or business.name,
+                base_url=base_url,
+            )
             business.qr_code_url = qr_code_url
             business = self.business_repository.update(business)
             logger.info(f"QR code generated and uploaded for business {business.id}")
@@ -793,13 +801,22 @@ class ListBusinessMembersUseCase:
         if self.user_repository:
             user = self.user_repository.get_by_id(member.user_id)
             if user:
+                avatar_url = user.avatar_url
+                try:
+                    if avatar_url:
+                        avatar_url = (
+                            S3Service().generate_presigned_get_url(avatar_url, expires_in=86400)
+                            or avatar_url
+                        )
+                except Exception:
+                    pass
                 user_details = {
                     "id": str(user.id),
                     "name": user.name,
                     "email": user.email,
                     "phone_number": user.phone_number,
                     "role": user.role.value if hasattr(user.role, "value") else str(user.role),
-                    "avatar_url": user.avatar_url,
+                    "avatar_url": avatar_url,
                     "is_active": user.is_active,
                 }
             else:

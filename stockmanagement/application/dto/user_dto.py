@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from domain.users.entities import UserRole
@@ -17,6 +18,8 @@ class UserCreateDTO:
     phone_number: str | None = None
     role: UserRole = UserRole.CUSTOMER
     address: str | None = None
+    avatar_file: Any | None = None
+    avatar_url: str | None = None
 
 
 @dataclass
