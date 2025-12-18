@@ -78,7 +78,7 @@ class QRCodeService:
             Tuple of (QR code URL, QR code image BytesIO)
         """
         # Generate QR code data URL
-        qr_data = f"{base_url}/business/{business_id}"
+        qr_data = f"{base_url}/api/v1/businesses/{business_id}/"
 
         # Generate QR code image
         qr_image = self.generate_qr_code(qr_data)
