@@ -12,6 +12,7 @@ from application.dto.business_dto import (
     BusinessUpdateDTO,
 )
 from presentation.serializers.user_serializers import validate_password_strength
+from shared.utils.upload_validation import validate_max_upload_size
 
 
 class BusinessCreateSerializer(serializers.Serializer):
@@ -31,6 +32,8 @@ class BusinessCreateSerializer(serializers.Serializer):
         logo_url = attrs.get("logo_url")
         if logo and logo_url:
             raise serializers.ValidationError("Provide either 'logo' or 'logo_url', not both.")
+        if logo:
+            validate_max_upload_size(logo, field_name="logo")
         return attrs
 
     def to_dto(self) -> BusinessCreateDTO:

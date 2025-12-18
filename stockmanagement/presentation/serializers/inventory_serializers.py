@@ -19,6 +19,7 @@ from application.dto.inventory_dto import (
     SubCategoryUpdateDTO,
 )
 from shared.services.s3_service import S3Service
+from shared.utils.upload_validation import validate_max_upload_size
 
 
 class CategoryCreateSerializer(serializers.Serializer):
@@ -219,6 +220,9 @@ class ProductCreateSerializer(serializers.Serializer):
                     }
                 )
 
+        if attrs.get("image"):
+            validate_max_upload_size(attrs.get("image"), field_name="image")
+
         return attrs
 
     def to_dto(self, business_id: str | None = None) -> ProductCreateDTO:
@@ -292,6 +296,7 @@ class ProductUpdateSerializer(serializers.Serializer):
 
             s3_service = S3Service()
             image_file = self.validated_data["image"]
+            validate_max_upload_size(image_file, field_name="image")
             # Set content_type for the file
             image_file.content_type = image_file.content_type or "image/jpeg"
 
