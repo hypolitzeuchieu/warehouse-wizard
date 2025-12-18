@@ -10,7 +10,7 @@ class BusinessCreateDTO:
     """DTO for creating a business."""
 
     name: str
-    unique_name: str
+    unique_name: str | None = None
     description: str | None = None
     address: str | None = None
     phone_number: str | None = None

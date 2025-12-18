@@ -1,10 +1,12 @@
 """Business use cases."""
 
 import logging
+import os
 from uuid import UUID, uuid4
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from django.utils.text import slugify
 
 from application.dto.business_dto import (
     BusinessCreateDTO,
@@ -23,6 +25,7 @@ from domain.users.entities import AuthMethod, User, UserRole
 from domain.users.repositories import UserRepository
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
 from shared.services.qr_code_service import QRCodeService
+from shared.services.s3_service import S3Service
 from shared.utils.password_generator import generate_secure_password
 from shared.utils.validation import validate_business_access
 from tasks.member_tasks import (
@@ -58,6 +61,20 @@ def _compare_uuids(uuid1: UUID | str | None, uuid2: UUID | str | None) -> bool:
 
 def _business_to_dto(business: Business) -> BusinessResponseDTO:
     """Convert business entity to DTO (shared utility function)."""
+    qr_code_url = business.qr_code_url
+    logo_url = business.logo_url
+
+    try:
+        s3 = S3Service()
+        if qr_code_url:
+            qr_code_url = (
+                s3.generate_presigned_get_url(qr_code_url, expires_in=86400) or qr_code_url
+            )
+        if logo_url:
+            logo_url = s3.generate_presigned_get_url(logo_url, expires_in=86400) or logo_url
+    except Exception:
+        pass
+
     return BusinessResponseDTO(
         id=business.id,
         name=business.name,
@@ -67,8 +84,8 @@ def _business_to_dto(business: Business) -> BusinessResponseDTO:
         address=business.address,
         phone_number=business.phone_number,
         email=business.email,
-        qr_code_url=business.qr_code_url,
-        logo_url=business.logo_url,
+        qr_code_url=qr_code_url,
+        logo_url=logo_url,
         is_active=business.is_active,
         settings=business.settings,
         created_at=business.created_at,
@@ -121,7 +138,25 @@ class CreateBusinessUseCase:
                 code="MEMBER_CANNOT_CREATE_BUSINESS",
             )
 
-        existing = self.business_repository.get_by_unique_name(dto.unique_name)
+        unique_name = dto.unique_name
+        if not unique_name:
+            base = slugify(dto.name) or "business"
+            base = base.lower().strip("-")
+            base = base[:60].strip("-")
+
+            for _ in range(10):
+                candidate = f"{base}-{uuid4().hex[:12]}"
+                if not self.business_repository.get_by_unique_name(candidate):
+                    unique_name = candidate
+                    break
+
+            if not unique_name:
+                raise BadRequestError(
+                    detail="Failed to generate a unique business identifier. Please try again.",
+                    code="UNIQUE_NAME_GENERATION_FAILED",
+                )
+
+        existing = self.business_repository.get_by_unique_name(unique_name)
         if existing:
             raise BadRequestError(
                 detail="Business with this unique name already exists",
@@ -131,7 +166,7 @@ class CreateBusinessUseCase:
         business = Business(
             id=uuid4(),
             name=dto.name,
-            unique_name=dto.unique_name,
+            unique_name=unique_name,
             owner_id=self.owner_id,
             description=dto.description,
             address=dto.address,
@@ -158,7 +193,8 @@ class CreateBusinessUseCase:
 
         try:
             qr_service = QRCodeService()
-            qr_code_url = qr_service.upload_business_qr_code(business.id)
+            base_url = os.getenv("BASE_URL", "https://maahbusiness.com")
+            qr_code_url = qr_service.upload_business_qr_code(business.id, base_url=base_url)
             business.qr_code_url = qr_code_url
             business = self.business_repository.update(business)
             logger.info(f"QR code generated and uploaded for business {business.id}")

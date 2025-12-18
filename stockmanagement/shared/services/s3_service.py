@@ -6,6 +6,7 @@ import logging
 import uuid
 from io import BytesIO
 from typing import BinaryIO
+from urllib.parse import urlparse
 
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
@@ -86,6 +87,54 @@ class S3Service:
                     details={"error": str(e)},
                 ) from e
         return self._s3_client
+
+    def _extract_key_from_s3_url(self, file_url: str) -> str | None:
+        """
+        Extract S3 object key from a stored URL.
+
+        Supports:
+        - https://bucket.s3.region.amazonaws.com/key
+        - https://bucket.s3.amazonaws.com/key
+        - https://s3.region.amazonaws.com/bucket/key
+        """
+        if not file_url:
+            return None
+
+        try:
+            parsed = urlparse(file_url)
+            host = (parsed.netloc or "").lower()
+            path = (parsed.path or "").lstrip("/")
+            if self.aws_bucket_name and host.startswith(f"{self.aws_bucket_name}."):
+                return path or None
+
+            if self.aws_bucket_name and path.startswith(f"{self.aws_bucket_name}/"):
+                return path[len(self.aws_bucket_name) + 1 :] or None
+
+            if "amazonaws.com" not in file_url and "/" in file_url:
+                return file_url.lstrip("/") or None
+
+            return path or None
+        except Exception:
+            return None
+
+    def generate_presigned_get_url(self, file_url: str, expires_in: int = 86400) -> str | None:
+        """
+        Generate a temporary pre-signed GET URL for a private S3 object.
+
+        Returns None if the key cannot be extracted or if signing fails.
+        """
+        key = self._extract_key_from_s3_url(file_url)
+        if not key:
+            return None
+
+        try:
+            return self.s3_client.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": self.aws_bucket_name, "Key": key},
+                ExpiresIn=expires_in,
+            )
+        except Exception:
+            return None
 
     def validate_file_format(self, file: BinaryIO, file_type: str = "image") -> str:
         """

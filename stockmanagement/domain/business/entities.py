@@ -11,7 +11,7 @@ class Business:
 
     id: UUID
     name: str
-    unique_name: str  # Unique identifier for QR code
+    unique_name: str
     owner_id: UUID
     description: str | None
     address: str | None
@@ -39,7 +39,7 @@ class BusinessMember:
     id: UUID
     business_id: UUID
     user_id: UUID
-    role: str  # manager, cashier, stock_keeper, delivery
+    role: str
     is_active: bool
     joined_at: datetime
     left_at: datetime | None

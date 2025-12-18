@@ -346,7 +346,7 @@ CELERY_BEAT_SCHEDULE = {
 
 # Logging configuration
 LOGGING = get_logging_config(debug=DEBUG)
-
+BASE_URL = os.getenv("BASE_URL", "https://maahbusiness.com")
 # Documentation Authentication Settings
 DOC_USERNAME = os.getenv("DOC_USERNAME", None)
 DOC_PASSWORD = os.getenv("DOC_PASSWORD", None)

@@ -18,16 +18,6 @@ class BusinessCreateSerializer(serializers.Serializer):
     """Serializer for business creation."""
 
     name = serializers.CharField(max_length=255, required=True)
-    unique_name = serializers.RegexField(
-        regex=r"^[a-z0-9-]+$",
-        max_length=100,
-        required=True,
-        min_length=3,
-        error_messages={
-            "invalid": "Unique name can only contain lowercase letters, numbers, and hyphens"
-        },
-        help_text="Unique identifier for the business (lowercase, alphanumeric, hyphens only)",
-    )
     description = serializers.CharField(required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
     phone_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
@@ -38,7 +28,7 @@ class BusinessCreateSerializer(serializers.Serializer):
         """Convert to DTO."""
         return BusinessCreateDTO(
             name=self.validated_data["name"],
-            unique_name=self.validated_data["unique_name"],
+            unique_name=None,
             description=self.validated_data.get("description"),
             address=self.validated_data.get("address"),
             phone_number=self.validated_data.get("phone_number"),

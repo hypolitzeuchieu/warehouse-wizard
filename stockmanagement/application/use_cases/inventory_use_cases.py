@@ -60,19 +60,34 @@ logger = logging.getLogger(__name__)
 
 def _product_to_dto(product: Product) -> ProductResponseDTO:
     """Convert product entity to DTO (shared utility function)."""
+    image_url = product.image_url
+    barcode_image_url = product.barcode_image_url
+
+    try:
+        s3 = S3Service()
+        if image_url:
+            image_url = s3.generate_presigned_get_url(image_url, expires_in=86400) or image_url
+        if barcode_image_url:
+            barcode_image_url = (
+                s3.generate_presigned_get_url(barcode_image_url, expires_in=86400)
+                or barcode_image_url
+            )
+    except Exception:
+        pass
+
     return ProductResponseDTO(
         id=product.id,
         business_id=product.business_id,
         name=product.name,
         description=product.description,
         barcode=product.barcode,
-        barcode_image_url=product.barcode_image_url,
+        barcode_image_url=barcode_image_url,
         category_id=product.category_id,
         subcategory_id=product.subcategory_id,
         purchase_price=product.purchase_price,
         unit_price=product.unit_price,
         current_price=product.get_current_price(),
-        image_url=product.image_url,
+        image_url=image_url,
         quantity=product.quantity,
         min_quantity=product.min_quantity,
         is_low_stock=product.is_low_stock(),

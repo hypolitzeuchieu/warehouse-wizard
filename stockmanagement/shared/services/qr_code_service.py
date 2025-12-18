@@ -65,7 +65,7 @@ class QRCodeService:
     def generate_business_qr_code(
         self,
         business_id: UUID,
-        base_url: str = "https://retailpulse.app",
+        base_url: str = "https://maahbusiness.com",
     ) -> tuple[str, io.BytesIO]:
         """
         Generate QR code for business access.
@@ -88,7 +88,7 @@ class QRCodeService:
     def upload_business_qr_code(
         self,
         business_id: UUID,
-        base_url: str = "https://retailpulse.app",
+        base_url: str = "https://maahbusiness.com",
     ) -> str:
         """
         Generate and upload QR code for business access to S3.
