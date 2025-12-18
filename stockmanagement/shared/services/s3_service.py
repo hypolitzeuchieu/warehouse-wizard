@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from io import BytesIO
 from typing import BinaryIO
@@ -32,14 +33,52 @@ class S3Service:
     ALLOWED_FILE_TYPES = {
         "image": ALLOWED_IMAGE_FORMATS,
         "barcode": {"image/png": ".png"},
+        "qrcode": {"image/png": ".png"},
         "logo": ALLOWED_IMAGE_FORMATS,
     }
 
     # Security: Maximum file size limits (in bytes)
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-    MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+    MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
     MAX_BARCODE_SIZE = 5 * 1024 * 1024  # 5 MB
+    MAX_QRCODE_SIZE = 5 * 1024 * 1024  # 5 MB
     MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5 MB
+
+    @staticmethod
+    def safe_slug(value: str | None) -> str:
+        """
+        Create a safe slug for S3 keys.
+
+        We don't rely on Django slugify here to keep shared layer independent.
+        """
+        if not value:
+            return "unknown"
+        value = value.strip().lower()
+        value = re.sub(r"[^a-z0-9]+", "-", value)
+        value = re.sub(r"-{2,}", "-", value).strip("-")
+        return value or "unknown"
+
+    @classmethod
+    def build_named_filename(
+        cls,
+        prefix: str,
+        name: str | None = None,
+        entity_id: str | None = None,
+        extra: str | None = None,
+    ) -> str:
+        """
+        Build a readable-but-unique filename base (without extension).
+
+        Example: product-rice-2kg-<uuid>-1234567890123
+        """
+        parts: list[str] = [prefix]
+        if name:
+            parts.append(cls.safe_slug(name))
+        if entity_id:
+            parts.append(str(entity_id))
+        if extra:
+            parts.append(str(extra))
+        return "-".join([p for p in parts if p])
 
     def __init__(self) -> None:
         """Initialize S3 service."""
@@ -205,6 +244,7 @@ class S3Service:
             max_size = {
                 "image": self.MAX_IMAGE_SIZE,
                 "barcode": self.MAX_BARCODE_SIZE,
+                "qrcode": self.MAX_QRCODE_SIZE,
                 "logo": self.MAX_LOGO_SIZE,
             }.get(file_type, self.MAX_FILE_SIZE)
 
@@ -294,6 +334,7 @@ class S3Service:
         self,
         barcode_image: BytesIO,
         barcode_value: str,
+        filename: str | None = None,
     ) -> str:
         """
         Upload a barcode image to S3.
@@ -307,17 +348,35 @@ class S3Service:
         """
         # Set content type for BytesIO
         barcode_image.content_type = "image/png"
+        filename_base = filename or f"barcode-{barcode_value}"
         return self.upload_file(
             barcode_image,
             folder="barcodes",
-            filename=f"barcode_{barcode_value}",
+            filename=filename_base,
             file_type="barcode",
+        )
+
+    def upload_qr_code_image(
+        self,
+        qr_image: BytesIO,
+        filename: str,
+    ) -> str:
+        """
+        Upload a QR code image to a dedicated S3 folder.
+        """
+        qr_image.content_type = "image/png"
+        return self.upload_file(
+            qr_image,
+            folder="qrcodes",
+            filename=filename,
+            file_type="qrcode",
         )
 
     def upload_logo(
         self,
         file: BinaryIO,
         business_id: str,
+        business_name: str | None = None,
     ) -> str:
         """
         Upload a business logo to S3.
@@ -329,10 +388,15 @@ class S3Service:
         Returns:
             Public URL of the uploaded logo
         """
+        filename = self.build_named_filename(
+            prefix="business-logo",
+            name=business_name,
+            entity_id=business_id,
+        )
         return self.upload_file(
             file,
             folder="logos",
-            filename=f"business_{business_id}",
+            filename=filename,
             file_type="logo",
         )
 

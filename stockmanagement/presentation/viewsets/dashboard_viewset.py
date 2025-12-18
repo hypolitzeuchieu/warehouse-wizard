@@ -43,6 +43,7 @@ from presentation.serializers.dashboard_serializers import (
     ProductStatisticsQuerySerializer,
     SubCategoryStatisticsQuerySerializer,
 )
+from shared.services.s3_service import S3Service
 from shared.views.base_viewset import BaseViewSet
 
 
@@ -787,6 +788,16 @@ class DashboardViewSet(BaseViewSet):
             )
             stats_dto = use_case.execute()
 
+            avatar_url = stats_dto.cashier.avatar_url
+            try:
+                if avatar_url:
+                    avatar_url = (
+                        S3Service().generate_presigned_get_url(avatar_url, expires_in=86400)
+                        or avatar_url
+                    )
+            except Exception:
+                pass
+
             return self.success(
                 message="Cashier statistics retrieved successfully",
                 data={
@@ -795,7 +806,7 @@ class DashboardViewSet(BaseViewSet):
                         "cashier_name": stats_dto.cashier.cashier_name,
                         "cashier_email": stats_dto.cashier.cashier_email,
                         "phone_number": stats_dto.cashier.phone_number,
-                        "avatar_url": stats_dto.cashier.avatar_url,
+                        "avatar_url": avatar_url,
                         "role": stats_dto.cashier.role,
                         "is_active": stats_dto.cashier.is_active,
                         "joined_at": stats_dto.cashier.joined_at.isoformat(),

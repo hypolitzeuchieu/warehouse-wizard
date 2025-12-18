@@ -76,6 +76,8 @@ class BarcodeService:
         self,
         barcode_value: str | None = None,
         product_repository=None,
+        product_name: str | None = None,
+        product_id: str | None = None,
     ) -> tuple[str, str]:
         """
         Generate barcode value and upload barcode image to S3.
@@ -115,9 +117,18 @@ class BarcodeService:
             barcode_image = self.create_barcode_image(barcode_value)
 
             # Upload to S3
+            filename = None
+            if product_name or product_id:
+                filename = self.s3_service.build_named_filename(
+                    prefix="product-barcode",
+                    name=product_name,
+                    entity_id=product_id,
+                    extra=barcode_value,
+                )
             barcode_url = self.s3_service.upload_barcode_image(
                 barcode_image=barcode_image,
                 barcode_value=barcode_value,
+                filename=filename,
             )
 
             logger.info(f"Barcode generated and uploaded: {barcode_value} -> {barcode_url}")

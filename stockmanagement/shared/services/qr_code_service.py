@@ -88,6 +88,7 @@ class QRCodeService:
     def upload_business_qr_code(
         self,
         business_id: UUID,
+        business_name: str | None = None,
         base_url: str = "https://maahbusiness.com",
     ) -> str:
         """
@@ -104,11 +105,12 @@ class QRCodeService:
             # Generate QR code
             qr_data, qr_image = self.generate_business_qr_code(business_id, base_url)
 
-            # Upload to S3
-            qr_url = self.s3_service.upload_barcode_image(
-                barcode_image=qr_image,
-                barcode_value=f"qr_{business_id}",
+            filename = self.s3_service.build_named_filename(
+                prefix="business-qr",
+                name=business_name,
+                entity_id=str(business_id),
             )
+            qr_url = self.s3_service.upload_qr_code_image(qr_image=qr_image, filename=filename)
 
             logger.info(f"Business QR code uploaded to S3: {qr_url}")
             return qr_url

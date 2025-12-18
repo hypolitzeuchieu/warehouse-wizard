@@ -31,6 +31,7 @@ from domain.users.repositories import (
 from domain.users.services import UserDomainService
 from shared.authentication.jwt_blacklist_service import JWTBlacklistService
 from shared.exceptions.base import BaseAPIException
+from shared.services.s3_service import S3Service
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +74,23 @@ class CreateUserUseCase:
             else:
                 name = "user"
 
+        user_id = uuid4()
+        avatar_url = getattr(dto, "avatar_url", None) or None
+        if not avatar_url and getattr(dto, "avatar_file", None):
+            avatar_filename = S3Service.build_named_filename(
+                prefix="user-avatar",
+                name=name,
+                entity_id=str(user_id),
+            )
+            avatar_url = S3Service().upload_image(
+                dto.avatar_file,
+                folder="avatars",
+                filename=avatar_filename,
+            )
+
         # Create user entity
         user = User(
-            id=uuid4(),
+            id=user_id,
             email=dto.email,
             name=name,
             phone_number=dto.phone_number,
@@ -88,7 +103,7 @@ class CreateUserUseCase:
             created_at=timezone.now(),
             updated_at=timezone.now(),
             address=dto.address,
-            avatar_url=None,
+            avatar_url=avatar_url,
             auth_method=AuthMethod.EMAIL_PASSWORD,
         )
 

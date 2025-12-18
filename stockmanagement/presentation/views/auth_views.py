@@ -9,7 +9,8 @@ from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -72,6 +73,7 @@ logger = logging.getLogger(__name__)
     operation_summary="User Signup",
     operation_description="Create a new user account and send OTP to verify the account.",
     request_body=UserCreateSerializer,
+    consumes=["multipart/form-data", "application/json"],
     responses={
         201: "User created successfully",
         400: "Bad Request",
@@ -81,6 +83,7 @@ logger = logging.getLogger(__name__)
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
 @rate_limit(
     requests_per_period=settings.RATE_LIMIT_SIGNUP_REQUESTS,
     period_seconds=settings.RATE_LIMIT_SIGNUP_PERIOD,

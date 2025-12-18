@@ -233,8 +233,12 @@ class ProductCreateSerializer(serializers.Serializer):
             # Set content_type for the file
             image_file.content_type = image_file.content_type or "image/jpeg"
 
-            # Generate unique filename
-            filename = f"product_{business_id}_{uuid4()}" if business_id else f"product_{uuid4()}"
+            filename = s3_service.build_named_filename(
+                prefix="product-image",
+                name=self.validated_data.get("name"),
+                entity_id=str(uuid4()),
+                extra=(business_id or None),
+            )
             image_url = s3_service.upload_image(
                 file=image_file,
                 folder="products",
@@ -291,7 +295,12 @@ class ProductUpdateSerializer(serializers.Serializer):
             # Set content_type for the file
             image_file.content_type = image_file.content_type or "image/jpeg"
 
-            filename = f"product_{business_id}_{uuid4()}" if business_id else f"product_{uuid4()}"
+            filename = s3_service.build_named_filename(
+                prefix="product-image",
+                name=self.validated_data.get("name"),
+                entity_id=str(uuid4()),
+                extra=(business_id or None),
+            )
             image_url = s3_service.upload_image(
                 file=image_file,
                 folder="products",
