@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from django.http import JsonResponse
 
-from shared.exceptions.specific import NotFoundError
-
 
 def mahplan_404_view(request, exception):
     """
@@ -17,16 +15,19 @@ def mahplan_404_view(request, exception):
         request: The HTTP request object
         exception: The Django Http404 exception
 
-    Raises:
-        NotFoundError: Custom exception with standardized format
+    Returns:
+        JsonResponse: Standardized 404 response
     """
-    raise NotFoundError(
-        detail="The requested endpoint was not found on this server.",
-        code="RESOURCE_NOT_FOUND",
-        details={
-            "resource_type": "Endpoint",
-            "path": request.path,
+    return JsonResponse(
+        {
+            "detail": "The requested endpoint was not found on this server.",
+            "code": "RESOURCE_NOT_FOUND",
+            "details": {
+                "resource_type": "Endpoint",
+                "path": request.path,
+            },
         },
+        status=404,
     )
 
 

@@ -157,13 +157,6 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
         }
         return Response(token_response, status=status.HTTP_401_UNAUTHORIZED)
 
-    # Log other exceptions for debugging (these are unexpected)
-    logger.error(
-        f"Exception occurred: {type(exc).__name__} - {str(exc)}",
-        exc_info=True,
-        extra={"context": context},
-    )
-
     # Handle DRF built-in exceptions with proper status codes
     if isinstance(exc, NotAuthenticated):
         # Missing authentication is expected - log without traceback
@@ -427,6 +420,13 @@ def custom_exception_handler(exc: Exception, context: dict) -> Response | None:
             "status_code": response.status_code,
         }
         return Response(api_error_response, status=response.status_code)
+
+    # Log other exceptions for debugging (these are unexpected)
+    logger.error(
+        f"Exception occurred: {type(exc).__name__} - {str(exc)}",
+        exc_info=True,
+        extra={"context": context},
+    )
 
     # For unhandled exceptions, return 500
     logger.exception("Unhandled exception occurred")
