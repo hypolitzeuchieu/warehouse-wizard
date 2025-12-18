@@ -70,6 +70,7 @@ from shared.exceptions.specific import (
     ForbiddenError,
     NotFoundError,
 )
+from shared.services.s3_service import S3Service
 from shared.utils.validation import (
     validate_business_access,
     validate_entity_belongs_to_business,
@@ -1905,6 +1906,17 @@ class GenerateInvoiceReceiptUseCase:
                 code="BUSINESS_NOT_FOUND",
             )
 
+        business_qr_code_url = business.qr_code_url
+        if business_qr_code_url:
+            try:
+                s3 = S3Service()
+                business_qr_code_url = (
+                    s3.generate_presigned_get_url(business_qr_code_url, expires_in=86400)
+                    or business_qr_code_url
+                )
+            except Exception:
+                pass
+
         invoice_lines_with_names = []
         for line in invoice_lines:
             product = self.product_repository.get_by_id(line.product_id)
@@ -1928,7 +1940,7 @@ class GenerateInvoiceReceiptUseCase:
             invoice=invoice,
             invoice_lines=invoice_lines_with_names,
             business_name=business.name,
-            business_qr_code_url=business.qr_code_url,
+            business_qr_code_url=business_qr_code_url,
             business_address=business.address,
             business_phone=business.phone_number,
             business_email=business.email,
@@ -1960,7 +1972,7 @@ class GenerateInvoiceReceiptUseCase:
             invoice_number=invoice.number,
             receipt_html=receipt_html if self.format == "html" else None,
             receipt_pdf=receipt_pdf,
-            qr_code_url=business.qr_code_url,
+            qr_code_url=business_qr_code_url,
             format=self.format,
         )
 

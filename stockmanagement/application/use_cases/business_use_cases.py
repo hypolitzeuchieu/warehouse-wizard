@@ -186,6 +186,22 @@ class CreateBusinessUseCase:
             f"unique_name: {business.unique_name}, owner_id: {self.owner_id}"
         )
 
+        try:
+            if getattr(dto, "logo_file", None):
+                s3 = S3Service()
+                logo_file = dto.logo_file
+                logo_file.content_type = getattr(logo_file, "content_type", None) or "image/png"
+                uploaded_logo_url = s3.upload_logo(file=logo_file, business_id=str(business.id))
+                business.logo_url = uploaded_logo_url
+                business = self.business_repository.update(business)
+                logger.info(f"Logo uploaded for business {business.id}")
+            elif getattr(dto, "logo_url", None):
+                business.logo_url = dto.logo_url
+                business = self.business_repository.update(business)
+                logger.info(f"Logo URL set for business {business.id}")
+        except Exception as e:
+            logger.warning(f"Failed to set logo for business {business.id}: {str(e)}")
+
         if user.role != UserRole.OWNER:
             user.role = UserRole.OWNER
             user.updated_at = timezone.now()

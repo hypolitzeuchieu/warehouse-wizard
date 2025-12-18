@@ -23,6 +23,15 @@ class BusinessCreateSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
     settings = serializers.JSONField(required=False, default=dict)
+    logo = serializers.ImageField(required=False, allow_null=True)
+    logo_url = serializers.URLField(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        logo = attrs.get("logo")
+        logo_url = attrs.get("logo_url")
+        if logo and logo_url:
+            raise serializers.ValidationError("Provide either 'logo' or 'logo_url', not both.")
+        return attrs
 
     def to_dto(self) -> BusinessCreateDTO:
         """Convert to DTO."""
@@ -34,6 +43,8 @@ class BusinessCreateSerializer(serializers.Serializer):
             phone_number=self.validated_data.get("phone_number"),
             email=self.validated_data.get("email"),
             settings=self.validated_data.get("settings"),
+            logo_file=self.validated_data.get("logo"),
+            logo_url=(self.validated_data.get("logo_url") or None),
         )
 
 

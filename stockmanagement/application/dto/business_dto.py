@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 
@@ -16,6 +17,8 @@ class BusinessCreateDTO:
     phone_number: str | None = None
     email: str | None = None
     settings: dict | None = None
+    logo_file: Any | None = None
+    logo_url: str | None = None
 
 
 @dataclass
