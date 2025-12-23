@@ -26,6 +26,7 @@ from infrastructure.persistence.repositories import UserRepositoryImpl
 from shared.rate_limiting.decorators import get_client_ip
 from shared.services.s3_service import S3Service
 from shared.utils.device import get_or_detect_device_type
+from shared.utils.upload_validation import validate_max_upload_size
 
 
 def validate_password_strength(value: str) -> str:
@@ -209,6 +210,8 @@ class UserCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Provide either 'profile_pict' or 'avatar_url', not both."
             ) from None
+        if attrs.get("profile_pict"):
+            validate_max_upload_size(attrs.get("profile_pict"), field_name="profile_pict")
 
         validate_email_or_phone_number(attrs)
 

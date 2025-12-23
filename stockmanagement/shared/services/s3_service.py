@@ -38,11 +38,12 @@ class S3Service:
     }
 
     # Security: Maximum file size limits (in bytes)
-    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
-    MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
-    MAX_BARCODE_SIZE = 5 * 1024 * 1024  # 5 MB
-    MAX_QRCODE_SIZE = 5 * 1024 * 1024  # 5 MB
-    MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5 MB
+    _DEFAULT_MAX_BYTES = int(getattr(settings, "MAX_MEDIA_UPLOAD_SIZE_BYTES", 1 * 1024 * 1024))
+    MAX_FILE_SIZE = _DEFAULT_MAX_BYTES
+    MAX_IMAGE_SIZE = _DEFAULT_MAX_BYTES
+    MAX_BARCODE_SIZE = _DEFAULT_MAX_BYTES
+    MAX_QRCODE_SIZE = _DEFAULT_MAX_BYTES
+    MAX_LOGO_SIZE = _DEFAULT_MAX_BYTES
 
     @staticmethod
     def safe_slug(value: str | None) -> str:

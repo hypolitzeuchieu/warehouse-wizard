@@ -204,13 +204,14 @@ if not SECURE_SSL_REDIRECT and ENVIRONMENT == "production":
         "This is a security risk. Set SECURE_SSL_REDIRECT=True in production."
     )
 
-# File upload security limits
+# File upload security limits (1MB default; can be overridden via env if needed)
+MAX_MEDIA_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_MEDIA_UPLOAD_SIZE_BYTES", str(1 * 1024 * 1024)))
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(
-    os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", "10485760")
-)  # 10 MB default
+    os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(MAX_MEDIA_UPLOAD_SIZE_BYTES))
+)
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(
-    os.getenv("FILE_UPLOAD_MAX_MEMORY_SIZE", "10485760")
-)  # 10 MB default
+    os.getenv("FILE_UPLOAD_MAX_MEMORY_SIZE", str(MAX_MEDIA_UPLOAD_SIZE_BYTES))
+)
 DATA_UPLOAD_MAX_NUMBER_FIELDS = int(os.getenv("DATA_UPLOAD_MAX_NUMBER_FIELDS", "1000"))
 
 ROOT_URLCONF = "retailpulse.urls"
