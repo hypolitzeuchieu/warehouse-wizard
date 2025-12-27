@@ -12,10 +12,10 @@ class SalesReportQuerySerializer(serializers.Serializer):
     start_date = serializers.DateTimeField(required=False, allow_null=True)
     end_date = serializers.DateTimeField(required=False, allow_null=True)
     output_format = serializers.ChoiceField(
-        choices=["html", "pdf"],
+        choices=["pdf", "word"],
         required=False,
-        default="html",
-        help_text="Output format: 'html' for HTML, 'pdf' for PDF",
+        default="pdf",
+        help_text="Output format: 'pdf' for PDF, 'word' for Word document",
     )
     report_type = serializers.ChoiceField(
         choices=["sales", "inventory", "stock"],
@@ -29,7 +29,7 @@ class SalesReportQuerySerializer(serializers.Serializer):
         return ReportCreateDTO(
             business_id=self.validated_data["business_id"],
             report_type=self.validated_data.get("report_type", "sales"),
-            format=self.validated_data.get("output_format", "html"),
+            format=self.validated_data.get("output_format", "pdf"),
             start_date=self.validated_data.get("start_date"),
             end_date=self.validated_data.get("end_date"),
         )
@@ -97,10 +97,10 @@ class ReportCreateSerializer(serializers.Serializer):
         help_text="Type of report: 'sales' for sales report, 'inventory' for inventory report, 'stock' for stock report",
     )
     format = serializers.ChoiceField(
-        choices=["html", "pdf"],
+        choices=["pdf", "word"],
         required=False,
-        default="html",
-        help_text="Report format: 'html' or 'pdf'",
+        default="pdf",
+        help_text="Report format: 'pdf' or 'word'",
     )
     start_date = serializers.DateTimeField(required=False, allow_null=True)
     end_date = serializers.DateTimeField(required=False, allow_null=True)
@@ -110,7 +110,7 @@ class ReportCreateSerializer(serializers.Serializer):
         return ReportCreateDTO(
             business_id=self.validated_data["business_id"],
             report_type=self.validated_data.get("report_type", "sales"),
-            format=self.validated_data.get("output_format", "html"),
+            format=self.validated_data.get("format", "pdf"),
             start_date=self.validated_data.get("start_date"),
             end_date=self.validated_data.get("end_date"),
         )

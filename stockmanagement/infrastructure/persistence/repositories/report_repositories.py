@@ -119,9 +119,7 @@ class ReportRepositoryImpl(ReportRepository):
 
         if rows_updated == 0:
             raise ValueError(f"Report {report.id} not found for update")
-        connection.commit()
 
-        connection.close()
         model = ReportModel.objects.only(
             "id",
             "business_id",

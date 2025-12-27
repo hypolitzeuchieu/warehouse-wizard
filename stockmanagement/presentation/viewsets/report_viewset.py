@@ -19,6 +19,7 @@ from application.use_cases.report_use_cases import (
     DownloadReportUseCase,
     GenerateAndSaveReportUseCase,
     ListReportsUseCase,
+    report_to_dto,
 )
 from domain.business.services import BusinessDomainService
 from infrastructure.persistence.repositories import (
@@ -45,6 +46,13 @@ class ReportViewSet(BaseViewSet):
 
     permission_classes = [IsAuthenticated]
 
+    def perform_content_negotiation(self, request, force=False):
+        """Disable content negotiation for download endpoint to avoid conflict with 'format' query param."""
+        if self.action == "download_report":
+            renderers = self.get_renderers()
+            return (renderers[0], renderers[0].media_type)
+        return super().perform_content_negotiation(request, force)
+
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
         return BusinessDomainService(
@@ -63,13 +71,8 @@ class ReportViewSet(BaseViewSet):
         },
         tags=["Reports"],
     )
-    @action(
-        detail=False,
-        methods=["get"],
-        url_path="history",
-    )
-    def list_reports(self, request: Request) -> Response:
-        """List stored reports for a business."""
+    def list(self, request: Request) -> Response:
+        """List stored reports for a business (standard REST endpoint)."""
         serializer = ReportListQuerySerializer(data=request.query_params)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
@@ -101,6 +104,51 @@ class ReportViewSet(BaseViewSet):
                 queryset=reports,
                 serializer_class=ReportResponseSerializer,
                 message="Reports retrieved successfully",
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
+        operation_summary="Retrieve report",
+        operation_description="Retrieve a report by its ID with all metadata.",
+        responses={
+            200: ReportResponseSerializer(),
+            400: "Bad Request",
+            403: "Permission denied",
+            404: "Report not found",
+        },
+        tags=["Reports"],
+    )
+    def retrieve(self, request: Request, pk: UUID) -> Response:
+        """Retrieve a report by ID."""
+        try:
+            report_repository = ReportRepositoryImpl()
+            report = report_repository.get_by_id(pk, force_refresh=True)
+
+            if not report:
+                return self.error(
+                    message="Report not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    code="REPORT_NOT_FOUND",
+                )
+
+            if not self._get_business_domain_service().user_has_access(
+                report.business_id, request.user.id
+            ):
+                return self.error(
+                    message="You don't have access to this report",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="PERMISSION_DENIED",
+                )
+
+            # Convert report entity to DTO
+            report_dto = report_to_dto(report)
+
+            return self.serialized_response(
+                serializer_class=ReportResponseSerializer,
+                data=report_dto,
+                message="Report retrieved successfully",
+                status_code=status.HTTP_200_OK,
             )
         except Exception as e:
             return self.handle_exception(e)
@@ -144,28 +192,32 @@ class ReportViewSet(BaseViewSet):
             )
             report_dto = use_case.execute()
 
-            return self.success(
-                message="Report generation successfully. Use the report ID to check status and download.",
-                data={
-                    "report_id": str(report_dto.id),
-                    "status": report_dto.status,
-                },
-                status_code=status.HTTP_202_ACCEPTED,
+            message = "Report generation initiated successfully"
+            if report_dto.status == "generating":
+                message = (
+                    "Report generation initiated. The report is being generated in the background."
+                )
+
+            return self.serialized_response(
+                serializer_class=ReportResponseSerializer,
+                data=report_dto,
+                message=message,
+                status_code=status.HTTP_201_CREATED,
             )
         except Exception as e:
             return self.handle_exception(e)
 
     @swagger_auto_schema(
         operation_summary="Download report",
-        operation_description="Download a previously generated report by its ID.",
+        operation_description="Download a previously generated report file from S3. The file format is determined by the report format specified during generation.",
         responses={
             200: openapi.Response(
-                "Report file (PDF/HTML/JSON)",
+                "Report file (PDF or Word)",
                 schema=openapi.Schema(type=openapi.TYPE_FILE),
             ),
             400: "Bad Request",
             403: "Permission denied",
-            404: "Report not found",
+            404: "Report not found or file not available",
         },
         tags=["Reports"],
     )
@@ -175,7 +227,7 @@ class ReportViewSet(BaseViewSet):
         url_path="download",
     )
     def download_report(self, request: Request, pk: UUID) -> Response:
-        """Download a report by ID."""
+        """Download a report by ID. Format is determined by the report itself."""
         try:
             use_case = DownloadReportUseCase(
                 report_repository=ReportRepositoryImpl(),
@@ -185,10 +237,7 @@ class ReportViewSet(BaseViewSet):
             )
             content, content_type, filename = use_case.execute()
 
-            if isinstance(content, bytes):
-                response = HttpResponse(content, content_type=content_type)
-            else:
-                response = HttpResponse(content, content_type=content_type)
+            response = HttpResponse(content, content_type=content_type)
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
             return response
         except Exception as e:

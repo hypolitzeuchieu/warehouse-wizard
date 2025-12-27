@@ -30,8 +30,8 @@ from domain.reports.repositories import ReportRepository
 from domain.users.repositories import UserRepository
 from shared.exceptions.base import BaseAPIException
 from shared.exceptions.specific import ForbiddenError, NotFoundError
+from shared.services.s3_service import S3Service
 from shared.utils.validation import validate_business_access
-from tasks.report_tasks import generate_report_task
 
 try:
     from weasyprint import HTML
@@ -40,7 +40,23 @@ try:
 except ImportError:
     WEASYPRINT_AVAILABLE = False
 
+try:
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+try:
+    from kombu.exceptions import ConnectionError as CeleryConnectionError
+
+    from tasks.report_tasks import generate_report_task
+except ImportError:
+    generate_report_task = None
+    CeleryConnectionError = Exception
 
 
 def _serialize_report_payload(payload: dict) -> dict:
@@ -61,11 +77,10 @@ def _serialize_report_payload(payload: dict) -> dict:
 
 
 def _sanitize_metadata_for_response(metadata: dict | None) -> dict:
-    """Hide heavy/internal metadata fields from API responses."""
+    """Prepare metadata for API responses."""
     if not metadata:
         return {}
     sanitized = dict(metadata)
-    sanitized.pop("payload", None)
     sanitized.pop("business_snapshot", None)
     return sanitized
 
@@ -80,6 +95,7 @@ def _business_snapshot_from_entity(business) -> dict:
         "phone": business.phone_number,
         "email": business.email,
         "qr_code_url": business.qr_code_url,
+        "logo_url": business.logo_url,
     }
 
 
@@ -102,7 +118,6 @@ def _prepare_payload_for_render(payload: dict) -> dict:
     return prepared
 
 
-# Sentinel value to detect if file_url was provided
 class _Sentinel:
     """Sentinel value to detect if file_url was provided."""
 
@@ -143,12 +158,32 @@ def _report_to_dto(
     )
 
 
+def report_to_dto(report: Report, file_url: str | None = None) -> ReportResponseDTO:
+    """
+    Convert report entity to DTO (public function for external use).
+
+    Args:
+        report: Report entity to convert
+        file_url: Optional file URL override. If None, uses report.file_url.
+
+    Returns:
+        ReportResponseDTO instance
+    """
+    return _report_to_dto(report, file_url=file_url if file_url is not None else _SENTINEL)
+
+
 def _render_report_html(
     report_payload: dict, business_info: dict, generated_by_name: str | None
 ) -> str:
     """Render report HTML using stored payload and business snapshot."""
     payload_for_render = _prepare_payload_for_render(report_payload)
     generated_ts = payload_for_render.get("generated_at") or timezone.now()
+
+    if payload_for_render.get("summary") and not payload_for_render.get("summary_labels"):
+        summary = payload_for_render.get("summary", {})
+        payload_for_render["summary_labels"] = {
+            k: k.replace("_", " ").title() for k in summary.keys()
+        }
 
     context = {
         "report": payload_for_render,
@@ -174,6 +209,112 @@ def _generate_pdf_from_html(html_content: str) -> bytes:
         raise BaseAPIException(
             detail=f"Failed to generate PDF report: {str(exc)}",
             code="PDF_GENERATION_ERROR",
+            status_code=500,
+        ) from exc
+
+
+def _generate_word_from_payload(
+    report_payload: dict, business_info: dict, generated_by_name: str | None
+) -> bytes:
+    """Generate Word document bytes from report payload."""
+    if not DOCX_AVAILABLE:
+        raise BaseAPIException(
+            detail="python-docx is required for Word document generation",
+            code="WORD_GENERATION_UNAVAILABLE",
+            status_code=500,
+        )
+    try:
+        from io import BytesIO
+
+        doc = Document()
+
+        # Title
+        report_type = report_payload.get("report_type", "Report").title()
+        title = doc.add_heading(f"{report_type} Report", 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Business info
+        if business_info:
+            business_para = doc.add_paragraph()
+            business_para.add_run(f"Business: {business_info.get('name', 'N/A')}").bold = True
+            if business_info.get("address"):
+                doc.add_paragraph(f"Address: {business_info.get('address')}")
+            if business_info.get("phone"):
+                doc.add_paragraph(f"Phone: {business_info.get('phone')}")
+
+        # Period
+        if report_payload.get("period_start") or report_payload.get("period_end"):
+            period_para = doc.add_paragraph()
+            period_para.add_run("Period: ").bold = True
+            period_text = ""
+            if report_payload.get("period_start"):
+                period_text += f"From {report_payload['period_start']}"
+            if report_payload.get("period_end"):
+                if period_text:
+                    period_text += " "
+                period_text += f"to {report_payload['period_end']}"
+            period_para.add_run(period_text)
+
+        # Generated by
+        if generated_by_name:
+            doc.add_paragraph(f"Generated by: {generated_by_name}")
+
+        doc.add_paragraph()  # Spacing
+
+        # Summary statistics
+        summary = report_payload.get("summary", {})
+        if summary:
+            doc.add_heading("Summary", 1)
+            summary_labels = report_payload.get("summary_labels", {})
+            for key, value in summary.items():
+                label = summary_labels.get(key, key.replace("_", " ").title())
+                doc.add_paragraph(f"{label}: {value}")
+
+        # Top products (if available)
+        if report_payload.get("top_products"):
+            doc.add_heading("Top Products", 1)
+            table = doc.add_table(rows=1, cols=4)
+            table.style = "Light Grid Accent 1"
+            hdr_cells = table.rows[0].cells
+            hdr_cells[0].text = "Product"
+            hdr_cells[1].text = "Quantity"
+            hdr_cells[2].text = "Revenue"
+            hdr_cells[3].text = "Sales"
+
+            for product in report_payload.get("top_products", [])[:10]:
+                row_cells = table.add_row().cells
+                row_cells[0].text = str(product.get("product_name", "N/A"))
+                row_cells[1].text = str(product.get("total_quantity_sold", 0))
+                row_cells[2].text = str(product.get("total_revenue", 0))
+                row_cells[3].text = str(product.get("number_of_sales", 0))
+
+        # Top customers (if available)
+        if report_payload.get("top_customers"):
+            doc.add_heading("Top Customers", 1)
+            table = doc.add_table(rows=1, cols=3)
+            table.style = "Light Grid Accent 1"
+            hdr_cells = table.rows[0].cells
+            hdr_cells[0].text = "Customer"
+            hdr_cells[1].text = "Total Purchases"
+            hdr_cells[2].text = "Number of Invoices"
+
+            for customer in report_payload.get("top_customers", [])[:10]:
+                row_cells = table.add_row().cells
+                row_cells[0].text = str(customer.get("customer_name", "N/A"))
+                row_cells[1].text = str(customer.get("total_purchases", 0))
+                row_cells[2].text = str(customer.get("number_of_invoices", 0))
+
+        # Save to bytes
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer.read()
+
+    except Exception as exc:
+        logger.error("Error generating Word document: %s", exc, exc_info=True)
+        raise BaseAPIException(
+            detail=f"Failed to generate Word document: {str(exc)}",
+            code="WORD_GENERATION_ERROR",
             status_code=500,
         ) from exc
 
@@ -219,32 +360,38 @@ class GenerateAndSaveReportUseCase:
             return timezone.make_aware(dt)
         return dt
 
-    @staticmethod
-    def _build_base_payload(report_dto, report_type: str, title: str) -> dict:
+    def _build_base_payload(self, report_dto, report_type: str, title: str) -> dict:
         """Build base payload structure common to all reports."""
         return {
             "report_type": report_type,
             "title": title,
             "business_id": str(report_dto.business_id),
-            "period_start": report_dto.period_start,
-            "period_end": report_dto.period_end,
-            "generated_at": report_dto.generated_at,
+            "period_start": report_dto.period_start or self.start_date,
+            "period_end": report_dto.period_end or self.end_date,
+            "generated_at": report_dto.generated_at or timezone.now(),
+            "generated_by": self.generated_by_label,
+            "generated_start": self.start_date,
+            "generated_end": self.end_date,
         }
+
+    @staticmethod
+    def _format_summary_key(key: str) -> str:
+        """Convert snake_case key to Title Case label."""
+        return key.replace("_", " ").title()
 
     def _build_sales_payload(self, report_dto) -> dict:
         """Build sales report payload."""
         payload = self._build_base_payload(report_dto, "sales", "Sales Report")
+        summary = {
+            "total_revenue": str(report_dto.total_revenue),
+            "total_invoices": report_dto.total_invoices,
+            "items_sold": report_dto.total_items_sold,
+            "average_invoice_value": str(report_dto.average_invoice_value),
+        }
         payload.update(
             {
-                "summary": [
-                    {"label": "Total Revenue", "value": str(report_dto.total_revenue)},
-                    {"label": "Total Invoices", "value": report_dto.total_invoices},
-                    {"label": "Items Sold", "value": report_dto.total_items_sold},
-                    {
-                        "label": "Average Invoice Value",
-                        "value": str(report_dto.average_invoice_value),
-                    },
-                ],
+                "summary": summary,
+                "summary_labels": {k: self._format_summary_key(k) for k in summary.keys()},
                 "payment_breakdown": [
                     {
                         "payment_method": item.payment_method,
@@ -287,17 +434,16 @@ class GenerateAndSaveReportUseCase:
     def _build_inventory_payload(self, report_dto) -> dict:
         """Build inventory report payload."""
         payload = self._build_base_payload(report_dto, "inventory", "Inventory Report")
+        summary = {
+            "total_products": report_dto.total_products,
+            "inventory_value": str(report_dto.total_inventory_value),
+            "low_stock_items": report_dto.low_stock_products,
+            "expired_products": report_dto.expired_products,
+        }
         payload.update(
             {
-                "summary": [
-                    {"label": "Total Products", "value": report_dto.total_products},
-                    {
-                        "label": "Inventory Value",
-                        "value": str(report_dto.total_inventory_value),
-                    },
-                    {"label": "Low Stock Items", "value": report_dto.low_stock_products},
-                    {"label": "Expired Products", "value": report_dto.expired_products},
-                ],
+                "summary": summary,
+                "summary_labels": {k: self._format_summary_key(k) for k in summary.keys()},
                 "products": [
                     {
                         "product_id": str(p.product_id),
@@ -342,17 +488,16 @@ class GenerateAndSaveReportUseCase:
     def _build_stock_payload(self, report_dto) -> dict:
         """Build stock report payload."""
         payload = self._build_base_payload(report_dto, "stock", "Stock Report")
+        summary = {
+            "current_stock_value": str(report_dto.current_stock_value),
+            "movements_in": report_dto.stock_movements_in,
+            "movements_out": report_dto.stock_movements_out,
+            "net_change": report_dto.net_stock_change,
+        }
         payload.update(
             {
-                "summary": [
-                    {
-                        "label": "Current Stock Value",
-                        "value": str(report_dto.current_stock_value),
-                    },
-                    {"label": "Movements In", "value": report_dto.stock_movements_in},
-                    {"label": "Movements Out", "value": report_dto.stock_movements_out},
-                    {"label": "Net Change", "value": report_dto.net_stock_change},
-                ],
+                "summary": summary,
+                "summary_labels": {k: self._format_summary_key(k) for k in summary.keys()},
                 "products_by_stock_level": {
                     "low": [
                         self._build_product_info_dict(p)
@@ -401,9 +546,15 @@ class GenerateAndSaveReportUseCase:
 
     @transaction.atomic
     def execute(self) -> ReportResponseDTO:
-        """Execute report generation and saving."""
-        self._validate_report_permission()
+        """Execute report generation and saving.
 
+        Generates report data immediately and saves it to metadata,
+        then dispatches file generation task to Celery (if available).
+
+        Returns:
+            ReportResponseDTO with all insights in metadata.payload
+        """
+        self._validate_report_permission()
         self._ensure_date_range()
         self.generated_by_label = self._get_generated_by_label()
 
@@ -441,53 +592,162 @@ class GenerateAndSaveReportUseCase:
         report = self.report_repository.create(report)
 
         try:
-            generate_report_task.delay(
-                report_id=report_id,
-                business_id=self.business_id,
-                user_id=self.user_id,
-                report_type=self.report_type.value,
-                format=self.format.value,
-                start_date=self.start_date.isoformat() if self.start_date else None,
-                end_date=self.end_date.isoformat() if self.end_date else None,
-            )
+            if self.report_type == ReportType.SALES:
+                report_payload = self._generate_sales_report()
+            elif self.report_type == ReportType.INVENTORY:
+                report_payload = self._generate_inventory_report()
+            elif self.report_type == ReportType.STOCK:
+                report_payload = self._generate_stock_report()
+            else:
+                raise ValueError(f"Unknown report type: {self.report_type}")
 
-            logger.info(
-                f"Report {report_id} generation queued for async processing "
-                f"(type: {self.report_type.value}, format: {self.format.value})"
-            )
-            return self._to_dto(report)
+            serialized_payload = _serialize_report_payload(report_payload)
+            business_snapshot = _business_snapshot_from_entity(self.business)
 
-        except Exception as celery_error:
+            updated_metadata: dict[str, Any] = report.metadata or {}
+            updated_metadata["payload"] = serialized_payload
+            updated_metadata["business_snapshot"] = business_snapshot
+            if self.generated_by_label:
+                updated_metadata["generated_by_name"] = self.generated_by_label
+
+            report.metadata = updated_metadata
+            report.updated_at = timezone.now()
+            report = self.report_repository.update(report)
+
+            if generate_report_task:
+                try:
+                    start_date_str = self.start_date.isoformat() if self.start_date else None
+                    end_date_str = self.end_date.isoformat() if self.end_date else None
+
+                    generate_report_task.delay(
+                        report_id=report_id,
+                        business_id=self.business_id,
+                        user_id=self.user_id,
+                        report_type=self.report_type.value,
+                        format=self.format.value,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                    )
+                    logger.info(
+                        f"Report {report_id} file generation task dispatched to Celery "
+                        f"(type: {self.report_type.value}, format: {self.format.value})"
+                    )
+                except (CeleryConnectionError, Exception) as celery_error:
+                    logger.warning(
+                        f"Celery unavailable, falling back to synchronous file generation for report {report_id}: {celery_error}",
+                        exc_info=True,
+                    )
+                    return self._generate_and_upload_file(
+                        report_id, report_payload, business_snapshot
+                    )
+            else:
+                logger.info(
+                    f"Generating report {report_id} file synchronously (Celery not available) "
+                    f"(type: {self.report_type.value}, format: {self.format.value})"
+                )
+                return self._generate_and_upload_file(report_id, report_payload, business_snapshot)
+
+            return _report_to_dto(report)
+
+        except Exception as e:
             logger.error(
-                f"Failed to queue report generation task for {report_id}: {str(celery_error)}. "
-                f"Celery worker must be running for report generation.",
+                f"Failed to initiate report generation for {report_id}: {str(e)}",
                 exc_info=True,
                 extra={"report_id": str(report_id)},
             )
 
             report.status = ReportStatus.FAILED
-            report.error_message = (
-                f"Failed to queue report generation: {str(celery_error)}. "
-                f"Please ensure Celery worker is running."
-            )
+            report.error_message = f"Failed to initiate report generation: {str(e)}"
             report.updated_at = timezone.now()
             self.report_repository.update(report)
 
-            raise BaseAPIException(
-                detail="Report generation service is unavailable. Please try again later.",
-                code="CELERY_UNAVAILABLE",
-                status_code=503,
-            ) from celery_error
+            raise
 
-    def generate_and_save_report_content(self, report_id: UUID) -> ReportResponseDTO:
-        """
-        Generate report content and update the existing report.
-
-        This method is called by the Celery task to actually generate the report content.
-        It should only be called from within an async task context.
+    def _generate_and_upload_file(
+        self, report_id: UUID, report_payload: dict, business_snapshot: dict
+    ) -> ReportResponseDTO:
+        """Generate and upload report file to S3.
 
         Args:
-            report_id: ID of the report to generate content for
+            report_id: ID of the report
+            report_payload: Pre-generated report payload with all insights
+            business_snapshot: Business information snapshot
+
+        Returns:
+            ReportResponseDTO with completed report information
+        """
+        report = self.report_repository.get_by_id(report_id)
+        if not report:
+            raise NotFoundError(
+                detail="Report not found",
+                code="REPORT_NOT_FOUND",
+            )
+
+        if not self.generated_by_label:
+            self.generated_by_label = self._get_generated_by_label()
+
+        file_url = None
+        file_size = None
+        try:
+            s3_service = S3Service()
+            filename_base = f"{self.report_type.value}-{report_id}"
+            file_bytes = None
+
+            if self.format == ReportFormat.PDF:
+                html_content = _render_report_html(
+                    report_payload=report_payload,
+                    business_info=business_snapshot,
+                    generated_by_name=self.generated_by_label,
+                )
+                file_bytes = _generate_pdf_from_html(html_content)
+                file_url = s3_service.upload_pdf(file_bytes, filename=filename_base)
+            elif self.format == ReportFormat.WORD:
+                file_bytes = _generate_word_from_payload(
+                    report_payload=report_payload,
+                    business_info=business_snapshot,
+                    generated_by_name=self.generated_by_label,
+                )
+                file_url = s3_service.upload_word(file_bytes, filename=filename_base)
+            else:
+                logger.warning(
+                    f"Unsupported format {self.format.value} for report {report_id}",
+                    extra={"report_id": str(report_id), "format": self.format.value},
+                )
+
+            if file_url and file_bytes:
+                file_size = len(file_bytes)
+                logger.info(
+                    f"File uploaded to S3 for report {report_id}: {file_url}, size: {file_size} bytes",
+                    extra={
+                        "report_id": str(report_id),
+                        "file_url": file_url,
+                        "file_size": file_size,
+                    },
+                )
+        except Exception as file_error:
+            logger.error(
+                f"Failed to generate/upload file for report {report_id}: {file_error}",
+                exc_info=True,
+                extra={"report_id": str(report_id)},
+            )
+
+        report.status = ReportStatus.COMPLETED
+        report.file_path = None
+        report.file_url = file_url
+        report.file_size = file_size
+        report.updated_at = timezone.now()
+        report = self.report_repository.update(report)
+
+        return _report_to_dto(report)
+
+    def generate_and_save_report_content(self, report_id: UUID) -> ReportResponseDTO:
+        """Generate report file and upload to S3 (called by Celery task).
+
+        This method assumes report data (payload) is already generated and saved
+        in metadata. It only generates the file and uploads it.
+
+        Args:
+            report_id: ID of the report to generate file for
 
         Returns:
             ReportResponseDTO with completed report information
@@ -511,33 +771,31 @@ class GenerateAndSaveReportUseCase:
             self.generated_by_label = self._get_generated_by_label()
 
         try:
-            if self.report_type == ReportType.SALES:
-                report_payload = self._generate_sales_report()
-            elif self.report_type == ReportType.INVENTORY:
-                report_payload = self._generate_inventory_report()
-            elif self.report_type == ReportType.STOCK:
-                report_payload = self._generate_stock_report()
+            # Retrieve payload from metadata (already generated in execute())
+            metadata = report.metadata or {}
+            payload_data = metadata.get("payload")
+            business_snapshot = metadata.get("business_snapshot") or _business_snapshot_from_entity(
+                self.business
+            )
+
+            if not payload_data:
+                logger.warning(
+                    f"Payload not found in metadata for report {report_id}, regenerating...",
+                    extra={"report_id": str(report_id)},
+                )
+                if self.report_type == ReportType.SALES:
+                    report_payload = self._generate_sales_report()
+                elif self.report_type == ReportType.INVENTORY:
+                    report_payload = self._generate_inventory_report()
+                elif self.report_type == ReportType.STOCK:
+                    report_payload = self._generate_stock_report()
+                else:
+                    raise ValueError(f"Unknown report type: {self.report_type}")
             else:
-                raise ValueError(f"Unknown report type: {self.report_type}")
+                # Deserialize payload for file generation (convert ISO strings back to datetime)
+                report_payload = _prepare_payload_for_render(payload_data)
 
-            serialized_payload = _serialize_report_payload(report_payload)
-            business_snapshot = _business_snapshot_from_entity(self.business)
-
-            updated_metadata: dict[str, Any] = report.metadata or {}
-            updated_metadata["payload"] = serialized_payload
-            updated_metadata["business_snapshot"] = business_snapshot
-            if self.generated_by_label:
-                updated_metadata["generated_by_name"] = self.generated_by_label
-
-            report.metadata = updated_metadata
-            report.status = ReportStatus.COMPLETED
-            report.file_path = None
-            report.file_url = None
-            report.file_size = None
-            report.updated_at = timezone.now()
-            report = self.report_repository.update(report)
-
-            return self._to_dto(report)
+            return self._generate_and_upload_file(report_id, report_payload, business_snapshot)
 
         except Exception as e:
             logger.error(f"Error generating report {report_id}: {str(e)}", exc_info=True)
@@ -551,8 +809,8 @@ class GenerateAndSaveReportUseCase:
                 status_code=500,
             ) from e
 
-    def _generate_sales_report(self) -> bytes | str | dict:
-        """Generate sales report content."""
+    def _generate_sales_report(self) -> dict:
+        """Generate sales report payload."""
         use_case = GenerateSalesReportUseCase(
             invoice_repository=self.invoice_repository,
             invoice_line_repository=self.invoice_line_repository,
@@ -564,11 +822,10 @@ class GenerateAndSaveReportUseCase:
             end_date=self.end_date,
         )
         report_dto = use_case.execute()
-        payload = self._build_sales_payload(report_dto)
-        return self._prepare_report_payload(payload)
+        return self._build_sales_payload(report_dto)
 
-    def _generate_inventory_report(self) -> bytes | str | dict:
-        """Generate inventory report content."""
+    def _generate_inventory_report(self) -> dict:
+        """Generate inventory report payload."""
         use_case = GenerateInventoryReportUseCase(
             product_repository=self.product_repository,
             stock_movement_repository=self.stock_movement_repository,
@@ -579,11 +836,10 @@ class GenerateAndSaveReportUseCase:
             end_date=self.end_date,
         )
         report_dto = use_case.execute()
-        payload = self._build_inventory_payload(report_dto)
-        return self._prepare_report_payload(payload)
+        return self._build_inventory_payload(report_dto)
 
-    def _generate_stock_report(self) -> bytes | str | dict:
-        """Generate stock report content."""
+    def _generate_stock_report(self) -> dict:
+        """Generate stock report payload."""
         use_case = GenerateStockReportUseCase(
             stock_movement_repository=self.stock_movement_repository,
             product_repository=self.product_repository,
@@ -594,8 +850,7 @@ class GenerateAndSaveReportUseCase:
             end_date=self.end_date,
         )
         report_dto = use_case.execute()
-        payload = self._build_stock_payload(report_dto)
-        return self._prepare_report_payload(payload)
+        return self._build_stock_payload(report_dto)
 
     def _ensure_date_range(self) -> None:
         """Ensure start and end dates have sensible defaults."""
@@ -620,22 +875,9 @@ class GenerateAndSaveReportUseCase:
             return str(self.user_id)
         return user.name or user.email or str(user.id)
 
-    def _prepare_report_payload(self, payload: dict) -> dict:
-        """Ensure payload contains period and generator information."""
-        payload["period_start"] = payload.get("period_start") or self.start_date
-        payload["period_end"] = payload.get("period_end") or self.end_date
-        payload["generated_by"] = self.generated_by_label
-        payload["generated_start"] = self.start_date
-        payload["generated_end"] = self.end_date
-        return payload
-
-    def _to_dto(self, report: Report) -> ReportResponseDTO:
-        """Convert report entity to DTO."""
-        return _report_to_dto(report, file_url=None)
-
 
 class DownloadReportUseCase:
-    """Use case for downloading a report by ID."""
+    """Use case for downloading a report file from S3."""
 
     def __init__(
         self,
@@ -650,12 +892,11 @@ class DownloadReportUseCase:
         self.report_id = report_id
         self.user_id = user_id
 
-    def execute(self) -> tuple[bytes | str, str, str]:
-        """
-        Execute report download.
+    def execute(self) -> tuple[bytes, str, str]:
+        """Download report file from S3.
 
         Returns:
-            Tuple of (content, content_type, filename)
+            Tuple of (content_bytes, content_type, filename)
         """
         report = self.report_repository.get_by_id(self.report_id)
         if not report:
@@ -670,6 +911,7 @@ class DownloadReportUseCase:
                 code="REPORT_NOT_READY",
                 status_code=400,
             )
+
         validate_business_access(
             business_domain_service=self.business_domain_service,
             business_id=report.business_id,
@@ -677,49 +919,56 @@ class DownloadReportUseCase:
             error_message="You don't have access to this report",
         )
 
-        metadata = report.metadata or {}
-        payload = metadata.get("payload")
-
-        if payload:
-            business_snapshot = metadata.get("business_snapshot")
-            if not business_snapshot:
-                business = self.business_domain_service.get_business(report.business_id)
-                if not business:
-                    raise NotFoundError(
-                        detail="Business not found",
-                        code="BUSINESS_NOT_FOUND",
-                    )
-                business_snapshot = _business_snapshot_from_entity(business)
-
-            html_content = _render_report_html(
-                report_payload=payload,
-                business_info=business_snapshot,
-                generated_by_name=metadata.get("generated_by_name"),
+        if not report.file_url:
+            raise BaseAPIException(
+                detail="Report file not available. The file may still be generating.",
+                code="FILE_NOT_AVAILABLE",
+                status_code=404,
             )
 
-            created_at = getattr(report, "created_at", None)
-            if created_at:
-                timestamp_str = created_at.strftime("%Y%m%d_%H%M%S")
-            else:
-                timestamp_str = "report"
+        report_format = report.format.value
 
-            content: bytes | str
-            if report.format == ReportFormat.PDF:
-                content = _generate_pdf_from_html(html_content)
-                content_type = "application/pdf"
-                filename = f"{report.report_type.value}_report_{timestamp_str}.pdf"
-            else:
-                content = html_content
-                content_type = "text/html"
-                filename = f"{report.report_type.value}_report_{timestamp_str}.html"
+        # Download file from S3
+        try:
+            s3_service = S3Service()
+            key = s3_service._extract_key_from_s3_url(report.file_url)
+            if not key:
+                raise BaseAPIException(
+                    detail="Invalid S3 URL format",
+                    code="INVALID_S3_URL",
+                    status_code=500,
+                )
 
-            return content, content_type, filename
+            s3_client = s3_service.s3_client
+            response = s3_client.get_object(Bucket=s3_service.aws_bucket_name, Key=key)
+            file_bytes = response["Body"].read()
+        except Exception as e:
+            logger.error(
+                f"Failed to download file from S3 for report {self.report_id}: {e}",
+                exc_info=True,
+                extra={"report_id": str(self.report_id), "file_url": report.file_url},
+            )
+            raise BaseAPIException(
+                detail="Failed to download report file. Please try again later.",
+                code="DOWNLOAD_FAILED",
+                status_code=500,
+            ) from e
 
-        raise BaseAPIException(
-            detail="Report content is no longer available",
-            code="REPORT_FILE_NOT_FOUND",
-            status_code=404,
-        )
+        if report_format == "pdf":
+            content_type = "application/pdf"
+            extension = "pdf"
+        elif report_format == "word":
+            content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            extension = "docx"
+        else:
+            content_type = "application/octet-stream"
+            extension = report_format
+
+        created_at = getattr(report, "created_at", None)
+        timestamp_str = created_at.strftime("%Y%m%d_%H%M%S") if created_at else "report"
+        filename = f"{report.report_type.value}_report_{timestamp_str}.{extension}"
+
+        return file_bytes, content_type, filename
 
 
 class DeleteReportUseCase:
@@ -732,13 +981,14 @@ class DeleteReportUseCase:
         report_id: UUID,
         user_id: UUID,
     ) -> None:
+        """Initialize use case."""
         self.report_repository = report_repository
         self.business_domain_service = business_domain_service
         self.report_id = report_id
         self.user_id = user_id
 
     def execute(self) -> None:
-        """Delete the report."""
+        """Delete the report and its file from S3."""
         report = self.report_repository.get_by_id(self.report_id)
         if not report:
             raise NotFoundError(
@@ -752,6 +1002,16 @@ class DeleteReportUseCase:
             user_id=self.user_id,
             error_message="You don't have access to this report",
         )
+
+        if report.file_url:
+            try:
+                s3_service = S3Service()
+                s3_service.delete_file_safe(report.file_url)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to delete file from S3 for report {self.report_id}: {e}",
+                    extra={"report_id": str(self.report_id), "file_url": report.file_url},
+                )
 
         self.report_repository.delete(report.id)
 
@@ -771,6 +1031,7 @@ class ListReportsUseCase:
         end_date: datetime | None = None,
         limit: int = 100,
     ) -> None:
+        """Initialize use case."""
         self.report_repository = report_repository
         self.business_domain_service = business_domain_service
         self.business_id = business_id
@@ -797,8 +1058,4 @@ class ListReportsUseCase:
             end_date=self.end_date,
             limit=self.limit,
         )
-        return [self._to_dto(report) for report in reports]
-
-    def _to_dto(self, report: Report) -> ReportResponseDTO:
-        """Convert entity to DTO."""
-        return _report_to_dto(report, file_url=report.file_url)
+        return [_report_to_dto(report) for report in reports]

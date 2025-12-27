@@ -19,8 +19,8 @@ class Report(BaseModel):
     ]
 
     FORMAT_CHOICES = [
-        ("html", "HTML"),
         ("pdf", "PDF"),
+        ("word", "Word"),
     ]
 
     STATUS_CHOICES = [
@@ -31,7 +31,7 @@ class Report(BaseModel):
 
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="reports")
     report_type = models.CharField(max_length=20, choices=REPORT_TYPE_CHOICES)
-    format = models.CharField(max_length=10, choices=FORMAT_CHOICES, default="html")
+    format = models.CharField(max_length=10, choices=FORMAT_CHOICES, default="pdf")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="generating")
     start_date = models.DateTimeField(null=True, blank=True)
     end_date = models.DateTimeField(null=True, blank=True)
