@@ -194,7 +194,6 @@ def generate_report_task(
                 report.error_message = str(exc)
                 report.updated_at = timezone.now()
                 report_repository.update(report)
-                connection.commit()
         except Exception as update_error:
             logger.error(
                 f"Failed to update report {report_id} status: {update_error}, "

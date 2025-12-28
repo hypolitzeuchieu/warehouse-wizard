@@ -62,9 +62,10 @@
             font-size: 9px;
             color: #555;
         }
-        .qr-code img {
-            width: 60px;
-            height: 60px;
+        .logo img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
         }
         .meta {
             font-size: 9px;
@@ -141,9 +142,9 @@
                     {% if business.email %} | Email: {{ business.email }}{% endif %}
                 </p>
             </div>
-            {% if business.qr_code_url %}
-            <div class="qr-code">
-                <img src="{{ business.qr_code_url }}" alt="Business QR Code">
+            {% if business.logo_url %}
+            <div class="logo">
+                <img src="{{ business.logo_url }}" alt="Business Logo">
             </div>
             {% endif %}
         </header>
@@ -161,10 +162,18 @@
 
         {% if report.summary %}
         <div class="summary-grid section-block">
-            {% for card in report.summary %}
+            {% for key, value in report.summary.items %}
             <div class="summary-card">
-                <div class="label">{{ card.label }}</div>
-                <div class="value">{{ card.value }}</div>
+                <div class="label">
+                    {% if report.summary_labels %}
+                        {% for label_key, label_value in report.summary_labels.items %}
+                            {% if label_key == key %}{{ label_value }}{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        {{ key|title }}
+                    {% endif %}
+                </div>
+                <div class="value">{{ value }}</div>
             </div>
             {% endfor %}
         </div>

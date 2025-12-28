@@ -35,6 +35,10 @@ class S3Service:
         "barcode": {"image/png": ".png"},
         "qrcode": {"image/png": ".png"},
         "logo": ALLOWED_IMAGE_FORMATS,
+        "pdf": {"application/pdf": ".pdf"},
+        "word": {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx"
+        },
     }
 
     # Security: Maximum file size limits (in bytes)
@@ -400,6 +404,154 @@ class S3Service:
             filename=filename,
             file_type="logo",
         )
+
+    def upload_pdf(
+        self,
+        pdf_bytes: bytes,
+        folder: str = "reports",
+        filename: str | None = None,
+    ) -> str:
+        """
+        Upload a PDF file to S3.
+
+        Args:
+            pdf_bytes: PDF content as bytes
+            folder: S3 folder path (e.g., "reports")
+            filename: Optional base name for the file
+
+        Returns:
+            Public URL of the uploaded PDF
+        """
+        from io import BytesIO
+
+        pdf_file = BytesIO(pdf_bytes)
+        pdf_file.content_type = "application/pdf"
+
+        if filename:
+            file_name = f"{folder}/{filename}.pdf"
+        else:
+            file_name = f"{folder}/{uuid.uuid4()}.pdf"
+
+        try:
+            self.s3_client.upload_fileobj(
+                pdf_file,
+                self.aws_bucket_name,
+                file_name,
+                ExtraArgs={"ContentType": "application/pdf"},
+            )
+
+            file_url = (
+                f"https://{self.aws_bucket_name}.s3."
+                f"{self.aws_region_name}.amazonaws.com/{file_name}"
+            )
+
+            logger.info(f"PDF successfully uploaded to S3: {file_url}")
+            return file_url
+
+        except NoCredentialsError as e:
+            logger.error("AWS credentials are missing.")
+            raise BaseAPIException(
+                detail="An issue occured while processing the PDF file. Please try again later.",
+                code="S3_CREDENTIALS_MISSING",
+                status_code=500,
+                details={"error": str(e)},
+            ) from e
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            error_message = e.response.get("Error", {}).get("Message", str(e))
+            logger.error(f"S3 upload failed: {error_code} - {error_message}")
+            raise BaseAPIException(
+                detail=f"S3 upload failed: {error_message}",
+                code="S3_UPLOAD_FAILED",
+                status_code=500,
+                details={"error_code": error_code, "error": str(e)},
+            ) from e
+        except BaseAPIException:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during S3 upload: {str(e)}", exc_info=True)
+            raise BaseAPIException(
+                detail="An unexpected error occurred during file upload. Please try again later.",
+                code="S3_UPLOAD_ERROR",
+                status_code=500,
+                details={"error": str(e)},
+            ) from e
+
+    def upload_word(
+        self,
+        word_bytes: bytes,
+        folder: str = "reports",
+        filename: str | None = None,
+    ) -> str:
+        """
+        Upload a Word document file to S3.
+
+        Args:
+            word_bytes: Word document content as bytes
+            folder: S3 folder path (e.g., "reports")
+            filename: Optional base name for the file
+
+        Returns:
+            Public URL of the uploaded Word document
+        """
+        from io import BytesIO
+
+        word_file = BytesIO(word_bytes)
+        word_file.content_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+        if filename:
+            file_name = f"{folder}/{filename}.docx"
+        else:
+            file_name = f"{folder}/{uuid.uuid4()}.docx"
+
+        try:
+            self.s3_client.upload_fileobj(
+                word_file,
+                self.aws_bucket_name,
+                file_name,
+                ExtraArgs={
+                    "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                },
+            )
+
+            file_url = (
+                f"https://{self.aws_bucket_name}.s3."
+                f"{self.aws_region_name}.amazonaws.com/{file_name}"
+            )
+
+            logger.info(f"Word document successfully uploaded to S3: {file_url}")
+            return file_url
+
+        except NoCredentialsError as e:
+            logger.error("AWS credentials are missing.")
+            raise BaseAPIException(
+                detail="An issue occured while processing the Word document. Please try again later.",
+                code="S3_CREDENTIALS_MISSING",
+                status_code=500,
+                details={"error": str(e)},
+            ) from e
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            error_message = e.response.get("Error", {}).get("Message", str(e))
+            logger.error(f"S3 upload failed: {error_code} - {error_message}")
+            raise BaseAPIException(
+                detail=f"S3 upload failed: {error_message}",
+                code="S3_UPLOAD_FAILED",
+                status_code=500,
+                details={"error_code": error_code, "error": str(e)},
+            ) from e
+        except BaseAPIException:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during S3 upload: {str(e)}", exc_info=True)
+            raise BaseAPIException(
+                detail="An unexpected error occurred during file upload. Please try again later.",
+                code="S3_UPLOAD_ERROR",
+                status_code=500,
+                details={"error": str(e)},
+            ) from e
 
     def delete_file(self, file_url: str) -> None:
         """

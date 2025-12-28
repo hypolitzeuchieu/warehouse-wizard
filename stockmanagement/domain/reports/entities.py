@@ -20,8 +20,8 @@ class ReportType(str, Enum):
 class ReportFormat(str, Enum):
     """Report format enumeration."""
 
-    HTML = "html"
     PDF = "pdf"
+    WORD = "word"
 
 
 class ReportStatus(str, Enum):

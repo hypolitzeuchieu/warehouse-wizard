@@ -12,7 +12,7 @@ class ReportCreateDTO:
 
     business_id: UUID
     report_type: str  # sales, inventory, stock
-    format: str = "html"  # html, pdf
+    format: str = "pdf"  # pdf
     start_date: datetime | None = None
     end_date: datetime | None = None
 
