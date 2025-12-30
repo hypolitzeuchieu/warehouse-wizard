@@ -3,7 +3,9 @@
 from django.core.management.base import BaseCommand
 
 from application.use_cases.doc_credential_use_cases import GenerateDocCredentialUseCase
-from infrastructure.persistence.repositories import DocumentationCredentialRepositoryImpl
+from infrastructure.persistence.repositories import (
+    DocumentationCredentialRepositoryImpl,
+)
 
 
 class Command(BaseCommand):
