@@ -29,7 +29,9 @@ if DEBUG and ENVIRONMENT == "production":
     )
 
 # ALLOWED_HOSTS configuration
-ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+ALLOWED_HOSTS = [
+    host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()
+]
 
 # Security: ALLOWED_HOSTS must be configured in production
 if ENVIRONMENT == "production" and not ALLOWED_HOSTS:
@@ -94,7 +96,9 @@ SWAGGER_SETTINGS = {
             "type": "apiKey",
             "name": "Authorization",
             "in": "header",
-            "description": ("Bearer token authentication. " 'Example: "Bearer {token}"'),
+            "description": (
+                "Bearer token authentication. " 'Example: "Bearer {token}"'
+            ),
         }
     },
     "USE_SESSION_AUTH": False,
@@ -106,7 +110,9 @@ if not JWT_SECRET_KEY:
     raise ValueError("JWT_SECRET_KEY environment variable is required")
 
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+)
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 SIMPLE_JWT = {
@@ -145,7 +151,9 @@ if DEBUG:
     MIDDLEWARE.insert(5, "debug_toolbar.middleware.DebugToolbarMiddleware")
 
 # CORS settings
-CORS_ALLOWED_ALL_ORIGINS = os.getenv("CORS_ALLOWED_ALL_ORIGINS", "False").lower() == "true"
+CORS_ALLOWED_ALL_ORIGINS = (
+    os.getenv("CORS_ALLOWED_ALL_ORIGINS", "False").lower() == "true"
+)
 
 # Security: Prevent CORS_ALLOWED_ALL_ORIGINS=True in production
 if CORS_ALLOWED_ALL_ORIGINS and ENVIRONMENT == "production":
@@ -155,7 +163,9 @@ if CORS_ALLOWED_ALL_ORIGINS and ENVIRONMENT == "production":
     )
 
 CORS_ALLOWED_ORIGINS = [
-    origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
 ] or ([os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else [])
 CORS_ORIGIN_ALLOW_ALL = False
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
@@ -341,6 +351,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "tasks.auth_tasks.cleanup_expired_tokens",
         "schedule": crontab(hour=0, minute=0),
     },
+    "check-expired-subscriptions": {
+        "task": "tasks.subscription_tasks.check_expired_subscriptions_task",
+        "schedule": crontab(hour=0, minute=0),
+    },
 }
 
 # Logging configuration
@@ -352,12 +366,40 @@ DOC_PASSWORD = os.getenv("DOC_PASSWORD", None)
 
 # Documentation Login Rate Limiting
 DOC_LOGIN_RATE_LIMIT_REQUESTS = int(os.getenv("DOC_LOGIN_RATE_LIMIT_REQUESTS", "5"))
-DOC_LOGIN_RATE_LIMIT_PERIOD = int(os.getenv("DOC_LOGIN_RATE_LIMIT_PERIOD", "900"))  # 15 minutes
+DOC_LOGIN_RATE_LIMIT_PERIOD = int(
+    os.getenv("DOC_LOGIN_RATE_LIMIT_PERIOD", "900")
+)  # 15 minutes
 
 # Google OAuth Settings
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", None)
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", None)
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", None)
+
+# Subscription Settings
+SUBSCRIPTION_TRIAL_DAYS = int(os.getenv("SUBSCRIPTION_TRIAL_DAYS", "14"))
+SUBSCRIPTION_GRACE_PERIOD_DAYS = int(os.getenv("SUBSCRIPTION_GRACE_PERIOD_DAYS", "7"))
+
+# Stripe Settings
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", None)
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", None)
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", None)
+
+PAYMENT_RETURN_URL = os.getenv(
+    "PAYMENT_RETURN_URL", "http://127.0.0.1:8000/api/v1/subscriptions/payment/success"
+)
+PAYMENT_CANCEL_URL = os.getenv(
+    "PAYMENT_CANCEL_URL", "http://127.0.0.1:8000/api/v1/subscriptions/payment/cancel"
+)
+
+# MTN Mobile Money Settings
+MTN_MOBILE_MONEY_API_KEY = os.getenv("MTN_MOBILE_MONEY_API_KEY", None)
+MTN_MOBILE_MONEY_API_URL = os.getenv("MTN_MOBILE_MONEY_API_URL", None)
+MTN_MOBILE_MONEY_API_USER_ID = os.getenv("MTN_MOBILE_MONEY_API_USER_ID", None)
+
+# Orange Mobile Money Settings
+ORANGE_MOBILE_MONEY_API_KEY = os.getenv("ORANGE_MOBILE_MONEY_API_KEY", None)
+ORANGE_MOBILE_MONEY_API_URL = os.getenv("ORANGE_MOBILE_MONEY_API_URL", None)
+ORANGE_MOBILE_MONEY_MERCHANT_KEY = os.getenv("ORANGE_MOBILE_MONEY_MERCHANT_KEY", None)
 
 # Django Debug Toolbar Settings
 if ENVIRONMENT == "development":
@@ -419,16 +461,36 @@ RATE_LIMIT_VERIFY_OTP_PERIOD = int(os.getenv("RATE_LIMIT_VERIFY_OTP_PERIOD", "30
 RATE_LIMIT_REQUEST_OTP_REQUESTS = int(os.getenv("RATE_LIMIT_REQUEST_OTP_REQUESTS", "3"))
 RATE_LIMIT_REQUEST_OTP_PERIOD = int(os.getenv("RATE_LIMIT_REQUEST_OTP_PERIOD", "300"))
 
-RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS = int(os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS", "10"))
-RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD = int(os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD", "60"))
+RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS = int(
+    os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_REQUESTS", "10")
+)
+RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD = int(
+    os.getenv("RATE_LIMIT_GOOGLE_AUTH_URL_PERIOD", "60")
+)
 
-RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS = int(os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS", "5"))
-RATE_LIMIT_GOOGLE_CALLBACK_PERIOD = int(os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_PERIOD", "300"))
+RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS = int(
+    os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_REQUESTS", "5")
+)
+RATE_LIMIT_GOOGLE_CALLBACK_PERIOD = int(
+    os.getenv("RATE_LIMIT_GOOGLE_CALLBACK_PERIOD", "300")
+)
 
-RATE_LIMIT_FORGOT_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_FORGOT_PASSWORD_REQUESTS", "3"))
-RATE_LIMIT_FORGOT_PASSWORD_PERIOD = int(os.getenv("RATE_LIMIT_FORGOT_PASSWORD_PERIOD", "300"))
+RATE_LIMIT_FORGOT_PASSWORD_REQUESTS = int(
+    os.getenv("RATE_LIMIT_FORGOT_PASSWORD_REQUESTS", "3")
+)
+RATE_LIMIT_FORGOT_PASSWORD_PERIOD = int(
+    os.getenv("RATE_LIMIT_FORGOT_PASSWORD_PERIOD", "300")
+)
 
-RATE_LIMIT_RESET_PASSWORD_REQUESTS = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_REQUESTS", "5"))
-RATE_LIMIT_RESET_PASSWORD_PERIOD = int(os.getenv("RATE_LIMIT_RESET_PASSWORD_PERIOD", "300"))
-RATE_LIMIT_REFRESH_TOKEN_REQUESTS = int(os.getenv("RATE_LIMIT_REFRESH_TOKEN_REQUESTS", "20"))
-RATE_LIMIT_REFRESH_TOKEN_PERIOD = int(os.getenv("RATE_LIMIT_REFRESH_TOKEN_PERIOD", "60"))
+RATE_LIMIT_RESET_PASSWORD_REQUESTS = int(
+    os.getenv("RATE_LIMIT_RESET_PASSWORD_REQUESTS", "5")
+)
+RATE_LIMIT_RESET_PASSWORD_PERIOD = int(
+    os.getenv("RATE_LIMIT_RESET_PASSWORD_PERIOD", "300")
+)
+RATE_LIMIT_REFRESH_TOKEN_REQUESTS = int(
+    os.getenv("RATE_LIMIT_REFRESH_TOKEN_REQUESTS", "20")
+)
+RATE_LIMIT_REFRESH_TOKEN_PERIOD = int(
+    os.getenv("RATE_LIMIT_REFRESH_TOKEN_PERIOD", "60")
+)

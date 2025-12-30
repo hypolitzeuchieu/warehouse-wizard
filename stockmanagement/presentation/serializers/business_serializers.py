@@ -21,7 +21,9 @@ class BusinessCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255, required=True)
     description = serializers.CharField(required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
-    phone_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    phone_number = serializers.CharField(
+        max_length=30, required=False, allow_blank=True
+    )
     email = serializers.EmailField(required=False, allow_blank=True)
     settings = serializers.JSONField(required=False, default=dict)
     logo = serializers.ImageField(required=False, allow_null=True)
@@ -31,7 +33,9 @@ class BusinessCreateSerializer(serializers.Serializer):
         logo = attrs.get("logo")
         logo_url = attrs.get("logo_url")
         if logo and logo_url:
-            raise serializers.ValidationError("Provide either 'logo' or 'logo_url', not both.")
+            raise serializers.ValidationError(
+                "Provide either 'logo' or 'logo_url', not both."
+            )
         if logo:
             validate_max_upload_size(logo, field_name="logo")
         return attrs
@@ -57,7 +61,9 @@ class BusinessUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
-    phone_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    phone_number = serializers.CharField(
+        max_length=30, required=False, allow_blank=True
+    )
     email = serializers.EmailField(required=False, allow_blank=True)
     logo_url = serializers.URLField(max_length=500, required=False, allow_blank=True)
     settings = serializers.JSONField(required=False)
@@ -83,12 +89,21 @@ class BusinessMemberCreateSerializer(serializers.Serializer):
     phone_number = serializers.CharField(
         max_length=30, required=False, allow_blank=True, allow_null=True
     )
-    name = serializers.CharField(max_length=150, required=False, allow_blank=True, allow_null=True)
+    name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, allow_null=True
+    )
     password = serializers.CharField(
         write_only=True, min_length=8, required=False, allow_blank=True, allow_null=True
     )
     role = serializers.ChoiceField(
-        choices=["manager", "cashier", "stock_keeper", "delivery", "partner", "wholesaler"],
+        choices=[
+            "manager",
+            "cashier",
+            "stock_keeper",
+            "delivery",
+            "partner",
+            "wholesaler",
+        ],
         required=True,
     )
 
@@ -105,7 +120,9 @@ class BusinessMemberCreateSerializer(serializers.Serializer):
             )
 
         if not user_id and not name:
-            raise serializers.ValidationError("Name is required when creating a new user")
+            raise serializers.ValidationError(
+                "Name is required when creating a new user"
+            )
 
         if attrs.get("role") == "owner":
             raise serializers.ValidationError("Cannot create a member with owner role")
@@ -199,6 +216,7 @@ class BusinessResponseSerializer(serializers.Serializer):
     settings = serializers.JSONField(required=False)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
+    subscription = serializers.JSONField(allow_null=True, required=False)
     member_count = serializers.IntegerField(required=False, allow_null=True)
     members = BusinessMemberSerializer(many=True, required=False, allow_null=True)
 
@@ -235,6 +253,7 @@ class BusinessResponseSerializer(serializers.Serializer):
                 "settings": dto.settings,
                 "created_at": dto.created_at,
                 "updated_at": dto.updated_at,
+                "subscription": dto.subscription,
                 "member_count": member_count,
             }
         )
@@ -247,3 +266,9 @@ class BusinessResponseSerializer(serializers.Serializer):
             data.pop("members", None)
 
         return data
+
+
+class BusinessIdQuerySerializer(serializers.Serializer):
+    """Serializer for validating business_id query parameter."""
+
+    business_id = serializers.UUIDField(required=True, help_text="Business UUID")

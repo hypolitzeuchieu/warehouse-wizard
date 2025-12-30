@@ -35,6 +35,8 @@ from infrastructure.persistence.repositories import (
     BusinessRepositoryImpl,
     CategoryRepositoryImpl,
     SubCategoryRepositoryImpl,
+    SubscriptionPlanRepositoryImpl,
+    SubscriptionRepositoryImpl,
     UserRepositoryImpl,
 )
 from presentation.serializers.business_serializers import (
@@ -89,6 +91,8 @@ class BusinessViewSet(BaseViewSet):
                 business_repository=BusinessRepositoryImpl(),
                 business_member_repository=BusinessMemberRepositoryImpl(),
                 user_id=request.user.id,
+                subscription_repository=SubscriptionRepositoryImpl(),
+                plan_repository=SubscriptionPlanRepositoryImpl(),
             )
             businesses = use_case.execute()
 
@@ -136,6 +140,7 @@ class BusinessViewSet(BaseViewSet):
             201: BusinessResponseSerializer,
             400: "Bad Request",
             401: "Unauthorized",
+            500: "Internal Server Error",
         },
         tags=["Business"],
     )
@@ -162,7 +167,9 @@ class BusinessViewSet(BaseViewSet):
                 "id": str(user.id),
                 "email": user.email or "",
                 "name": user.name,
-                "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+                "role": (
+                    user.role.value if hasattr(user.role, "value") else str(user.role)
+                ),
             }
 
             return self.success(
@@ -192,6 +199,8 @@ class BusinessViewSet(BaseViewSet):
                 business_domain_service=business_domain_service,
                 business_id=pk,
                 user_id=request.user.id,
+                subscription_repository=SubscriptionRepositoryImpl(),
+                plan_repository=SubscriptionPlanRepositoryImpl(),
             )
             business_dto = use_case.execute()
 
@@ -234,7 +243,8 @@ class BusinessViewSet(BaseViewSet):
                 )
                 subcategories = subcategories_use_case.execute()
                 cat_data["subcategories"] = [
-                    SubCategoryResponseSerializer.from_dto(sub_dto) for sub_dto in subcategories
+                    SubCategoryResponseSerializer.from_dto(sub_dto)
+                    for sub_dto in subcategories
                 ]
                 categories_data.append(cat_data)
 
@@ -272,6 +282,8 @@ class BusinessViewSet(BaseViewSet):
                 business_domain_service=self._get_business_domain_service(),
                 business_id=pk,
                 user_id=request.user.id,
+                subscription_repository=SubscriptionRepositoryImpl(),
+                plan_repository=SubscriptionPlanRepositoryImpl(),
             )
             business_dto = use_case.execute(dto)
 
@@ -288,7 +300,11 @@ class BusinessViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Delete business",
         operation_description="Delete a business. Only owner can delete.",
-        responses={200: "Business deleted", 403: "Permission denied", 404: "Business not found"},
+        responses={
+            204: "No Content",
+            403: "Permission denied",
+            404: "Business not found",
+        },
         tags=["Business"],
     )
     def destroy(self, request: Request, pk: UUID) -> Response:
@@ -408,7 +424,13 @@ class BusinessViewSet(BaseViewSet):
                     "include_inactive": {"type": "boolean"},
                     "role": {
                         "type": "enum",
-                        "choices": ["owner", "manager", "cashier", "stock_keeper", "delivery"],
+                        "choices": [
+                            "owner",
+                            "manager",
+                            "cashier",
+                            "stock_keeper",
+                            "delivery",
+                        ],
                     },
                     "name": {"type": "string", "max_length": 255},
                 },
@@ -427,7 +449,9 @@ class BusinessViewSet(BaseViewSet):
             members = use_case.execute()
 
             if filter_dto.role:
-                members = [member for member in members if member.role == filter_dto.role]
+                members = [
+                    member for member in members if member.role == filter_dto.role
+                ]
 
             members = self.apply_filtering_to_items(
                 members,
@@ -447,7 +471,11 @@ class BusinessViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Remove business member",
         operation_description="Remove a member from the business. Only owner and managers can remove members.",
-        responses={200: "Member removed", 403: "Permission denied", 404: "Member not found"},
+        responses={
+            200: "Member removed",
+            403: "Permission denied",
+            404: "Member not found",
+        },
         tags=["Business"],
     )
     @action(detail=True, methods=["delete"], url_path="members/(?P<member_id>[^/.]+)")
@@ -504,6 +532,8 @@ class BusinessViewSet(BaseViewSet):
                 business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
+                subscription_repository=SubscriptionRepositoryImpl(),
+                plan_repository=SubscriptionPlanRepositoryImpl(),
             )
             business_dto = use_case.execute()
 

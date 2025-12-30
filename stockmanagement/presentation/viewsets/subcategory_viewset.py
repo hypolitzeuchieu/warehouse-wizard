@@ -26,13 +26,14 @@ from presentation.serializers.inventory_serializers import (
     SubCategoryResponseSerializer,
     SubCategoryUpdateSerializer,
 )
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.views.base_viewset import BaseViewSet
 
 
 class SubCategoryViewSet(BaseViewSet):
     """ViewSet for subcategory management."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
@@ -46,12 +47,12 @@ class SubCategoryViewSet(BaseViewSet):
         operation_description="Get subcategory details by ID.",
         operation_id="subcategory_retrieve",
         responses={
-            200: SubCategoryResponseSerializer(),
+            200: SubCategoryResponseSerializer,
             403: "Permission denied",
             404: "Subcategory not found",
-            400: "Validation error",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            400: "Bad Request",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Inventory - SubCategories"],
     )
@@ -79,12 +80,12 @@ class SubCategoryViewSet(BaseViewSet):
         operation_id="subcategory_update",
         request_body=SubCategoryUpdateSerializer,
         responses={
-            200: SubCategoryResponseSerializer(),
+            200: SubCategoryResponseSerializer,
             403: "Permission denied",
             404: "Subcategory not found",
-            400: "Validation error",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            400: "Bad Request",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Inventory - SubCategories"],
     )
@@ -120,8 +121,8 @@ class SubCategoryViewSet(BaseViewSet):
             204: "Subcategory deleted successfully",
             403: "Permission denied",
             404: "Subcategory not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Inventory - SubCategories"],
     )

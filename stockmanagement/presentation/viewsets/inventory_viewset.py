@@ -48,13 +48,14 @@ from presentation.serializers.inventory_serializers import (
     SubCategoryCreateSerializer,
     SubCategoryResponseSerializer,
 )
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.views.base_viewset import BaseViewSet
 
 
 class InventoryViewSet(BaseViewSet):
     """ViewSet for inventory management (stock movements and analysis)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
@@ -299,7 +300,10 @@ class InventoryViewSet(BaseViewSet):
             )
             products = use_case.execute()
 
-            data = [LowStockProductSerializer.from_dto(product_dto) for product_dto in products]
+            data = [
+                LowStockProductSerializer.from_dto(product_dto)
+                for product_dto in products
+            ]
 
             return self.success(
                 message="Low stock products retrieved successfully",
@@ -337,7 +341,10 @@ class InventoryViewSet(BaseViewSet):
             )
             products = use_case.execute()
 
-            data = [ExpiredProductSerializer.from_dto(product_dto) for product_dto in products]
+            data = [
+                ExpiredProductSerializer.from_dto(product_dto)
+                for product_dto in products
+            ]
 
             return self.success(
                 message="Expired products retrieved successfully",
@@ -416,6 +423,7 @@ class InventoryViewSet(BaseViewSet):
         try:
             use_case = CheckExpiredProductsUseCaseFromAlert(
                 inventory_domain_service=self._get_inventory_domain_service(),
+                notification_domain_service=self._get_notification_domain_service(),
                 business_id=business_id,
             )
             notifications = use_case.execute()

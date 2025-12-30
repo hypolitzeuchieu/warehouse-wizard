@@ -47,14 +47,20 @@ class InvoiceCreateSerializer(serializers.Serializer):
     """Serializer for invoice creation."""
 
     business_id = serializers.UUIDField(required=True)
-    customer_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    customer_name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True
+    )
     customer_id = serializers.UUIDField(required=False, allow_null=True)
     # Fields for creating a new customer during sale
-    customer_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    customer_email = serializers.EmailField(
+        required=False, allow_blank=True, allow_null=True
+    )
     customer_phone = serializers.CharField(
         max_length=30, required=False, allow_blank=True, allow_null=True
     )
-    customer_address = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    customer_address = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
     customer_type = serializers.ChoiceField(
         choices=["REGULAR", "WHOLESALER"],
         default="REGULAR",
@@ -186,7 +192,9 @@ class InvoiceResponseSerializer(serializers.Serializer):
     total = serializers.DecimalField(max_digits=15, decimal_places=2)
     tax = serializers.DecimalField(max_digits=15, decimal_places=2)
     total_discount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, help_text="Total discount from all product lines"
+        max_digits=15,
+        decimal_places=2,
+        help_text="Total discount from all product lines",
     )
     advance_paid = serializers.DecimalField(max_digits=15, decimal_places=2)
     remaining_amount = serializers.DecimalField(max_digits=15, decimal_places=2)
@@ -212,7 +220,8 @@ class InvoiceResponseSerializer(serializers.Serializer):
     @classmethod
     def from_dto(cls, dto: InvoiceResponseDTO) -> dict:
         line_data = [
-            InvoiceLineResponseSerializer.from_dto(line_dto) for line_dto in (dto.lines or [])
+            InvoiceLineResponseSerializer.from_dto(line_dto)
+            for line_dto in (dto.lines or [])
         ]
         serializer = cls(
             data={
@@ -247,7 +256,9 @@ class InvoiceResponseSerializer(serializers.Serializer):
 class InvoiceUpdateSerializer(serializers.Serializer):
     """Serializer for updating an invoice."""
 
-    status = serializers.ChoiceField(choices=["COMPLETED", "CANCELLED", "CREDIT"], required=False)
+    status = serializers.ChoiceField(
+        choices=["COMPLETED", "CANCELLED", "CREDIT"], required=False
+    )
     tax = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=False, min_value=Decimal("0.00")
     )
@@ -318,7 +329,9 @@ class PaymentListQuerySerializer(serializers.Serializer):
     start_date = serializers.DateTimeField(required=False, allow_null=True)
     end_date = serializers.DateTimeField(required=False, allow_null=True)
     page = serializers.IntegerField(required=False, min_value=1, default=1)
-    page_size = serializers.IntegerField(required=False, min_value=1, max_value=500, default=20)
+    page_size = serializers.IntegerField(
+        required=False, min_value=1, max_value=500, default=20
+    )
 
 
 class PaymentResponseSerializer(serializers.Serializer):
@@ -336,6 +349,9 @@ class PaymentResponseSerializer(serializers.Serializer):
     updated_at = serializers.DateTimeField()
     created_by = serializers.UUIDField(allow_null=True, required=False)
     created_by_name = serializers.CharField(allow_null=True, required=False)
+
+    class Meta:
+        ref_name = "SalesPaymentResponse"
 
     @classmethod
     def from_dto(cls, dto: PaymentResponseDTO) -> dict:
@@ -423,7 +439,9 @@ class InvoiceListQuerySerializer(serializers.Serializer):
     end_date = serializers.DateTimeField(required=False, allow_null=True)
     search = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     page = serializers.IntegerField(required=False, min_value=1, default=1)
-    page_size = serializers.IntegerField(required=False, min_value=1, max_value=1000, default=20)
+    page_size = serializers.IntegerField(
+        required=False, min_value=1, max_value=1000, default=20
+    )
     order_by = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
@@ -436,7 +454,9 @@ class ProductSearchSerializer(serializers.Serializer):
         default="",
         max_length=255,
     )
-    limit = serializers.IntegerField(default=20, min_value=1, max_value=100, required=False)
+    limit = serializers.IntegerField(
+        default=20, min_value=1, max_value=100, required=False
+    )
 
 
 class ProductSearchResponseSerializer(serializers.Serializer):

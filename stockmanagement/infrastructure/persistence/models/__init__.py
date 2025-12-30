@@ -41,4 +41,8 @@ __all__ = [
     "CreditPayment",
     # Documentation models
     "DocumentationCredential",
+    # Subscription models
+    "SubscriptionPlan",
+    "Subscription",
+    "PaymentTransaction",
 ]

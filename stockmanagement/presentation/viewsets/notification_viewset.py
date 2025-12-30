@@ -22,7 +22,9 @@ from application.use_cases.notification_use_cases import (
 )
 from domain.notifications.entities import NotificationStatus
 from infrastructure.persistence.repositories import NotificationRepositoryImpl
-from presentation.serializers.notification_serializers import NotificationResponseSerializer
+from presentation.serializers.notification_serializers import (
+    NotificationResponseSerializer,
+)
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
@@ -35,7 +37,7 @@ class NotificationViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="List notifications",
         operation_description="Get all notifications for the authenticated user.",
-        responses={200: "List of notifications", 401: "Unauthorized"},
+        responses={200: NotificationResponseSerializer(many=True), 401: "Unauthorized"},
         tags=["Notifications"],
     )
     def list(self, request: Request) -> Response:
@@ -54,7 +56,9 @@ class NotificationViewSet(BaseViewSet):
             )
             filter_dto = NotificationListFilterDTO.from_payload(filter_payload)
 
-            status_filter = NotificationStatus(filter_dto.status) if filter_dto.status else None
+            status_filter = (
+                NotificationStatus(filter_dto.status) if filter_dto.status else None
+            )
 
             use_case = ListNotificationsUseCase(
                 notification_repository=NotificationRepositoryImpl(),
@@ -82,7 +86,7 @@ class NotificationViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Get notification",
         operation_description="Get a specific notification by ID.",
-        responses={200: "Notification details", 404: "Notification not found"},
+        responses={200: NotificationResponseSerializer, 404: "Notification not found"},
         tags=["Notifications"],
     )
     def retrieve(self, request: Request, pk: UUID) -> Response:
@@ -102,10 +106,14 @@ class NotificationViewSet(BaseViewSet):
                 "message": notification.message,
                 "related_entity_type": notification.related_entity_type,
                 "related_entity_id": (
-                    str(notification.related_entity_id) if notification.related_entity_id else None
+                    str(notification.related_entity_id)
+                    if notification.related_entity_id
+                    else None
                 ),
                 "status": notification.status.value,
-                "read_at": notification.read_at.isoformat() if notification.read_at else None,
+                "read_at": (
+                    notification.read_at.isoformat() if notification.read_at else None
+                ),
                 "created_at": notification.created_at.isoformat(),
             }
 
@@ -120,7 +128,7 @@ class NotificationViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Mark notification as read",
         operation_description="Mark a notification as read.",
-        responses={200: "Notification marked as read", 404: "Notification not found"},
+        responses={200: NotificationResponseSerializer, 404: "Notification not found"},
         tags=["Notifications"],
     )
     @action(detail=True, methods=["post"], url_path="mark-read")
@@ -144,8 +152,7 @@ class NotificationViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Mark all notifications as read",
         operation_description="Mark all unread notifications for the authenticated user as read.",
-        responses={200: "All notifications marked as read"},
-        tags=["Notifications"],
+        responses={200: NotificationResponseSerializer, 404: "Notification not found"},
     )
     @action(detail=False, methods=["post"], url_path="mark-all-read")
     def mark_all_read(self, request: Request) -> Response:
@@ -168,7 +175,7 @@ class NotificationViewSet(BaseViewSet):
     @swagger_auto_schema(
         operation_summary="Archive notification",
         operation_description="Archive a notification.",
-        responses={200: "Notification archived", 404: "Notification not found"},
+        responses={200: NotificationResponseSerializer, 404: "Notification not found"},
         tags=["Notifications"],
     )
     @action(detail=True, methods=["post"], url_path="archive")

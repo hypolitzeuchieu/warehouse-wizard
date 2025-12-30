@@ -23,6 +23,7 @@ class Business:
     created_at: datetime
     updated_at: datetime
     settings: dict | None = None
+    subscription_id: UUID | None = None
 
     def __post_init__(self) -> None:
         """Validate business data."""

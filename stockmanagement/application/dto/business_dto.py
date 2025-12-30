@@ -52,6 +52,7 @@ class BusinessResponseDTO:
     settings: dict | None
     created_at: datetime
     updated_at: datetime
+    subscription: dict | None = None
 
 
 @dataclass

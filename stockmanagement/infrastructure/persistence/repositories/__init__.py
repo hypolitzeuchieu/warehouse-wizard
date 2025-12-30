@@ -55,6 +55,11 @@ from infrastructure.persistence.repositories.sales_repositories import (
     OrderItemRepositoryImpl,
     OrderRepositoryImpl,
 )
+from infrastructure.persistence.repositories.subscription_repositories import (
+    PaymentTransactionRepositoryImpl,
+    SubscriptionPlanRepositoryImpl,
+    SubscriptionRepositoryImpl,
+)
 from infrastructure.persistence.repositories.user_repositories import (
     DeviceRepositoryImpl,
     PasswordResetTokenRepositoryImpl,
@@ -113,4 +118,8 @@ __all__ = [
     "DashboardCashierStatisticsRepositoryImpl",
     # Documentation repositories
     "DocumentationCredentialRepositoryImpl",
+    # Subscription repositories
+    "SubscriptionPlanRepositoryImpl",
+    "SubscriptionRepositoryImpl",
+    "PaymentTransactionRepositoryImpl",
 ]

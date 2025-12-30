@@ -25,8 +25,16 @@ class Business(BaseModel):
     email = models.EmailField(null=True, blank=True)
     qr_code_url = models.URLField(max_length=500, null=True, blank=True)
     logo_url = models.URLField(max_length=500, null=True, blank=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=False)
     settings = models.JSONField(default=dict, blank=True)
+    subscription = models.ForeignKey(
+        "Subscription",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="businesses",
+        db_column="subscription_id",
+    )
 
     class Meta:
         db_table = "businesses"
@@ -46,7 +54,9 @@ class Business(BaseModel):
 class BusinessMember(BaseModel):
     """Business member model (employees, managers, etc.)."""
 
-    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="members")
+    business = models.ForeignKey(
+        Business, on_delete=models.CASCADE, related_name="members"
+    )
     user = models.ForeignKey(
         RetailPulseUser, on_delete=models.CASCADE, related_name="business_memberships"
     )
@@ -67,7 +77,9 @@ class BusinessMember(BaseModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.user.name or self.user.email} - {self.business.name} ({self.role})"
+        return (
+            f"{self.user.name or self.user.email} - {self.business.name} ({self.role})"
+        )
 
     def is_manager(self) -> bool:
         """Check if member is a manager."""

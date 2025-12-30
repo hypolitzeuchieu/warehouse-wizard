@@ -72,7 +72,9 @@ class BusinessDomainService:
             return "owner"
 
         # Check if user is a member and get their role
-        member = self.business_member_repository.get_by_business_and_user(business_id, user_id)
+        member = self.business_member_repository.get_by_business_and_user(
+            business_id, user_id
+        )
         if member and member.is_active_member():
             return member.role
 
@@ -126,3 +128,12 @@ class BusinessDomainService:
         if not business:
             return False
         return business.owner_id == user_id
+
+    def is_business_activated(self, business_id: UUID) -> bool:
+        """
+        Check if business is activated based on subscription.
+        """
+        business = self.business_repository.get_by_id(business_id)
+        if not business:
+            return False
+        return business.is_active and business.subscription_id is not None

@@ -21,6 +21,11 @@ from domain.business.repositories import (
     BusinessRepository,
 )
 from domain.business.services import BusinessDomainService
+from domain.subscription.entities import Subscription, SubscriptionPlan
+from domain.subscription.repositories import (
+    SubscriptionPlanRepository,
+    SubscriptionRepository,
+)
 from domain.users.entities import AuthMethod, User, UserRole
 from domain.users.repositories import UserRepository
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
@@ -59,8 +64,53 @@ def _compare_uuids(uuid1: UUID | str | None, uuid2: UUID | str | None) -> bool:
     return normalized1 == normalized2
 
 
-def _business_to_dto(business: Business) -> BusinessResponseDTO:
-    """Convert business entity to DTO (shared utility function)."""
+def _get_subscription_and_plan(
+    business: Business,
+    subscription_repository: SubscriptionRepository | None = None,
+    plan_repository: SubscriptionPlanRepository | None = None,
+) -> tuple["Subscription | None", "SubscriptionPlan | None"]:
+    """
+    Get subscription and plan for a business.
+
+    Args:
+        business: Business entity
+        subscription_repository: Optional subscription repository
+        plan_repository: Optional subscription plan repository
+
+    Returns:
+        Tuple of (subscription, plan) or (None, None) if not found
+    """
+    if (
+        not business.subscription_id
+        or not subscription_repository
+        or not plan_repository
+    ):
+        return None, None
+
+    try:
+        subscription = subscription_repository.get_by_id(business.subscription_id)
+        if subscription:
+            plan = plan_repository.get_by_id(subscription.plan_id)
+            return subscription, plan
+    except Exception:
+        logger.warning(f"Failed to get subscription for business {business.id}")
+
+    return None, None
+
+
+def _business_to_dto(
+    business: Business,
+    subscription: "Subscription | None" = None,
+    plan: "SubscriptionPlan | None" = None,
+) -> BusinessResponseDTO:
+    """
+    Convert business entity to DTO (shared utility function).
+
+    Args:
+        business: Business entity
+        subscription: Optional subscription entity associated with the business
+        plan: Optional subscription plan entity (required if subscription is provided)
+    """
     qr_code_url = business.qr_code_url
     logo_url = business.logo_url
 
@@ -68,12 +118,46 @@ def _business_to_dto(business: Business) -> BusinessResponseDTO:
         s3 = S3Service()
         if qr_code_url:
             qr_code_url = (
-                s3.generate_presigned_get_url(qr_code_url, expires_in=86400) or qr_code_url
+                s3.generate_presigned_get_url(qr_code_url, expires_in=86400)
+                or qr_code_url
             )
         if logo_url:
-            logo_url = s3.generate_presigned_get_url(logo_url, expires_in=86400) or logo_url
+            logo_url = (
+                s3.generate_presigned_get_url(logo_url, expires_in=86400) or logo_url
+            )
     except Exception:
         pass
+
+    subscription_data = None
+    if subscription:
+        plan_data = None
+        if plan:
+            plan_data = {
+                "id": str(plan.id),
+                "name": plan.name,
+                "code": plan.code,
+            }
+
+        subscription_data = {
+            "id": str(subscription.id),
+            "status": subscription.status.value,
+            "start_date": (
+                subscription.start_date.isoformat() if subscription.start_date else None
+            ),
+            "end_date": (
+                subscription.end_date.isoformat() if subscription.end_date else None
+            ),
+            "cancelled_at": (
+                subscription.cancelled_at.isoformat()
+                if subscription.cancelled_at
+                else None
+            ),
+            "updated_at": (
+                subscription.updated_at.isoformat() if subscription.updated_at else None
+            ),
+            "billing_period": subscription.billing_period.value,
+            "plan": plan_data,
+        }
 
     return BusinessResponseDTO(
         id=business.id,
@@ -90,6 +174,7 @@ def _business_to_dto(business: Business) -> BusinessResponseDTO:
         settings=business.settings,
         created_at=business.created_at,
         updated_at=business.updated_at,
+        subscription=subscription_data,
     )
 
 
@@ -131,7 +216,9 @@ class CreateBusinessUseCase:
                 code="ACCOUNT_NOT_VERIFIED",
             )
 
-        user_businesses = self.business_member_repository.get_user_businesses(self.owner_id)
+        user_businesses = self.business_member_repository.get_user_businesses(
+            self.owner_id
+        )
         if user_businesses:
             raise BadRequestError(
                 detail="You cannot create a business while being a member of another business. Please leave your current business first.",
@@ -174,7 +261,7 @@ class CreateBusinessUseCase:
             email=dto.email,
             qr_code_url=None,
             logo_url=None,
-            is_active=True,
+            is_active=False,
             created_at=timezone.now(),
             updated_at=timezone.now(),
             settings=dto.settings or {},
@@ -190,7 +277,9 @@ class CreateBusinessUseCase:
             if getattr(dto, "logo_file", None):
                 s3 = S3Service()
                 logo_file = dto.logo_file
-                logo_file.content_type = getattr(logo_file, "content_type", None) or "image/png"
+                logo_file.content_type = (
+                    getattr(logo_file, "content_type", None) or "image/png"
+                )
                 uploaded_logo_url = s3.upload_logo(
                     file=logo_file,
                     business_id=str(business.id),
@@ -223,13 +312,15 @@ class CreateBusinessUseCase:
             business = self.business_repository.update(business)
             logger.info(f"QR code generated and uploaded for business {business.id}")
         except Exception as e:
-            logger.warning(f"Failed to generate QR code for business {business.id}: {str(e)}")
+            logger.warning(
+                f"Failed to generate QR code for business {business.id}: {str(e)}"
+            )
 
         return self._to_dto(business)
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        return _business_to_dto(business, subscription=None, plan=None)
 
 
 class UpdateBusinessUseCase:
@@ -241,12 +332,16 @@ class UpdateBusinessUseCase:
         business_domain_service: BusinessDomainService,
         business_id: UUID,
         user_id: UUID,
+        subscription_repository: SubscriptionRepository | None = None,
+        plan_repository: SubscriptionPlanRepository | None = None,
     ) -> None:
         """Initialize use case."""
         self.business_repository = business_repository
         self.business_domain_service = business_domain_service
         self.business_id = business_id
         self.user_id = user_id
+        self.subscription_repository = subscription_repository
+        self.plan_repository = plan_repository
 
     def execute(self, dto: BusinessUpdateDTO) -> BusinessResponseDTO:
         """Execute business update."""
@@ -257,7 +352,9 @@ class UpdateBusinessUseCase:
                 code="BUSINESS_NOT_FOUND",
             )
 
-        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+        if not self.business_domain_service.can_user_manage_members(
+            self.business_id, self.user_id
+        ):
             raise ForbiddenError(
                 detail="You don't have permission to update this business",
                 code="PERMISSION_DENIED",
@@ -284,7 +381,10 @@ class UpdateBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        subscription, plan = _get_subscription_and_plan(
+            business, self.subscription_repository, self.plan_repository
+        )
+        return _business_to_dto(business, subscription=subscription, plan=plan)
 
 
 class DeleteBusinessUseCase:
@@ -316,7 +416,8 @@ class DeleteBusinessUseCase:
         self.business_repository.delete(self.business_id)
 
         logger.info(
-            f"Business deleted - business_id: {self.business_id}, " f"deleted_by: {self.user_id}"
+            f"Business deleted - business_id: {self.business_id}, "
+            f"deleted_by: {self.user_id}"
         )
 
 
@@ -354,7 +455,9 @@ class AddBusinessMemberUseCase:
                 detail="Business is not active",
                 code="BUSINESS_NOT_ACTIVE",
             )
-        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+        if not self.business_domain_service.can_user_manage_members(
+            self.business_id, self.user_id
+        ):
             raise ForbiddenError(
                 detail="You don't have permission to add members",
                 code="PERMISSION_DENIED",
@@ -442,7 +545,9 @@ class AddBusinessMemberUseCase:
                 existing_user_by_phone = None
 
                 if dto.email:
-                    existing_user_by_email = self.user_repository.get_by_email(dto.email)
+                    existing_user_by_email = self.user_repository.get_by_email(
+                        dto.email
+                    )
                 if dto.phone_number:
                     existing_user_by_phone = self.user_repository.get_by_phone_number(
                         dto.phone_number
@@ -485,7 +590,9 @@ class AddBusinessMemberUseCase:
                     updated_at=timezone.now(),
                     address=None,
                     avatar_url=None,
-                    auth_method=AuthMethod.EMAIL_PASSWORD if dto.email else AuthMethod.PHONE_OTP,
+                    auth_method=(
+                        AuthMethod.EMAIL_PASSWORD if dto.email else AuthMethod.PHONE_OTP
+                    ),
                 )
 
                 try:
@@ -496,7 +603,8 @@ class AddBusinessMemberUseCase:
                 except IntegrityError as e:
                     error_message = str(e).lower()
                     if "email" in error_message or (
-                        "unique constraint" in error_message and "email" in error_message
+                        "unique constraint" in error_message
+                        and "email" in error_message
                     ):
                         raise BadRequestError(
                             detail=f"A member with email '{dto.email}' already exists. This email is used for login and cannot be duplicated.",
@@ -505,7 +613,10 @@ class AddBusinessMemberUseCase:
                     elif (
                         "phone_number" in error_message
                         or "phone" in error_message
-                        or ("unique constraint" in error_message and "phone" in error_message)
+                        or (
+                            "unique constraint" in error_message
+                            and "phone" in error_message
+                        )
                     ):
                         raise BadRequestError(
                             detail=f"A member with phone number '{dto.phone_number}' already exists. This phone number is used for login and cannot be duplicated.",
@@ -531,17 +642,17 @@ class AddBusinessMemberUseCase:
             existing_member = next(
                 (m for m in existing_members if m.user_id == target_user.id), None
             )
-            if existing_member and existing_member.is_active and existing_member.left_at is None:
+            if (
+                existing_member
+                and existing_member.is_active
+                and existing_member.left_at is None
+            ):
                 if found_by == "email":
-                    detail_message = (
-                        f"User with email '{dto.email}' is already a member of this business"
-                    )
+                    detail_message = f"User with email '{dto.email}' is already a member of this business"
                 elif found_by == "phone_number":
                     detail_message = f"User with phone number '{dto.phone_number}' is already a member of this business"
                 elif found_by == "user_id":
-                    detail_message = (
-                        f"User with ID '{dto.user_id}' is already a member of this business"
-                    )
+                    detail_message = f"User with ID '{dto.user_id}' is already a member of this business"
                 else:
                     detail_message = "User is already a member of this business"
             else:
@@ -559,7 +670,9 @@ class AddBusinessMemberUseCase:
                 code="USER_ALREADY_MEMBER",
             )
 
-        user_businesses = self.business_member_repository.get_user_businesses(target_user.id)
+        user_businesses = self.business_member_repository.get_user_businesses(
+            target_user.id
+        )
         if user_businesses:
             raise BadRequestError(
                 detail="User is already a member of another business. A user can only be a member of one business.",
@@ -711,7 +824,9 @@ class RemoveBusinessMemberUseCase:
 
     def execute(self, member_id: UUID) -> None:
         """Execute removing business member."""
-        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+        if not self.business_domain_service.can_user_manage_members(
+            self.business_id, self.user_id
+        ):
             raise ForbiddenError(
                 detail="You don't have permission to remove members",
                 code="PERMISSION_DENIED",
@@ -756,7 +871,8 @@ class RemoveBusinessMemberUseCase:
         self.business_member_repository.remove(member_id)
 
         logger.info(
-            f"Business member removed - member_id: {member_id}, " f"removed_by: {self.user_id}"
+            f"Business member removed - member_id: {member_id}, "
+            f"removed_by: {self.user_id}"
         )
 
 
@@ -805,7 +921,9 @@ class ListBusinessMembersUseCase:
                 try:
                     if avatar_url:
                         avatar_url = (
-                            S3Service().generate_presigned_get_url(avatar_url, expires_in=86400)
+                            S3Service().generate_presigned_get_url(
+                                avatar_url, expires_in=86400
+                            )
                             or avatar_url
                         )
                 except Exception:
@@ -815,12 +933,18 @@ class ListBusinessMembersUseCase:
                     "name": user.name,
                     "email": user.email,
                     "phone_number": user.phone_number,
-                    "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+                    "role": (
+                        user.role.value
+                        if hasattr(user.role, "value")
+                        else str(user.role)
+                    ),
                     "avatar_url": avatar_url,
                     "is_active": user.is_active,
                 }
             else:
-                logger.warning(f"User {member.user_id} not found for business member {member.id}")
+                logger.warning(
+                    f"User {member.user_id} not found for business member {member.id}"
+                )
 
         return BusinessMemberResponseDTO(
             id=member.id,
@@ -845,12 +969,16 @@ class GetBusinessUseCase:
         business_domain_service: BusinessDomainService,
         business_id: UUID,
         user_id: UUID,
+        subscription_repository: SubscriptionRepository | None = None,
+        plan_repository: SubscriptionPlanRepository | None = None,
     ) -> None:
         """Initialize use case."""
         self.business_repository = business_repository
         self.business_domain_service = business_domain_service
         self.business_id = business_id
         self.user_id = user_id
+        self.subscription_repository = subscription_repository
+        self.plan_repository = plan_repository
 
     def execute(self) -> BusinessResponseDTO:
         """Execute getting business."""
@@ -871,7 +999,10 @@ class GetBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        subscription, plan = _get_subscription_and_plan(
+            business, self.subscription_repository, self.plan_repository
+        )
+        return _business_to_dto(business, subscription=subscription, plan=plan)
 
 
 class ListBusinessesUseCase:
@@ -882,17 +1013,23 @@ class ListBusinessesUseCase:
         business_repository: BusinessRepository,
         business_member_repository: BusinessMemberRepository,
         user_id: UUID,
+        subscription_repository: SubscriptionRepository | None = None,
+        plan_repository: SubscriptionPlanRepository | None = None,
     ) -> None:
         """Initialize use case."""
         self.business_repository = business_repository
         self.business_member_repository = business_member_repository
         self.user_id = user_id
+        self.subscription_repository = subscription_repository
+        self.plan_repository = plan_repository
 
     def execute(self) -> list[BusinessResponseDTO]:
         """Execute listing businesses."""
         owned_businesses = self.business_repository.get_by_owner(self.user_id)
 
-        member_businesses = self.business_member_repository.get_user_businesses(self.user_id)
+        member_businesses = self.business_member_repository.get_user_businesses(
+            self.user_id
+        )
 
         all_businesses: list[Business] = list(owned_businesses)
         for member in member_businesses:
@@ -900,8 +1037,13 @@ class ListBusinessesUseCase:
             if business and business.id not in {b.id for b in all_businesses}:
                 all_businesses.append(business)
 
-        return [self._to_dto(business) for business in all_businesses]
+        result = []
+        for business in all_businesses:
+            subscription, plan = _get_subscription_and_plan(
+                business, self.subscription_repository, self.plan_repository
+            )
+            result.append(
+                _business_to_dto(business, subscription=subscription, plan=plan)
+            )
 
-    def _to_dto(self, business: Business) -> BusinessResponseDTO:
-        """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        return result

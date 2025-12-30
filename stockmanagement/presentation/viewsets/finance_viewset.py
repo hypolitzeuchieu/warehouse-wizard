@@ -29,12 +29,15 @@ from application.use_cases.salary_use_cases import (
     UpdateSalaryUseCase,
 )
 from domain.business.services import BusinessDomainService
+from domain.notifications.services import NotificationDomainService
 from infrastructure.persistence.repositories import (
     BusinessMemberRepositoryImpl,
     BusinessRepositoryImpl,
     CreditRepositoryImpl,
+    CustomerRepositoryImpl,
     ExpenseAuditLogRepositoryImpl,
     ExpenseRepositoryImpl,
+    NotificationRepositoryImpl,
     SalaryRepositoryImpl,
     UserRepositoryImpl,
 )
@@ -48,6 +51,7 @@ from presentation.serializers.finance_serializers import (
     SalaryResponseSerializer,
     SalaryUpdateSerializer,
 )
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
@@ -55,11 +59,19 @@ from shared.views.base_viewset import BaseViewSet
 class FinanceViewSet(BaseViewSet):
     """ViewSet for finance management (expenses, salaries, payroll)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
         return BusinessDomainService(
+            business_repository=BusinessRepositoryImpl(),
+            business_member_repository=BusinessMemberRepositoryImpl(),
+        )
+
+    def _get_notification_domain_service(self) -> NotificationDomainService:
+        """Get notification domain service instance."""
+        return NotificationDomainService(
+            notification_repository=NotificationRepositoryImpl(),
             business_repository=BusinessRepositoryImpl(),
             business_member_repository=BusinessMemberRepositoryImpl(),
         )
@@ -100,7 +112,7 @@ class FinanceViewSet(BaseViewSet):
         operation_description="Get all expenses for a business with optional filters.",
         query_serializer=ExpenseListQuerySerializer,
         responses={
-            200: ExpenseResponseSerializer(many=True),
+            200: ExpenseResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
         },
@@ -232,7 +244,7 @@ class FinanceViewSet(BaseViewSet):
         operation_description="Create a new expense for a business. business_id must be provided in the request body.",
         request_body=ExpenseCreateSerializer,
         responses={
-            201: ExpenseResponseSerializer(),
+            201: ExpenseResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
         },
@@ -271,7 +283,7 @@ class FinanceViewSet(BaseViewSet):
         operation_summary="Get expense",
         operation_description="Get expense details by ID. business_id is retrieved from the expense.",
         responses={
-            200: ExpenseResponseSerializer(),
+            200: ExpenseResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Expense not found",
@@ -315,7 +327,7 @@ class FinanceViewSet(BaseViewSet):
         operation_description="Update expense details. Only owner/manager can approve. business_id is retrieved from the expense.",
         request_body=ExpenseUpdateSerializer,
         responses={
-            200: ExpenseResponseSerializer(),
+            200: ExpenseResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Expense not found",
@@ -454,6 +466,8 @@ class FinanceViewSet(BaseViewSet):
 
             use_case = CheckOverdueCreditsUseCase(
                 credit_repository=CreditRepositoryImpl(),
+                customer_repository=CustomerRepositoryImpl(),
+                notification_domain_service=self._get_notification_domain_service(),
                 business_id=business_id,
             )
             credits = use_case.execute()
@@ -488,7 +502,7 @@ class FinanceViewSet(BaseViewSet):
         operation_description="Create a new salary for an employee. business_id must be provided in the request body.",
         request_body=SalaryCreateSerializer,
         responses={
-            201: SalaryResponseSerializer(),
+            201: SalaryResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
         },
@@ -543,7 +557,9 @@ class FinanceViewSet(BaseViewSet):
                     "net_salary": str(salary_dto.net_salary),
                     "effective_from": salary_dto.effective_from.isoformat(),
                     "effective_to": (
-                        salary_dto.effective_to.isoformat() if salary_dto.effective_to else None
+                        salary_dto.effective_to.isoformat()
+                        if salary_dto.effective_to
+                        else None
                     ),
                     "is_active": salary_dto.is_active,
                     "created_at": salary_dto.created_at.isoformat(),
@@ -558,7 +574,7 @@ class FinanceViewSet(BaseViewSet):
         operation_summary="Get salary",
         operation_description="Get salary details by ID. business_id is retrieved from the salary.",
         responses={
-            200: SalaryResponseSerializer(),
+            200: SalaryResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Salary not found",
@@ -606,7 +622,9 @@ class FinanceViewSet(BaseViewSet):
                     "net_salary": str(salary_dto.net_salary),
                     "effective_from": salary_dto.effective_from.isoformat(),
                     "effective_to": (
-                        salary_dto.effective_to.isoformat() if salary_dto.effective_to else None
+                        salary_dto.effective_to.isoformat()
+                        if salary_dto.effective_to
+                        else None
                     ),
                     "is_active": salary_dto.is_active,
                     "created_at": salary_dto.created_at.isoformat(),
@@ -631,7 +649,7 @@ class FinanceViewSet(BaseViewSet):
             ),
         ],
         responses={
-            200: SalaryResponseSerializer(many=True),
+            200: SalaryResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
         },
@@ -685,7 +703,9 @@ class FinanceViewSet(BaseViewSet):
                         "bonuses": str(s.bonuses),
                         "net_salary": str(s.net_salary),
                         "effective_from": s.effective_from.isoformat(),
-                        "effective_to": s.effective_to.isoformat() if s.effective_to else None,
+                        "effective_to": (
+                            s.effective_to.isoformat() if s.effective_to else None
+                        ),
                         "is_active": s.is_active,
                         "created_at": s.created_at.isoformat(),
                         "updated_at": s.updated_at.isoformat(),
@@ -702,7 +722,7 @@ class FinanceViewSet(BaseViewSet):
         operation_description="Promote an employee by creating a new salary with higher amount. business_id must be provided in the request body.",
         request_body=SalaryPromotionSerializer,
         responses={
-            201: SalaryResponseSerializer(),
+            201: SalaryResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
         },
@@ -762,7 +782,9 @@ class FinanceViewSet(BaseViewSet):
                     "net_salary": str(salary_dto.net_salary),
                     "effective_from": salary_dto.effective_from.isoformat(),
                     "effective_to": (
-                        salary_dto.effective_to.isoformat() if salary_dto.effective_to else None
+                        salary_dto.effective_to.isoformat()
+                        if salary_dto.effective_to
+                        else None
                     ),
                     "is_active": salary_dto.is_active,
                     "created_at": salary_dto.created_at.isoformat(),
@@ -778,7 +800,7 @@ class FinanceViewSet(BaseViewSet):
         operation_description="Update salary details. Only owner/manager can update. business_id is retrieved from the salary.",
         request_body=SalaryUpdateSerializer,
         responses={
-            200: SalaryResponseSerializer(),
+            200: SalaryResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Salary not found",
@@ -829,7 +851,9 @@ class FinanceViewSet(BaseViewSet):
                     "net_salary": str(salary_dto.net_salary),
                     "effective_from": salary_dto.effective_from.isoformat(),
                     "effective_to": (
-                        salary_dto.effective_to.isoformat() if salary_dto.effective_to else None
+                        salary_dto.effective_to.isoformat()
+                        if salary_dto.effective_to
+                        else None
                     ),
                     "is_active": salary_dto.is_active,
                     "updated_at": salary_dto.updated_at.isoformat(),

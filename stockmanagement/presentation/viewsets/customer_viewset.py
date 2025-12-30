@@ -46,6 +46,7 @@ from presentation.serializers.customer_serializers import (
     CustomerResponseSerializer,
     CustomerUpdateSerializer,
 )
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
@@ -53,7 +54,7 @@ from shared.views.base_viewset import BaseViewSet
 class CustomerViewSet(BaseViewSet):
     """ViewSet for customer management."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
@@ -86,7 +87,12 @@ class CustomerViewSet(BaseViewSet):
             filter_payload = self.parse_list_filters(
                 request,
                 search_fields=["name", "email", "phone_number"],
-                order_fields=["name", "created_at", "total_purchases", "loyalty_points"],
+                order_fields=[
+                    "name",
+                    "created_at",
+                    "total_purchases",
+                    "loyalty_points",
+                ],
                 filter_definitions={
                     "name": {"type": "string", "max_length": 255},
                     "customer_type": {
@@ -180,7 +186,9 @@ class CustomerViewSet(BaseViewSet):
                 data={
                     "id": str(customer_dto.id),
                     "business_id": (
-                        str(customer_dto.business_id) if customer_dto.business_id else None
+                        str(customer_dto.business_id)
+                        if customer_dto.business_id
+                        else None
                     ),
                     "name": customer_dto.name,
                     "email": customer_dto.email,
@@ -242,7 +250,9 @@ class CustomerViewSet(BaseViewSet):
                 data={
                     "id": str(customer_dto.id),
                     "business_id": (
-                        str(customer_dto.business_id) if customer_dto.business_id else None
+                        str(customer_dto.business_id)
+                        if customer_dto.business_id
+                        else None
                     ),
                     "name": customer_dto.name,
                     "email": customer_dto.email,
@@ -374,7 +384,11 @@ class CustomerViewSet(BaseViewSet):
         operation_summary="Create credit for customer",
         operation_description="Create a credit for a customer.",
         request_body=CreditCreateSerializer,
-        responses={201: CreditResponseSerializer, 400: "Bad request", 403: "Permission denied"},
+        responses={
+            201: CreditResponseSerializer,
+            400: "Bad request",
+            403: "Permission denied",
+        },
         tags=["Customer"],
     )
     @action(
@@ -428,7 +442,9 @@ class CustomerViewSet(BaseViewSet):
                     "id": str(credit_dto.id),
                     "business_id": str(credit_dto.business_id),
                     "customer_id": str(credit_dto.customer_id),
-                    "invoice_id": str(credit_dto.invoice_id) if credit_dto.invoice_id else None,
+                    "invoice_id": (
+                        str(credit_dto.invoice_id) if credit_dto.invoice_id else None
+                    ),
                     "amount": str(credit_dto.amount),
                     "paid_amount": str(credit_dto.paid_amount),
                     "remaining_amount": str(credit_dto.remaining_amount),
@@ -486,7 +502,8 @@ class CustomerViewSet(BaseViewSet):
             status_filter = CreditStatus(status_param) if status_param else None
 
             overdue_only = QueryParamsValidator.validate_boolean(
-                request.query_params.get("overdue_only", "false"), param_name="overdue_only"
+                request.query_params.get("overdue_only", "false"),
+                param_name="overdue_only",
             )
 
             use_case = ListCreditsUseCase(
@@ -527,7 +544,11 @@ class CustomerViewSet(BaseViewSet):
         operation_summary="Pay credit",
         operation_description="Make a payment towards a credit.",
         request_body=CreditPaymentCreateSerializer,
-        responses={200: "Payment successful", 400: "Bad request", 404: "Credit not found"},
+        responses={
+            200: "Payment successful",
+            400: "Bad request",
+            404: "Credit not found",
+        },
         tags=["Customer"],
     )
     @action(

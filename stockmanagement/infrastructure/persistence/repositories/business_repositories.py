@@ -23,7 +23,9 @@ class BusinessRepositoryImpl(BusinessRepository):
     def get_by_id(self, business_id: UUID) -> Business | None:
         """Get business by ID."""
         try:
-            business_model = BusinessModel.objects.select_related("owner").get(id=business_id)
+            business_model = BusinessModel.objects.select_related(
+                "owner", "subscription"
+            ).get(id=business_id)
             return self._to_entity(business_model)
         except BusinessModel.DoesNotExist:
             return None
@@ -31,16 +33,18 @@ class BusinessRepositoryImpl(BusinessRepository):
     def get_by_unique_name(self, unique_name: str) -> Business | None:
         """Get business by unique name."""
         try:
-            business_model = BusinessModel.objects.select_related("owner").get(
-                unique_name=unique_name
-            )
+            business_model = BusinessModel.objects.select_related(
+                "owner", "subscription"
+            ).get(unique_name=unique_name)
             return self._to_entity(business_model)
         except BusinessModel.DoesNotExist:
             return None
 
     def get_by_owner(self, owner_id: UUID) -> list[Business]:
         """Get businesses owned by a user."""
-        businesses = BusinessModel.objects.filter(owner_id=owner_id).select_related("owner")
+        businesses = BusinessModel.objects.filter(owner_id=owner_id).select_related(
+            "owner", "subscription"
+        )
         return [self._to_entity(business) for business in businesses]
 
     def create(self, business: Business) -> Business:
@@ -75,6 +79,7 @@ class BusinessRepositoryImpl(BusinessRepository):
         business_model.logo_url = business.logo_url
         business_model.is_active = business.is_active
         business_model.settings = business.settings or {}
+        business_model.subscription_id = business.subscription_id
         business_model.save()
         return self._to_entity(business_model)
 
@@ -109,6 +114,9 @@ class BusinessRepositoryImpl(BusinessRepository):
             created_at=business_model.created_at,
             updated_at=business_model.updated_at,
             settings=business_model.settings,
+            subscription_id=(
+                business_model.subscription.id if business_model.subscription else None
+            ),
         )
 
 
@@ -118,9 +126,9 @@ class BusinessMemberRepositoryImpl(BusinessMemberRepository):
     def get_by_id(self, member_id: UUID) -> BusinessMember | None:
         """Get business member by ID."""
         try:
-            member_model = BusinessMemberModel.objects.select_related("business", "user").get(
-                id=member_id
-            )
+            member_model = BusinessMemberModel.objects.select_related(
+                "business", "user"
+            ).get(id=member_id)
             return self._to_entity(member_model)
         except BusinessMemberModel.DoesNotExist:
             return None
@@ -187,7 +195,9 @@ class BusinessMemberRepositoryImpl(BusinessMemberRepository):
             is_active=True,
         ).exists()
 
-    def get_by_business_and_user(self, business_id: UUID, user_id: UUID) -> BusinessMember | None:
+    def get_by_business_and_user(
+        self, business_id: UUID, user_id: UUID
+    ) -> BusinessMember | None:
         """Get business member by business and user."""
         try:
             member_model = (

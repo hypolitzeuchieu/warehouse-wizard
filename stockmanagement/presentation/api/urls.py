@@ -17,6 +17,7 @@ from presentation.viewsets.product_viewset import ProductViewSet
 from presentation.viewsets.report_viewset import ReportViewSet
 from presentation.viewsets.sales_viewset import SalesViewSet
 from presentation.viewsets.subcategory_viewset import SubCategoryViewSet
+from presentation.viewsets.subscription_viewset import SubscriptionViewSet
 
 app_name = "api"
 
@@ -33,6 +34,7 @@ router.register(r"sales", SalesViewSet, basename="sales")
 router.register(r"customers", CustomerViewSet, basename="customer")
 router.register(r"finance", FinanceViewSet, basename="finance")
 router.register(r"reports", ReportViewSet, basename="report")
+router.register(r"subscriptions", SubscriptionViewSet, basename="subscription")
 
 urlpatterns = [
     # Authentication endpoints
@@ -76,6 +78,11 @@ urlpatterns = [
         "auth/sessions/",
         auth_views.user_sessions_view,
         name="user-sessions",
+    ),
+    path(
+        "subscriptions/webhooks/stripe",
+        SubscriptionViewSet.as_view({"post": "stripe_webhook"}),
+        name="stripe-webhook-no-slash",
     ),
     # ViewSet routes
     path("", include(router.urls)),

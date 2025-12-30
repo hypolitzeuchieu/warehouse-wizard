@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from domain.business.services import BusinessDomainService
@@ -58,7 +59,9 @@ class BusinessPermission(BasePermission):
         """
         sources = {
             "url": request.parser_context.get("kwargs", {}).get("business_id"),
-            "body": request.data.get("business_id") if hasattr(request, "data") else None,
+            "body": (
+                request.data.get("business_id") if hasattr(request, "data") else None
+            ),
             "query": (
                 request.query_params.get("business_id")
                 if hasattr(request, "query_params")
@@ -94,7 +97,9 @@ class BusinessPermission(BasePermission):
 
         return values[0][1]
 
-    def _get_user_role_in_business(self, business_id: UUID, user_id: UUID) -> str | None:
+    def _get_user_role_in_business(
+        self, business_id: UUID, user_id: UUID
+    ) -> str | None:
         """Get user's role in a specific business."""
         service = self._get_business_domain_service()
 
@@ -104,7 +109,9 @@ class BusinessPermission(BasePermission):
             return "owner"
 
         # Check if user is a member and get their role
-        member = service.business_member_repository.get_by_business_and_user(business_id, user_id)
+        member = service.business_member_repository.get_by_business_and_user(
+            business_id, user_id
+        )
         if member and member.is_active_member():
             return member.role
 
@@ -238,3 +245,41 @@ class CanAccessSalesReports(BusinessPermission):
     def __init__(self) -> None:
         """Initialize permission."""
         super().__init__(allowed_roles=["owner", "manager", "cashier"])
+
+
+class IsBusinessActive(BusinessPermission):
+    """
+    Permission to check if business is active before allowing write operations.
+
+    Allows GET, HEAD, OPTIONS requests (read-only) but blocks POST, PUT, PATCH, DELETE
+    if business is not active (no active subscription).
+    """
+
+    def has_permission(self, request, view) -> bool:
+        """Check if business is active for write operations."""
+        # Always allow GET, HEAD, OPTIONS (read-only operations)
+        if request.method in ["GET", "HEAD", "OPTIONS"]:
+            return True
+
+        # For write operations (POST, PUT, PATCH, DELETE), check if business is active
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        business_id = self._get_business_id_from_request(request)
+        if not business_id:
+            # If no business_id, allow (will be checked in use case)
+            return True
+
+        # Check if business is activated (has active subscription)
+        service = self._get_business_domain_service()
+        if not service.is_business_activated(business_id):
+            raise PermissionDenied(
+                detail=(
+                    "This business is not active. "
+                    "Please activate your subscription to perform this action."
+                ),
+                code="BUSINESS_INACTIVE",
+            )
+
+        # Business is active, check role-based permissions
+        return super().has_permission(request, view)

@@ -36,13 +36,14 @@ from presentation.serializers.inventory_serializers import (
     ProductUpdateSerializer,
 )
 from shared.exceptions.specific import BadRequestError, NotFoundError
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.views.base_viewset import BaseViewSet
 
 
 class ProductViewSet(BaseViewSet):
     """ViewSet for product management."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
@@ -110,7 +111,9 @@ class ProductViewSet(BaseViewSet):
         if resolved_category_uuid:
             category_obj = category_repo.get_by_id(resolved_category_uuid)
             if not category_obj or category_obj.business_id != business_id:
-                raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
+                raise NotFoundError(
+                    detail="Category not found", code="CATEGORY_NOT_FOUND"
+                )
 
         if resolved_subcategory_uuid:
             subcategory_obj = subcategory_repo.get_by_id(resolved_subcategory_uuid)
@@ -167,8 +170,8 @@ class ProductViewSet(BaseViewSet):
             200: ProductResponseSerializer(many=True),
             403: "Permission denied",
             404: "Category not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -178,12 +181,16 @@ class ProductViewSet(BaseViewSet):
         url_path="categories/(?P<category_id>[^/.]+)/products",
         url_name="category-products",
     )
-    def list_products_by_category(self, request: Request, category_id: UUID) -> Response:
+    def list_products_by_category(
+        self, request: Request, category_id: UUID
+    ) -> Response:
         """List products for a category."""
         try:
             category = CategoryRepositoryImpl().get_by_id(category_id)
             if not category:
-                raise NotFoundError(detail="Category not found", code="CATEGORY_NOT_FOUND")
+                raise NotFoundError(
+                    detail="Category not found", code="CATEGORY_NOT_FOUND"
+                )
 
             return self._list_products_for_scope(
                 request,
@@ -201,8 +208,8 @@ class ProductViewSet(BaseViewSet):
             200: ProductResponseSerializer(many=True),
             403: "Permission denied",
             404: "Subcategory not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -212,7 +219,9 @@ class ProductViewSet(BaseViewSet):
         url_path="subcategories/(?P<subcategory_id>[^/.]+)/products",
         url_name="subcategory-products",
     )
-    def list_products_by_subcategory(self, request: Request, subcategory_id: UUID) -> Response:
+    def list_products_by_subcategory(
+        self, request: Request, subcategory_id: UUID
+    ) -> Response:
         """List products for a subcategory."""
         try:
             if not isinstance(subcategory_id, UUID):
@@ -249,9 +258,9 @@ class ProductViewSet(BaseViewSet):
             200: ProductResponseSerializer(many=True),
             403: "Permission denied",
             404: "Business not found",
-            400: "Validation error",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            400: "Bad Request",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -278,12 +287,12 @@ class ProductViewSet(BaseViewSet):
         operation_id="product_create",
         request_body=ProductCreateSerializer,
         responses={
-            201: ProductResponseSerializer(),
-            400: "Validation error",
+            201: ProductResponseSerializer,
+            400: "Bad Request",
             403: "Permission denied",
             404: "Business not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -341,12 +350,12 @@ class ProductViewSet(BaseViewSet):
         operation_description="Get product details by ID. business_id is retrieved from the product.",
         operation_id="product_retrieve",
         responses={
-            200: ProductResponseSerializer(),
+            200: ProductResponseSerializer,
             403: "Permission denied",
             404: "Product not found",
-            400: "Validation error",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            400: "Bad Request",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -386,12 +395,12 @@ class ProductViewSet(BaseViewSet):
         operation_id="product_update",
         request_body=ProductUpdateSerializer,
         responses={
-            200: ProductResponseSerializer(),
+            200: ProductResponseSerializer,
             403: "Permission denied",
             404: "Product not found",
-            400: "Validation error",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            400: "Bad Request",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -419,7 +428,9 @@ class ProductViewSet(BaseViewSet):
             return self.handle_validation_error(serializer)
 
         try:
-            dto = serializer.to_dto(business_id=str(business_id), old_image_url=old_image_url)
+            dto = serializer.to_dto(
+                business_id=str(business_id), old_image_url=old_image_url
+            )
             use_case = UpdateProductUseCase(
                 product_repository=product_repo,
                 category_repository=CategoryRepositoryImpl(),
@@ -444,11 +455,11 @@ class ProductViewSet(BaseViewSet):
         operation_description="Delete a product. business_id is retrieved from the product.",
         operation_id="product_destroy",
         responses={
-            204: "Product deleted successfully",
+            204: "No Content",
             403: "Permission denied",
             404: "Product not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -487,12 +498,12 @@ class ProductViewSet(BaseViewSet):
         operation_id="product_scan_barcode",
         request_body=ProductScanSerializer,
         responses={
-            200: ProductScanSerializer(),
-            400: "Validation error",
+            200: ProductScanSerializer,
+            400: "Bad Request",
             403: "Permission denied",
             404: "Product not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )
@@ -595,12 +606,12 @@ class ProductViewSet(BaseViewSet):
             ),
         ],
         responses={
-            200: ProductScanSerializer(),
-            400: "Validation error",
+            200: ProductScanSerializer,
+            400: "Bad Request",
             403: "Permission denied",
             404: "Product not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Products"],
     )

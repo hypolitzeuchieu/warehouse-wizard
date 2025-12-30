@@ -37,6 +37,7 @@ from presentation.serializers.report_serializers import (
     ReportResponseSerializer,
     SalesReportQuerySerializer,
 )
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
@@ -44,7 +45,7 @@ from shared.views.base_viewset import BaseViewSet
 class ReportViewSet(BaseViewSet):
     """ViewSet for report management."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def perform_content_negotiation(self, request, force=False):
         """Disable content negotiation for download endpoint to avoid conflict with 'format' query param."""
@@ -68,6 +69,9 @@ class ReportViewSet(BaseViewSet):
             200: ReportResponseSerializer(many=True),
             400: "Bad Request",
             403: "Permission denied",
+            404: "Business not found",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Reports"],
     )
@@ -78,7 +82,9 @@ class ReportViewSet(BaseViewSet):
             return self.handle_validation_error(serializer)
 
         business_id = serializer.validated_data["business_id"]
-        if not self._get_business_domain_service().user_has_access(business_id, request.user.id):
+        if not self._get_business_domain_service().user_has_access(
+            business_id, request.user.id
+        ):
             return self.error(
                 message="You don't have access to this business",
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -112,10 +118,12 @@ class ReportViewSet(BaseViewSet):
         operation_summary="Retrieve report",
         operation_description="Retrieve a report by its ID with all metadata.",
         responses={
-            200: ReportResponseSerializer(),
+            200: ReportResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Report not found",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Reports"],
     )
@@ -158,10 +166,11 @@ class ReportViewSet(BaseViewSet):
         operation_description="Generate a report (sales, inventory, or stock) for a business within a date range and save it.",
         query_serializer=SalesReportQuerySerializer,
         responses={
-            202: ReportResponseSerializer(),
+            202: ReportResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
-            500: "Internal server error",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Reports"],
     )
@@ -194,9 +203,7 @@ class ReportViewSet(BaseViewSet):
 
             message = "Report generation initiated successfully"
             if report_dto.status == "generating":
-                message = (
-                    "Report generation initiated. The report is being generated in the background."
-                )
+                message = "Report generation initiated. The report is being generated in the background."
 
             return self.serialized_response(
                 serializer_class=ReportResponseSerializer,
@@ -217,7 +224,9 @@ class ReportViewSet(BaseViewSet):
             ),
             400: "Bad Request",
             403: "Permission denied",
-            404: "Report not found or file not available",
+            404: "Report not found",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Reports"],
     )
@@ -256,10 +265,12 @@ class ReportViewSet(BaseViewSet):
                             type=openapi.TYPE_STRING, format=openapi.FORMAT_UUID
                         ),
                         "status": openapi.Schema(
-                            type=openapi.TYPE_STRING, enum=["generating", "completed", "failed"]
+                            type=openapi.TYPE_STRING,
+                            enum=["generating", "completed", "failed"],
                         ),
                         "progress_percentage": openapi.Schema(
-                            type=openapi.TYPE_INTEGER, description="Progress percentage (0-100)"
+                            type=openapi.TYPE_INTEGER,
+                            description="Progress percentage (0-100)",
                         ),
                         "estimated_time_remaining_seconds": openapi.Schema(
                             type=openapi.TYPE_INTEGER,
@@ -272,12 +283,16 @@ class ReportViewSet(BaseViewSet):
                         "updated_at": openapi.Schema(
                             type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME
                         ),
-                        "error_message": openapi.Schema(type=openapi.TYPE_STRING, allow_null=True),
+                        "error_message": openapi.Schema(
+                            type=openapi.TYPE_STRING, allow_null=True
+                        ),
                     },
                 ),
             ),
             404: "Report not found",
             403: "Permission denied",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Reports"],
     )
@@ -323,7 +338,10 @@ class ReportViewSet(BaseViewSet):
 
                 if time_elapsed.total_seconds() < estimated_total_time:
                     progress_percentage = min(
-                        int((time_elapsed.total_seconds() / estimated_total_time) * 100), 95
+                        int(
+                            (time_elapsed.total_seconds() / estimated_total_time) * 100
+                        ),
+                        95,
                     )
                     estimated_time_remaining = max(
                         int(estimated_total_time - time_elapsed.total_seconds()), 1
@@ -356,6 +374,8 @@ class ReportViewSet(BaseViewSet):
             400: "Bad Request",
             403: "Permission denied",
             404: "Report not found",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Reports"],
     )

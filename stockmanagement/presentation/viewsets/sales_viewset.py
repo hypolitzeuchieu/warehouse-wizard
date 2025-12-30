@@ -66,6 +66,7 @@ from presentation.serializers.sales_serializers import (
     RefundCreateSerializer,
     RefundResponseSerializer,
 )
+from shared.permissions.business_permissions import IsBusinessActive
 from shared.security.query_params_validator import QueryParamsValidator
 from shared.views.base_viewset import BaseViewSet
 
@@ -73,7 +74,7 @@ from shared.views.base_viewset import BaseViewSet
 class SalesViewSet(BaseViewSet):
     """ViewSet for sales management (invoices and orders)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsBusinessActive]
 
     def _get_business_domain_service(self) -> BusinessDomainService:
         """Get business domain service instance."""
@@ -255,7 +256,11 @@ class SalesViewSet(BaseViewSet):
         operation_summary="Create invoice",
         operation_description="Create a new invoice (POS). business_id must be provided in the request body.",
         request_body=InvoiceCreateSerializer,
-        responses={201: "Invoice created", 400: "Bad Request", 403: "Permission denied"},
+        responses={
+            201: InvoiceResponseSerializer,
+            400: "Bad Request",
+            403: "Permission denied",
+        },
         tags=["Sales"],
     )
     def create(self, request: Request) -> Response:
@@ -304,7 +309,7 @@ class SalesViewSet(BaseViewSet):
         operation_summary="Get invoice",
         operation_description="Get invoice details by ID. business_id is retrieved from the invoice.",
         responses={
-            200: InvoiceResponseSerializer(),
+            200: InvoiceResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Invoice not found",
@@ -356,12 +361,12 @@ class SalesViewSet(BaseViewSet):
         operation_description="Update an existing invoice with full update.",
         request_body=InvoiceUpdateSerializer,
         responses={
-            200: InvoiceResponseSerializer(),
-            400: "Validation error",
+            200: InvoiceResponseSerializer,
+            400: "Bad Request",
             403: "Permission denied",
             404: "Invoice not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Sales"],
     )
@@ -408,12 +413,12 @@ class SalesViewSet(BaseViewSet):
         operation_summary="Archive invoice",
         operation_description="Archive an invoice instead of deleting it. Archived invoices remain read-only and require owner/manager access.",
         responses={
-            200: "Invoice archived successfully",
-            400: "Validation error",
+            204: "No Content",
+            400: "Bad Request",
             403: "Permission denied",
             404: "Invoice not found",
-            500: "Internal server error",
-            401: "Authentication credentials were not provided.",
+            500: "Internal Server Error",
+            401: "Unauthorized",
         },
         tags=["Sales"],
     )
@@ -471,7 +476,7 @@ class SalesViewSet(BaseViewSet):
         operation_summary="Cancel invoice",
         operation_description="Cancel an invoice and restore stock. business_id is retrieved from the invoice.",
         responses={
-            200: InvoiceResponseSerializer(),
+            200: InvoiceResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Invoice not found",
@@ -523,9 +528,9 @@ class SalesViewSet(BaseViewSet):
         operation_summary="Permanently delete invoice",
         operation_description="Permanently delete an invoice from the database. This action cannot be undone. Only owners and managers can perform this action.",
         responses={
-            204: "Invoice deleted successfully",
+            204: "No Content",
             400: "Bad Request",
-            403: "Permission denied (owner/manager only)",
+            403: "Permission denied",
             404: "Invoice not found",
         },
         tags=["Sales"],
@@ -559,7 +564,7 @@ class SalesViewSet(BaseViewSet):
         operation_description="Process a payment for an invoice. business_id is retrieved from the invoice.",
         request_body=PaymentCreateSerializer,
         responses={
-            200: PaymentProcessedResponseSerializer(),
+            200: PaymentProcessedResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Invoice not found",
@@ -672,7 +677,7 @@ class SalesViewSet(BaseViewSet):
         operation_description="Process a refund for an invoice. business_id is retrieved from the invoice.",
         request_body=RefundCreateSerializer,
         responses={
-            200: RefundResponseSerializer(),
+            200: RefundResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
             404: "Invoice not found",
@@ -791,10 +796,10 @@ class SalesViewSet(BaseViewSet):
         operation_summary="Apply credit payment to invoice to pay the remaining amount",
         request_body=CreditApplicationSerializer,
         responses={
-            200: InvoiceResponseSerializer(),
+            200: InvoiceResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
-            404: "Invoice or credit not found",
+            404: "Invoice not found",
         },
         tags=["Sales"],
     )
@@ -903,10 +908,10 @@ class SalesViewSet(BaseViewSet):
         operation_description="Scan a barcode to get product information for sale. business_id must be provided in the request body.",
         request_body=BarcodeScanSerializer,
         responses={
-            200: BarcodeScanResponseSerializer(),
+            200: BarcodeScanResponseSerializer,
             400: "Bad Request",
             403: "Permission denied",
-            404: "Product not found",
+            404: "Invoice not found",
         },
         tags=["Sales"],
     )

@@ -66,4 +66,3 @@ echo "   user.is_active = True"
 echo "   user.set_password('TestPassword123!')"
 echo "   user.save()"
 echo ""
-
