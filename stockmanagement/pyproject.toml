@@ -150,7 +150,6 @@ module = [
     "infrastructure.external.google_oauth",
 ]
 ignore_errors = true
-
 [tool.isort]
 profile = "black"
 line_length = 100

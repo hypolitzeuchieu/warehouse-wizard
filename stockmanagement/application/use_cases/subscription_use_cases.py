@@ -20,7 +20,6 @@ from application.dto.subscription_dto import (
 )
 from domain.business.repositories import BusinessRepository
 from domain.subscription.entities import (
-    BillingPeriod,
     PaymentProvider,
     PaymentTransaction,
     Subscription,
@@ -117,7 +116,7 @@ def _payment_transaction_to_dto(transaction: PaymentTransaction) -> PaymentRespo
     )
 
 
-def _get_payment_provider(provider: PaymentProvider) -> PaymentProviderInterface:
+def get_payment_provider(provider: PaymentProvider) -> PaymentProviderInterface:
     """Get payment provider service instance."""
     if provider == PaymentProvider.STRIPE:
         return StripeService(
@@ -194,9 +193,7 @@ class CreateSubscriptionUseCase:
             )
 
         # Check if business already has an active subscription
-        existing_subscription = self.subscription_repository.get_by_business(
-            self.business_id
-        )
+        existing_subscription = self.subscription_repository.get_by_business(self.business_id)
         if existing_subscription and existing_subscription.is_active():
             raise BadRequestError(
                 detail="Business already has an active subscription",
@@ -240,11 +237,7 @@ class CreateSubscriptionUseCase:
             id=uuid4(),
             business_id=self.business_id,
             plan_id=dto.plan_id,
-            status=(
-                SubscriptionStatus.TRIAL
-                if dto.start_trial
-                else SubscriptionStatus.ACTIVE
-            ),
+            status=(SubscriptionStatus.TRIAL if dto.start_trial else SubscriptionStatus.ACTIVE),
             billing_period=dto.billing_period,
             start_date=start_date,
             end_date=end_date,
@@ -293,9 +286,7 @@ class ProcessPaymentUseCase:
         """Execute payment processing."""
         subscription = self.subscription_repository.get_by_id(self.subscription_id)
         if not subscription:
-            raise NotFoundError(
-                detail="Subscription not found", code="SUBSCRIPTION_NOT_FOUND"
-            )
+            raise NotFoundError(detail="Subscription not found", code="SUBSCRIPTION_NOT_FOUND")
 
         if dto.idempotency_key:
             existing_transaction = self.transaction_repository.get_by_idempotency_key(
@@ -310,17 +301,13 @@ class ProcessPaymentUseCase:
         # Get plan to calculate amount
         plan = self.plan_repository.get_by_id(subscription.plan_id)
         if not plan:
-            raise NotFoundError(
-                detail="Subscription plan not found", code="PLAN_NOT_FOUND"
-            )
+            raise NotFoundError(detail="Subscription plan not found", code="PLAN_NOT_FOUND")
 
         # Calculate expected amount
         expected_amount = plan.get_price(subscription.billing_period)
 
         # Validate amount
-        validation = PaymentValidationService.validate_payment_amount(
-            dto.amount, expected_amount
-        )
+        validation = PaymentValidationService.validate_payment_amount(dto.amount, expected_amount)
         if not validation["is_valid"]:
             raise BadRequestError(
                 detail=f"Payment amount validation failed: {validation['errors']}",
@@ -328,7 +315,7 @@ class ProcessPaymentUseCase:
             )
 
         # Get payment provider
-        payment_provider = _get_payment_provider(dto.provider)
+        payment_provider = get_payment_provider(dto.provider)
 
         # Create payment transaction
         now = timezone.now()
@@ -360,9 +347,7 @@ class ProcessPaymentUseCase:
                 metadata={"user_id": str(self.user_id)},
             )
 
-            transaction.external_transaction_id = provider_response.get(
-                "transaction_id"
-            )
+            transaction.external_transaction_id = provider_response.get("transaction_id")
             transaction.provider_response = provider_response
             transaction = self.transaction_repository.create(transaction)
 
@@ -383,9 +368,7 @@ class ProcessPaymentUseCase:
             transaction.failure_reason = str(e)
             self.transaction_repository.create(transaction)
 
-            user_message = (
-                "Unable to process payment. Please try again later or contact support."
-            )
+            user_message = "Unable to process payment. Please try again later or contact support."
             technical_details = {
                 "error_type": type(e).__name__,
                 "error_message": str(e),
@@ -428,7 +411,7 @@ class HandleWebhookUseCase:
             }
 
         # Get payment provider
-        payment_provider = _get_payment_provider(dto.provider)
+        payment_provider = get_payment_provider(dto.provider)
 
         # Handle webhook
         try:
@@ -495,15 +478,9 @@ class HandleWebhookUseCase:
             transaction.status = TransactionStatus.COMPLETED
             transaction.completed_at = timezone.now()
             transaction.provider_response = webhook_data
-        elif (
-            status == "failed"
-            or event_type in failed_events
-            or "failed" in event_type.lower()
-        ):
+        elif status == "failed" or event_type in failed_events or "failed" in event_type.lower():
             transaction.status = TransactionStatus.FAILED
-            transaction.failure_reason = webhook_data.get(
-                "failure_reason", "Payment failed"
-            )
+            transaction.failure_reason = webhook_data.get("failure_reason", "Payment failed")
             transaction.provider_response = webhook_data
         elif (
             status == "cancelled"
@@ -523,9 +500,7 @@ class HandleWebhookUseCase:
 
         # If payment completed, activate subscription and business
         if transaction.status == TransactionStatus.COMPLETED:
-            subscription = self.subscription_repository.get_by_id(
-                transaction.subscription_id
-            )
+            subscription = self.subscription_repository.get_by_id(transaction.subscription_id)
             if subscription:
                 # Update subscription status to ACTIVE if it was in TRIAL
                 if subscription.status == SubscriptionStatus.TRIAL:
@@ -535,28 +510,12 @@ class HandleWebhookUseCase:
                 if not subscription.start_date:
                     subscription.start_date = now
 
-                # Calculate end_date if not set
-                if not subscription.end_date:
-                    if subscription.billing_period == BillingPeriod.MONTHLY:
-                        from datetime import timedelta
-
-                        subscription.end_date = now + timedelta(days=30)
-                    elif subscription.billing_period == BillingPeriod.YEARLY:
-                        from datetime import timedelta
-
-                        subscription.end_date = now + timedelta(days=365)
-
-                # Update subscription updated_at
-                subscription.updated_at = now
-                subscription = self.subscription_repository.update(subscription)
-
-                # Activate business and link subscription
-                business = self.business_repository.get_by_id(subscription.business_id)
-                if business:
-                    business.is_active = True
-                    business.subscription_id = subscription.id
-                    business.updated_at = now
-                    business = self.business_repository.update(business)
+                # Activate subscription and business using domain service
+                subscription, business = (
+                    self.subscription_domain_service.activate_subscription_and_business(
+                        subscription, transaction
+                    )
+                )
 
                 logger.info(
                     f"Subscription activated via webhook - subscription_id: {subscription.id}, "
@@ -567,6 +526,84 @@ class HandleWebhookUseCase:
             "status": "processed",
             "transaction_id": str(transaction.id),
             "subscription_id": str(transaction.subscription_id),
+        }
+
+
+class ProcessPaymentSuccessUseCase:
+    """Use case for processing successful payment redirects."""
+
+    def __init__(
+        self,
+        subscription_repository: SubscriptionRepository,
+        transaction_repository: PaymentTransactionRepository,
+        business_repository: BusinessRepository,
+        subscription_domain_service: SubscriptionDomainService,
+        payment_provider: PaymentProviderInterface,
+    ) -> None:
+        """Initialize use case."""
+        self.subscription_repository = subscription_repository
+        self.transaction_repository = transaction_repository
+        self.business_repository = business_repository
+        self.subscription_domain_service = subscription_domain_service
+        self.payment_provider = payment_provider
+
+    @transaction.atomic
+    def execute(self, transaction_id: UUID) -> dict:
+        """Execute payment success processing."""
+        # Get transaction
+        transaction = self.transaction_repository.get_by_id(transaction_id)
+        if not transaction:
+            raise NotFoundError(
+                detail="Transaction not found",
+                code="TRANSACTION_NOT_FOUND",
+            )
+
+        # Verify payment status with provider
+        payment_status = self.payment_provider.verify_payment(
+            str(transaction.external_transaction_id)
+        )
+
+        # Get subscription and business
+        subscription = self.subscription_repository.get_by_id(transaction.subscription_id)
+        business = None
+        if subscription:
+            business = self.business_repository.get_by_id(subscription.business_id)
+
+        # If payment is completed, activate business
+        if (
+            payment_status.get("status") in ("succeeded", "paid")
+            and transaction.status != TransactionStatus.COMPLETED
+        ):
+            # Update transaction
+            transaction.status = TransactionStatus.COMPLETED
+            transaction.completed_at = timezone.now()
+            transaction.provider_response = payment_status
+            transaction = self.transaction_repository.update(transaction)
+
+            # Activate subscription and business
+            if subscription:
+                subscription, business = (
+                    self.subscription_domain_service.activate_subscription_and_business(
+                        subscription, transaction
+                    )
+                )
+
+                logger.info(
+                    f"Subscription activated via payment success - subscription_id: {subscription.id}, "
+                    f"transaction_id: {transaction.id}, business_id: {business.id if business else None}"
+                )
+        elif transaction.status == TransactionStatus.COMPLETED:
+            logger.info(
+                f"Payment already processed - transaction_id: {transaction.id}, "
+                f"subscription_id: {transaction.subscription_id}"
+            )
+
+        return {
+            "transaction_id": str(transaction.id),
+            "subscription_id": str(transaction.subscription_id),
+            "business_id": str(business.id) if business else None,
+            "status": payment_status.get("status"),
+            "business_activated": business.is_active if business else False,
         }
 
 
@@ -690,16 +727,9 @@ class ListSubscriptionsUseCase:
 
     def execute(self) -> list[SubscriptionResponseDTO]:
         """Execute listing subscriptions."""
-        subscriptions = self.subscription_repository.get_by_business_all(
-            self.business_id
-        )
-        plans = {
-            sub.plan_id: self.plan_repository.get_by_id(sub.plan_id)
-            for sub in subscriptions
-        }
-        return [
-            _subscription_to_dto(sub, plans.get(sub.plan_id)) for sub in subscriptions
-        ]
+        subscriptions = self.subscription_repository.get_by_business_all(self.business_id)
+        plans = {sub.plan_id: self.plan_repository.get_by_id(sub.plan_id) for sub in subscriptions}
+        return [_subscription_to_dto(sub, plans.get(sub.plan_id)) for sub in subscriptions]
 
 
 class GetSubscriptionStatusUseCase:

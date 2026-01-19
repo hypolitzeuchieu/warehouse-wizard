@@ -10,8 +10,10 @@ from uuid import UUID
 
 from django.utils import timezone
 
+from domain.business.entities import Business
 from domain.business.repositories import BusinessRepository
 from domain.subscription.entities import (
+    BillingPeriod,
     PaymentTransaction,
     Subscription,
     SubscriptionStatus,
@@ -81,10 +83,8 @@ class SubscriptionDomainService:
         Returns:
             List of business IDs that were deactivated
         """
-        expired_subscriptions = (
-            self.subscription_repository.get_subscriptions_by_status(
-                SubscriptionStatus.EXPIRED
-            )
+        expired_subscriptions = self.subscription_repository.get_subscriptions_by_status(
+            SubscriptionStatus.EXPIRED
         )
         deactivated_businesses = []
 
@@ -95,9 +95,7 @@ class SubscriptionDomainService:
                 business.updated_at = timezone.now()
                 self.business_repository.update(business)
                 deactivated_businesses.append(business.id)
-                logger.info(
-                    f"Business {business.id} deactivated due to expired subscription"
-                )
+                logger.info(f"Business {business.id} deactivated due to expired subscription")
 
         return deactivated_businesses
 
@@ -127,9 +125,7 @@ class SubscriptionDomainService:
 
         return start_date + delta
 
-    def calculate_trial_end_date(
-        self, start_date: datetime, trial_days: int
-    ) -> datetime:
+    def calculate_trial_end_date(self, start_date: datetime, trial_days: int) -> datetime:
         """Calculate trial end date."""
         return start_date + timedelta(days=trial_days)
 
@@ -150,23 +146,63 @@ class SubscriptionDomainService:
 
         return False
 
-    def get_subscription_status_for_business(
-        self, business_id: UUID
-    ) -> SubscriptionStatus | None:
+    def get_subscription_status_for_business(self, business_id: UUID) -> SubscriptionStatus | None:
         """Get subscription status for a business."""
         subscription = self.subscription_repository.get_by_business(business_id)
         if not subscription:
             return None
         return subscription.status
 
+    def activate_subscription_and_business(
+        self,
+        subscription: Subscription,
+        transaction: PaymentTransaction,
+    ) -> tuple[Subscription, Business | None]:
+        """
+        Activate subscription and business after successful payment.
+
+        Args:
+            subscription: Subscription to activate
+            transaction: Payment transaction that triggered activation
+
+        Returns:
+            Tuple of (updated_subscription, updated_business)
+        """
+        now = timezone.now()
+
+        # Update subscription status to ACTIVE if it was in TRIAL
+        if subscription.status == SubscriptionStatus.TRIAL:
+            subscription.status = SubscriptionStatus.ACTIVE
+
+        if not subscription.start_date:
+            subscription.start_date = now
+
+        # Calculate end_date if not set
+        if not subscription.end_date:
+            if subscription.billing_period == BillingPeriod.MONTHLY:
+                subscription.end_date = now + timedelta(days=30)
+            elif subscription.billing_period == BillingPeriod.YEARLY:
+                subscription.end_date = now + timedelta(days=365)
+
+        subscription.updated_at = now
+        subscription = self.subscription_repository.update(subscription)
+
+        # Activate business and link subscription
+        business = self.business_repository.get_by_id(subscription.business_id)
+        if business:
+            business.is_active = True
+            business.subscription_id = subscription.id
+            business.updated_at = now
+            business = self.business_repository.update(business)
+
+        return subscription, business
+
 
 class PaymentValidationService:
     """Service for validating payment transactions."""
 
     @staticmethod
-    def validate_payment_amount(
-        amount: Decimal, expected_amount: Decimal
-    ) -> dict[str, Any]:
+    def validate_payment_amount(amount: Decimal, expected_amount: Decimal) -> dict[str, Any]:
         """
         Validate payment amount matches expected amount.
 

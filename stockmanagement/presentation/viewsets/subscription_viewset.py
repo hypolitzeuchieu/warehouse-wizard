@@ -5,9 +5,6 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from django.conf import settings
-from django.db import transaction as db_transaction
-from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
@@ -24,17 +21,19 @@ from application.use_cases.subscription_use_cases import (
     HandleWebhookUseCase,
     ListSubscriptionPlansUseCase,
     ListSubscriptionsUseCase,
+    ProcessPaymentSuccessUseCase,
     ProcessPaymentUseCase,
     RenewSubscriptionUseCase,
+    get_payment_provider,
 )
-from domain.subscription.entities import (
-    BillingPeriod,
-    PaymentProvider,
-    SubscriptionStatus,
-    TransactionStatus,
+from domain.business.repositories import BusinessRepository
+from domain.subscription.entities import PaymentProvider
+from domain.subscription.repositories import (
+    PaymentTransactionRepository,
+    SubscriptionPlanRepository,
+    SubscriptionRepository,
 )
 from domain.subscription.services import SubscriptionDomainService
-from infrastructure.external.payment_providers import StripeService
 from infrastructure.persistence.repositories import (
     BusinessRepositoryImpl,
     PaymentTransactionRepositoryImpl,
@@ -93,11 +92,27 @@ class SubscriptionViewSet(BaseViewSet):
 
         return super().get_permissions()
 
+    def _get_subscription_repository(self) -> SubscriptionRepository:
+        """Get subscription repository instance."""
+        return SubscriptionRepositoryImpl()
+
+    def _get_subscription_plan_repository(self) -> SubscriptionPlanRepository:
+        """Get subscription plan repository instance."""
+        return SubscriptionPlanRepositoryImpl()
+
+    def _get_payment_transaction_repository(self) -> PaymentTransactionRepository:
+        """Get payment transaction repository instance."""
+        return PaymentTransactionRepositoryImpl()
+
+    def _get_business_repository(self) -> BusinessRepository:
+        """Get business repository instance."""
+        return BusinessRepositoryImpl()
+
     def _get_subscription_domain_service(self) -> SubscriptionDomainService:
         """Get subscription domain service instance."""
         return SubscriptionDomainService(
-            subscription_repository=SubscriptionRepositoryImpl(),
-            business_repository=BusinessRepositoryImpl(),
+            subscription_repository=self._get_subscription_repository(),
+            business_repository=self._get_business_repository(),
         )
 
     @swagger_auto_schema(
@@ -130,11 +145,9 @@ class SubscriptionViewSet(BaseViewSet):
     def list_plans(self, request: Request) -> Response:
         """List all subscription plans."""
         try:
-            active_only = (
-                request.query_params.get("active_only", "true").lower() == "true"
-            )
+            active_only = request.query_params.get("active_only", "true").lower() == "true"
             use_case = ListSubscriptionPlansUseCase(
-                plan_repository=SubscriptionPlanRepositoryImpl()
+                plan_repository=self._get_subscription_plan_repository()
             )
             plans = use_case.execute(active_only=active_only)
 
@@ -187,9 +200,9 @@ class SubscriptionViewSet(BaseViewSet):
 
             dto = serializer.to_dto(str(business_id))
             use_case = CreateSubscriptionUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                plan_repository=SubscriptionPlanRepositoryImpl(),
-                business_repository=BusinessRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                plan_repository=self._get_subscription_plan_repository(),
+                business_repository=self._get_business_repository(),
                 subscription_domain_service=self._get_subscription_domain_service(),
                 business_id=business_id,
                 user_id=request.user.id,
@@ -224,8 +237,8 @@ class SubscriptionViewSet(BaseViewSet):
         """Get subscription details."""
         try:
             use_case = GetSubscriptionStatusUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                plan_repository=SubscriptionPlanRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                plan_repository=self._get_subscription_plan_repository(),
                 subscription_id=pk,
             )
             subscription_dto = use_case.execute()
@@ -272,15 +285,13 @@ class SubscriptionViewSet(BaseViewSet):
             business_id = query_serializer.validated_data["business_id"]
 
             use_case = ListSubscriptionsUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                plan_repository=SubscriptionPlanRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                plan_repository=self._get_subscription_plan_repository(),
                 business_id=business_id,
             )
             subscriptions = use_case.execute()
 
-            subscriptions_data = [
-                SubscriptionSerializer.from_dto(sub) for sub in subscriptions
-            ]
+            subscriptions_data = [SubscriptionSerializer.from_dto(sub) for sub in subscriptions]
 
             return self.success(
                 message="Subscriptions retrieved successfully",
@@ -318,9 +329,9 @@ class SubscriptionViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto(str(pk))
             use_case = ProcessPaymentUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                plan_repository=SubscriptionPlanRepositoryImpl(),
-                transaction_repository=PaymentTransactionRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                plan_repository=self._get_subscription_plan_repository(),
+                transaction_repository=self._get_payment_transaction_repository(),
                 subscription_id=pk,
                 user_id=request.user.id,
             )
@@ -356,8 +367,8 @@ class SubscriptionViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto()
             use_case = CancelSubscriptionUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                business_repository=BusinessRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                business_repository=self._get_business_repository(),
                 subscription_id=pk,
                 user_id=request.user.id,
             )
@@ -393,8 +404,8 @@ class SubscriptionViewSet(BaseViewSet):
         try:
             dto = serializer.to_dto()
             use_case = RenewSubscriptionUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                plan_repository=SubscriptionPlanRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                plan_repository=self._get_subscription_plan_repository(),
                 subscription_domain_service=self._get_subscription_domain_service(),
                 subscription_id=pk,
                 user_id=request.user.id,
@@ -449,9 +460,9 @@ class SubscriptionViewSet(BaseViewSet):
             )
 
             use_case = HandleWebhookUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                transaction_repository=PaymentTransactionRepositoryImpl(),
-                business_repository=BusinessRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                transaction_repository=self._get_payment_transaction_repository(),
+                business_repository=self._get_business_repository(),
                 subscription_domain_service=self._get_subscription_domain_service(),
             )
             result = use_case.execute(dto)
@@ -464,6 +475,12 @@ class SubscriptionViewSet(BaseViewSet):
         except Exception as e:
             return self.handle_exception(e)
 
+    @swagger_auto_schema(
+        operation_summary="Payment success",
+        operation_description="Handle successful payment redirect from payment provider.",
+        responses={200: "Payment successful", 404: "Transaction not found"},
+        tags=["Subscriptions"],
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -471,109 +488,50 @@ class SubscriptionViewSet(BaseViewSet):
         permission_classes=[],
     )
     def payment_success(self, request: Request) -> Response:
-        """Handle payment success redirect from Stripe."""
+        """Handle payment success redirect from payment provider."""
         try:
-            session_id = request.query_params.get("session_id")
-            if not session_id:
+            transaction_id_str = request.query_params.get("transaction_id")
+            if not transaction_id_str:
                 return self.error(
-                    message="session_id is required",
+                    message="transaction_id query parameter is required",
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    code="MISSING_SESSION_ID",
+                    code="MISSING_TRANSACTION_ID",
                 )
 
-            stripe_service = StripeService(
-                secret_key=getattr(settings, "STRIPE_SECRET_KEY", ""),
-                publishable_key=getattr(settings, "STRIPE_PUBLISHABLE_KEY", ""),
-                webhook_secret=getattr(settings, "STRIPE_WEBHOOK_SECRET", None),
-            )
+            try:
+                transaction_id = UUID(transaction_id_str)
+            except (ValueError, TypeError):
+                return self.error(
+                    message="Invalid transaction_id format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="INVALID_TRANSACTION_ID",
+                )
 
-            # Verify payment status
-            payment_status = stripe_service.verify_payment(session_id)
-
-            # Find transaction by external_id
-            transaction = PaymentTransactionRepositoryImpl().get_by_external_id(
-                session_id, PaymentProvider.STRIPE.value
-            )
-
+            # Get payment provider from transaction
+            transaction = self._get_payment_transaction_repository().get_by_id(transaction_id)
             if not transaction:
-                logger.warning(f"Transaction not found for session_id: {session_id}")
                 return self.error(
                     message="Transaction not found",
                     status_code=status.HTTP_404_NOT_FOUND,
                     code="TRANSACTION_NOT_FOUND",
                 )
 
-            # Get subscription and business for response
-            subscription = SubscriptionRepositoryImpl().get_by_id(
-                transaction.subscription_id
+            # Get payment provider service
+            payment_provider = get_payment_provider(transaction.provider)
+
+            # Use case to process payment success
+            use_case = ProcessPaymentSuccessUseCase(
+                subscription_repository=self._get_subscription_repository(),
+                transaction_repository=self._get_payment_transaction_repository(),
+                business_repository=self._get_business_repository(),
+                subscription_domain_service=self._get_subscription_domain_service(),
+                payment_provider=payment_provider,
             )
-            business = None
-            if subscription:
-                business = BusinessRepositoryImpl().get_by_id(subscription.business_id)
-
-            # If payment is completed, activate business (similar to webhook handler)
-            if (
-                payment_status.get("status") in ("succeeded", "paid")
-                and transaction.status != TransactionStatus.COMPLETED
-            ):
-                with db_transaction.atomic():
-                    # Update transaction
-                    transaction.status = TransactionStatus.COMPLETED
-                    transaction.completed_at = timezone.now()
-                    transaction.provider_response = payment_status
-                    transaction = PaymentTransactionRepositoryImpl().update(transaction)
-
-                    # Activate subscription and business
-                    if subscription:
-                        if subscription.status == SubscriptionStatus.TRIAL:
-                            subscription.status = SubscriptionStatus.ACTIVE
-                        if not subscription.start_date:
-                            subscription.start_date = timezone.now()
-
-                        # Calculate end_date if not set
-                        if not subscription.end_date:
-                            if subscription.billing_period == BillingPeriod.MONTHLY:
-                                from datetime import timedelta
-
-                                subscription.end_date = timezone.now() + timedelta(
-                                    days=30
-                                )
-                            elif subscription.billing_period == BillingPeriod.YEARLY:
-                                from datetime import timedelta
-
-                                subscription.end_date = timezone.now() + timedelta(
-                                    days=365
-                                )
-
-                        subscription.updated_at = timezone.now()
-                        subscription = SubscriptionRepositoryImpl().update(subscription)
-
-                        # Activate business
-                        if business:
-                            business.is_active = True
-                            business.subscription_id = subscription.id
-                            business.updated_at = timezone.now()
-                            business = BusinessRepositoryImpl().update(business)
-
-                        logger.info(
-                            f"Subscription activated via payment success - subscription_id: {subscription.id}, "
-                            f"transaction_id: {transaction.id}, business_id: {business.id if business else None}"
-                        )
-            elif transaction.status == TransactionStatus.COMPLETED:
-                logger.info(
-                    f"Payment already processed - transaction_id: {transaction.id}, "
-                    f"subscription_id: {transaction.subscription_id}"
-                )
+            result = use_case.execute(transaction_id)
 
             return self.success(
                 message="Payment successful",
-                data={
-                    "transaction_id": str(transaction.id),
-                    "subscription_id": str(transaction.subscription_id),
-                    "business_id": str(business.id) if business else None,
-                    "status": payment_status.get("status"),
-                    "business_activated": business.is_active if business else False,
-                },
+                data=result,
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -643,9 +601,9 @@ class SubscriptionViewSet(BaseViewSet):
             )
 
             use_case = HandleWebhookUseCase(
-                subscription_repository=SubscriptionRepositoryImpl(),
-                transaction_repository=PaymentTransactionRepositoryImpl(),
-                business_repository=BusinessRepositoryImpl(),
+                subscription_repository=self._get_subscription_repository(),
+                transaction_repository=self._get_payment_transaction_repository(),
+                business_repository=self._get_business_repository(),
                 subscription_domain_service=self._get_subscription_domain_service(),
             )
             result = use_case.execute(dto)
