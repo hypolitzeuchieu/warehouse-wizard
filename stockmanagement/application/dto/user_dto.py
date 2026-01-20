@@ -206,6 +206,16 @@ class ResetPasswordDTO:
 
 
 @dataclass
+class UserSearchDTO:
+    """DTO for user search parameters."""
+
+    email: str | None = None
+    phone_number: str | None = None
+    name: str | None = None
+    search_query: str | None = None
+
+
+@dataclass
 class ProfileUpdateDTO:
     """DTO for profile update."""
 

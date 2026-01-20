@@ -646,6 +646,25 @@ class ProfileUpdateSerializer(serializers.Serializer):
         )
 
 
+class UserSearchResultSerializer(serializers.Serializer):
+    """Serializer for user search results (simplified data for selection)."""
+
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True, allow_null=True, required=False)
+    phone_number = serializers.CharField(read_only=True, allow_null=True, required=False)
+
+    @classmethod
+    def from_dto(cls, dto: UserResponseDTO) -> dict:
+        """Convert UserResponseDTO to serialized data."""
+        return {
+            "id": str(dto.id),
+            "name": dto.name,
+            "email": dto.email,
+            "phone_number": dto.phone_number,
+        }
+
+
 class UserResponseSerializer(serializers.Serializer):
     """Serializer for user response data (from UserResponseDTO)."""
 

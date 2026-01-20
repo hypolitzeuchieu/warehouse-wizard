@@ -8,6 +8,7 @@ from presentation.viewsets.inventory_viewset import InventoryViewSet
 from presentation.viewsets.notification_viewset import NotificationViewSet
 from presentation.viewsets.sales_viewset import SalesViewSet
 from presentation.viewsets.subcategory_viewset import SubCategoryViewSet
+from presentation.viewsets.user_viewset import UserViewSet
 
 __all__ = [
     "BusinessViewSet",
@@ -18,4 +19,5 @@ __all__ = [
     "NotificationViewSet",
     "SalesViewSet",
     "SubCategoryViewSet",
+    "UserViewSet",
 ]

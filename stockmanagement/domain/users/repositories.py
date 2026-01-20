@@ -67,6 +67,29 @@ class UserRepository(ABC):
         """Update user password."""
         pass
 
+    @abstractmethod
+    def search(
+        self,
+        email: str | None = None,
+        phone_number: str | None = None,
+        name: str | None = None,
+        search_query: str | None = None,
+    ) -> list[User]:
+        """
+        Search for users by email, phone number, or name.
+        Returns all users if no search parameters are provided.
+
+        Args:
+            email: Exact email to search for
+            phone_number: Exact phone number to search for
+            name: Partial name match
+            search_query: General query that searches in email, phone, and name
+
+        Returns:
+            List of User entities matching the search criteria, or all users if no parameters provided
+        """
+        pass
+
 
 class SessionRepository(ABC):
     """Session repository interface."""
