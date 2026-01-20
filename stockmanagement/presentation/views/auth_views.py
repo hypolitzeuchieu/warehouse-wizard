@@ -18,6 +18,7 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from rest_framework_simplejwt.tokens import AccessToken
 
 from application.dto.user_dto import OTPRequestDTO
+from application.use_cases.business_use_cases import business_to_dto
 from application.use_cases.google_oauth_use_case import (
     GoogleOAuthAuthURLUseCase,
     GoogleOAuthCodeUseCase,
@@ -46,6 +47,7 @@ from infrastructure.persistence.repositories import (
     SessionRepositoryImpl,
     UserRepositoryImpl,
 )
+from presentation.serializers.business_serializers import BusinessResponseSerializer
 from presentation.serializers.user_serializers import (
     ForgotPasswordSerializer,
     GoogleOAuthCodeSerializer,
@@ -315,31 +317,28 @@ def verify_otp_view(request: Request) -> Response:
             user_agent=user_agent,
         )
 
-        business_info = None
+        businesses_list = []
         user_role = getattr(login_response.user, "role", None)
+        business_repo = BusinessRepositoryImpl()
+        member_repo = BusinessMemberRepositoryImpl()
+
         if user_role == "owner":
-            businesses = BusinessRepositoryImpl().get_by_owner(login_response.user.id)
-            if businesses:
-                active_business = next((b for b in businesses if b.is_active), businesses[0])
-                business_info = {
-                    "id": str(active_business.id),
-                    "name": active_business.name,
-                    "unique_name": active_business.unique_name,
-                }
+            owned_businesses = business_repo.get_by_owner(login_response.user.id)
+            for business in owned_businesses:
+                business_dto = business_to_dto(business)
+                business_data = BusinessResponseSerializer.from_dto(business_dto)
+                business_data["role"] = "owner"
+                businesses_list.append(business_data)
         elif user_role in ["manager", "cashier", "stock_keeper", "delivery"]:
-            member_repo = BusinessMemberRepositoryImpl()
+            # Get all businesses where user is a member
             memberships = member_repo.get_user_businesses(login_response.user.id)
-            if memberships:
-                active_membership = next((m for m in memberships if m.is_active_member()), None)
-                if active_membership:
-                    business = BusinessRepositoryImpl().get_by_id(active_membership.business_id)
-                    if business:
-                        business_info = {
-                            "id": str(business.id),
-                            "name": business.name,
-                            "unique_name": business.unique_name,
-                            "role": active_membership.role,
-                        }
+            for membership in memberships:
+                business = business_repo.get_by_id(membership.business_id)
+                if business:
+                    business_dto = business_to_dto(business)
+                    business_data = BusinessResponseSerializer.from_dto(business_dto)
+                    business_data["role"] = membership.role
+                    businesses_list.append(business_data)
 
         return helper.success(
             message="OTP verified successfully. Login completed.",
@@ -348,7 +347,7 @@ def verify_otp_view(request: Request) -> Response:
                 "refresh_token": login_response.refresh_token,
                 "expires_in": login_response.expires_in,
                 "user": UserResponseSerializer.from_dto(login_response.user),
-                "business": business_info,
+                "businesses": businesses_list,
             },
             status_code=status.HTTP_200_OK,
         )

@@ -18,6 +18,7 @@ from application.dto.user_dto import (
     SignupResponseDTO,
     UserCreateDTO,
     UserResponseDTO,
+    UserSearchDTO,
 )
 from application.use_cases.otp_use_cases import RequestOTPUseCase
 from domain.users.entities import AuthMethod, Device, Session, User, UserRole
@@ -475,6 +476,61 @@ class LogoutUseCase:
             active_sessions = self.session_repository.get_active_sessions_by_user(self.user_id)
             for session in active_sessions:
                 self.user_domain_service.end_session(session.id)
+
+
+class SearchUsersUseCase:
+    """Use case for searching users."""
+
+    def __init__(self, user_repository: UserRepository) -> None:
+        """Initialize use case."""
+        self.user_repository = user_repository
+
+    def execute(self, dto: UserSearchDTO) -> list[UserResponseDTO]:
+        """
+        Execute user search.
+
+        Args:
+            dto: UserSearchDTO with search parameters
+
+        Returns:
+            List of UserResponseDTO matching search criteria
+        """
+        users = self.user_repository.search(
+            email=dto.email,
+            phone_number=dto.phone_number,
+            name=dto.name,
+            search_query=dto.search_query,
+        )
+
+        return [self._to_dto(user) for user in users]
+
+    def _to_dto(self, user: User) -> UserResponseDTO:
+        """Convert User entity to UserResponseDTO."""
+        signed_avatar_url = None
+        if user.avatar_url:
+            try:
+                signed_avatar_url = (
+                    S3Service().generate_presigned_get_url(user.avatar_url) or user.avatar_url
+                )
+            except Exception:
+                signed_avatar_url = user.avatar_url
+
+        return UserResponseDTO(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            role=user.role,
+            is_active=user.is_active,
+            email_verified=user.email_verified,
+            is_staff=user.is_staff,
+            is_superuser=user.is_superuser,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            phone_number=user.phone_number,
+            last_login=user.last_login,
+            address=user.address,
+            avatar_url=signed_avatar_url,
+        )
 
 
 class GetUserSessionsUseCase:

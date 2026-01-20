@@ -106,22 +106,34 @@ class BusinessViewSet(BaseViewSet):
             )
 
             business_member_repository = BusinessMemberRepositoryImpl()
-            businesses_with_counts = []
+            business_domain_service = self._get_business_domain_service()
+            user_repository = UserRepositoryImpl()
+            businesses_with_members = []
             for business_dto in businesses:
+                # Get members for this business
+                members_use_case = ListBusinessMembersUseCase(
+                    business_member_repository=business_member_repository,
+                    business_domain_service=business_domain_service,
+                    user_repository=user_repository,
+                    business_id=business_dto.id,
+                    user_id=request.user.id,
+                    include_inactive=False,
+                )
+                try:
+                    members = members_use_case.execute()
+                except Exception:
+                    members = []
+
                 business_data = BusinessResponseSerializer.from_dto(
                     business_dto,
-                    members=None,
-                    member_count=None,
+                    members=members,
+                    member_count=len(members) if members else 0,
                 )
-                members = business_member_repository.get_business_members(
-                    business_dto.id, active_only=True
-                )
-                business_data["member_count"] = len(members)
-                businesses_with_counts.append(business_data)
+                businesses_with_members.append(business_data)
 
             return self.paginated_response(
                 request=request,
-                queryset=businesses_with_counts,
+                queryset=businesses_with_members,
                 serializer_class=BusinessResponseSerializer,
                 message="Businesses retrieved successfully",
             )

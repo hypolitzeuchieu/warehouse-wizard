@@ -149,6 +149,69 @@ class UserRepositoryImpl(UserRepository):
         user.updated_at = timezone.now()
         return self.update(user)
 
+    def search(
+        self,
+        email: str | None = None,
+        phone_number: str | None = None,
+        name: str | None = None,
+        search_query: str | None = None,
+    ) -> list[User]:
+        """Search for users by email, phone number, or name. Returns all users if no search parameters provided."""
+        user_ids_seen: set[UUID] = set()
+        users: list[User] = []
+
+        # If no search parameters provided, return all users
+        if not email and not phone_number and not name and not search_query:
+            all_users = UserModel.objects.all()
+            return [self._to_entity(user_model) for user_model in all_users]
+
+        # Search by exact email
+        if email:
+            user = self.get_by_email(email)
+            if user and user.id not in user_ids_seen:
+                users.append(user)
+                user_ids_seen.add(user.id)
+
+        # Search by exact phone number
+        if phone_number:
+            user = self.get_by_phone_number(phone_number)
+            if user and user.id not in user_ids_seen:
+                users.append(user)
+                user_ids_seen.add(user.id)
+
+        # General search query (searches in email, phone, and name)
+        if search_query:
+            # Search by email
+            user_by_email = self.get_by_email(search_query)
+            if user_by_email and user_by_email.id not in user_ids_seen:
+                users.append(user_by_email)
+                user_ids_seen.add(user_by_email.id)
+
+            # Search by phone
+            user_by_phone = self.get_by_phone_number(search_query)
+            if user_by_phone and user_by_phone.id not in user_ids_seen:
+                users.append(user_by_phone)
+                user_ids_seen.add(user_by_phone.id)
+
+            # Search by name (partial match)
+            name_matches = UserModel.objects.filter(name__icontains=search_query)
+            for user_model in name_matches:
+                user = self._to_entity(user_model)
+                if user.id not in user_ids_seen:
+                    users.append(user)
+                    user_ids_seen.add(user.id)
+
+        # Search by name filter separately
+        if name:
+            name_matches = UserModel.objects.filter(name__icontains=name)
+            for user_model in name_matches:
+                user = self._to_entity(user_model)
+                if user.id not in user_ids_seen:
+                    users.append(user)
+                    user_ids_seen.add(user.id)
+
+        return users
+
     def _to_entity(self, user_model: UserModel) -> User:
         """Convert Django model to domain entity."""
         return User(

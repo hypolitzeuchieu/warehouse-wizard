@@ -17,6 +17,7 @@ from presentation.viewsets.product_viewset import ProductViewSet
 from presentation.viewsets.report_viewset import ReportViewSet
 from presentation.viewsets.sales_viewset import SalesViewSet
 from presentation.viewsets.subcategory_viewset import SubCategoryViewSet
+from presentation.viewsets.user_viewset import UserViewSet
 
 app_name = "api"
 
@@ -33,6 +34,7 @@ router.register(r"sales", SalesViewSet, basename="sales")
 router.register(r"customers", CustomerViewSet, basename="customer")
 router.register(r"finance", FinanceViewSet, basename="finance")
 router.register(r"reports", ReportViewSet, basename="report")
+router.register(r"users", UserViewSet, basename="user")
 
 urlpatterns = [
     # Authentication endpoints

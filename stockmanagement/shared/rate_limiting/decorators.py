@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -50,12 +51,14 @@ def rate_limit(
             )
 
             if not is_allowed:
+                current_time = int(time.time())
+                retry_after_seconds = max(1, reset_time - current_time)
                 return ResponseMixin.error(
                     message="Rate limit exceeded. Please try again later.",
                     status_code=429,
                     code="RATE_LIMIT_EXCEEDED",
                     errors={
-                        "retry_after": reset_time,
+                        "retry_after": retry_after_seconds,
                         "limit": requests_per_period,
                         "period_seconds": period_seconds,
                     },

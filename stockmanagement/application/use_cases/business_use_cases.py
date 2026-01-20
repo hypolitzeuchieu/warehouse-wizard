@@ -23,6 +23,7 @@ from domain.business.repositories import (
 from domain.business.services import BusinessDomainService
 from domain.users.entities import AuthMethod, User, UserRole
 from domain.users.repositories import UserRepository
+from infrastructure.persistence.repositories import BusinessRepositoryImpl
 from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFoundError
 from shared.services.qr_code_service import QRCodeService
 from shared.services.s3_service import S3Service
@@ -59,7 +60,7 @@ def _compare_uuids(uuid1: UUID | str | None, uuid2: UUID | str | None) -> bool:
     return normalized1 == normalized2
 
 
-def _business_to_dto(business: Business) -> BusinessResponseDTO:
+def business_to_dto(business: Business) -> BusinessResponseDTO:
     """Convert business entity to DTO (shared utility function)."""
     qr_code_url = business.qr_code_url
     logo_url = business.logo_url
@@ -229,7 +230,7 @@ class CreateBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        return business_to_dto(business)
 
 
 class UpdateBusinessUseCase:
@@ -284,7 +285,7 @@ class UpdateBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        return business_to_dto(business)
 
 
 class DeleteBusinessUseCase:
@@ -788,12 +789,60 @@ class ListBusinessMembersUseCase:
             user_id=self.user_id,
         )
 
+        business_repo = BusinessRepositoryImpl()
+        business = business_repo.get_by_id(self.business_id)
+        if not business:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
+
         members = self.business_member_repository.get_business_members(
             self.business_id, active_only=not self.include_inactive
         )
-        logger.info(f"Fetched {members} members for business {self.business_id}")
+        logger.info(f"Fetched {len(members)} members for business {self.business_id}")
 
-        return [self._to_dto(member) for member in members]
+        member_dtos = [self._to_dto(member) for member in members]
+
+        if self.user_repository:
+            owner = self.user_repository.get_by_id(business.owner_id)
+            if owner:
+                owner_user_details = {
+                    "id": str(owner.id),
+                    "name": owner.name,
+                    "email": owner.email,
+                    "phone_number": owner.phone_number,
+                    "role": owner.role.value if hasattr(owner.role, "value") else str(owner.role),
+                    "avatar_url": None,
+                    "is_active": owner.is_active,
+                }
+
+                try:
+                    if owner.avatar_url:
+                        owner_user_details["avatar_url"] = (
+                            S3Service().generate_presigned_get_url(
+                                owner.avatar_url, expires_in=86400
+                            )
+                            or owner.avatar_url
+                        )
+                except Exception:
+                    pass
+
+                owner_dto = BusinessMemberResponseDTO(
+                    id=business.id,
+                    business_id=self.business_id,
+                    user_id=business.owner_id,
+                    role="owner",
+                    is_active=business.is_active,
+                    joined_at=business.created_at,
+                    left_at=None,
+                    created_at=business.created_at,
+                    updated_at=business.updated_at,
+                    user=owner_user_details,
+                )
+                member_dtos.insert(0, owner_dto)
+
+        return member_dtos
 
     def _to_dto(self, member: BusinessMember) -> BusinessMemberResponseDTO:
         """Convert business member entity to DTO with optional user details."""
@@ -871,7 +920,7 @@ class GetBusinessUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        return business_to_dto(business)
 
 
 class ListBusinessesUseCase:
@@ -904,4 +953,4 @@ class ListBusinessesUseCase:
 
     def _to_dto(self, business: Business) -> BusinessResponseDTO:
         """Convert business entity to DTO."""
-        return _business_to_dto(business)
+        return business_to_dto(business)
