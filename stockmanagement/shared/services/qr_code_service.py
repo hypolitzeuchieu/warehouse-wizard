@@ -133,11 +133,24 @@ class QRCodeService:
             ValueError: If QR code data is invalid
         """
         try:
-            # Expected format: https://retailpulse.app/business/{business_id}
-            if "/business/" not in qr_data:
-                raise ValueError("Invalid QR code format. Expected: .../business/{business_id}")
 
-            business_id_str = qr_data.split("/business/")[1].strip()
+            business_id_str = None
+
+            if "/businesses/" in qr_data:
+                parts = qr_data.split("/businesses/")
+                if len(parts) > 1:
+                    business_id_str = parts[1].strip().rstrip("/").split("/")[0].strip()
+
+            elif "/business/" in qr_data:
+                parts = qr_data.split("/business/")
+                if len(parts) > 1:
+                    business_id_str = parts[1].strip().rstrip("/").split("/")[0].strip()
+
+            if not business_id_str:
+                raise ValueError(
+                    "Invalid QR code format. Expected: .../businesses/{business_id}/ or .../business/{business_id}"
+                )
+
             business_id = UUID(business_id_str)
 
             return {

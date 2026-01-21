@@ -12,6 +12,7 @@ from application.dto.business_dto import (
     BusinessCreateDTO,
     BusinessMemberCreateDTO,
     BusinessMemberResponseDTO,
+    BusinessMemberUpdateDTO,
     BusinessResponseDTO,
     BusinessUpdateDTO,
 )
@@ -761,6 +762,140 @@ class RemoveBusinessMemberUseCase:
         )
 
 
+class UpdateBusinessMemberUseCase:
+    """Use case for updating a business member."""
+
+    def __init__(
+        self,
+        business_repository: BusinessRepository,
+        business_member_repository: BusinessMemberRepository,
+        business_domain_service: BusinessDomainService,
+        user_repository: UserRepository,
+        business_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Initialize use case."""
+        self.business_repository = business_repository
+        self.business_member_repository = business_member_repository
+        self.business_domain_service = business_domain_service
+        self.user_repository = user_repository
+        self.business_id = business_id
+        self.user_id = user_id
+
+    @transaction.atomic
+    def execute(self, member_id: UUID, dto: BusinessMemberUpdateDTO) -> BusinessMemberResponseDTO:
+        """Execute updating business member."""
+        business = self.business_repository.get_by_id(self.business_id)
+        if not business:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
+        if not business.is_active:
+            raise ForbiddenError(
+                detail="Business is not active",
+                code="BUSINESS_NOT_ACTIVE",
+            )
+        if not self.business_domain_service.can_user_manage_members(self.business_id, self.user_id):
+            raise ForbiddenError(
+                detail="You don't have permission to update members",
+                code="PERMISSION_DENIED",
+            )
+
+        member = self.business_member_repository.get_by_id(member_id)
+        if not member:
+            raise NotFoundError(
+                detail="Member not found",
+                code="MEMBER_NOT_FOUND",
+            )
+        if not _compare_uuids(member.business_id, self.business_id):
+            raise ForbiddenError(
+                detail="Member does not belong to this business",
+                code="MEMBER_NOT_IN_BUSINESS",
+            )
+        if not member.is_active or member.left_at is not None:
+            raise BadRequestError(
+                detail="Cannot update inactive or removed member",
+                code="MEMBER_INACTIVE",
+            )
+
+        # Validate role update
+        if dto.role is not None:
+            if dto.role == "owner":
+                raise BadRequestError(
+                    detail="Cannot set member role to owner",
+                    code="INVALID_ROLE",
+                )
+
+            # Check permissions for manager role changes
+            if dto.role == "manager" or member.is_manager():
+                if not self.business_domain_service.can_user_manage_managers(
+                    self.business_id, self.user_id
+                ):
+                    raise ForbiddenError(
+                        detail="Only the owner can change manager roles",
+                        code="PERMISSION_DENIED",
+                    )
+
+        # Update member entity
+        if dto.role is not None:
+            member.role = dto.role
+        if dto.is_active is not None:
+            member.is_active = dto.is_active
+            if not dto.is_active:
+                member.left_at = timezone.now()
+            else:
+                member.left_at = None
+
+        updated_member = self.business_member_repository.update(member)
+
+        logger.info(
+            f"Business member updated - member_id: {member_id}, "
+            f"role: {dto.role}, is_active: {dto.is_active}, "
+            f"updated_by: {self.user_id}"
+        )
+
+        return self._to_dto(updated_member)
+
+    def _to_dto(self, member: BusinessMember) -> BusinessMemberResponseDTO:
+        """Convert business member entity to DTO."""
+        user_details: dict | None = None
+        if self.user_repository:
+            user = self.user_repository.get_by_id(member.user_id)
+            if user:
+                avatar_url = user.avatar_url
+                try:
+                    if avatar_url:
+                        avatar_url = (
+                            S3Service().generate_presigned_get_url(avatar_url, expires_in=86400)
+                            or avatar_url
+                        )
+                except Exception:
+                    pass
+                user_details = {
+                    "id": str(user.id),
+                    "name": user.name,
+                    "email": user.email,
+                    "phone_number": user.phone_number,
+                    "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+                    "avatar_url": avatar_url,
+                    "is_active": user.is_active,
+                }
+
+        return BusinessMemberResponseDTO(
+            id=member.id,
+            business_id=member.business_id,
+            user_id=member.user_id,
+            role=member.role,
+            is_active=member.is_active,
+            joined_at=member.joined_at,
+            left_at=member.left_at,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+            user=user_details,
+        )
+
+
 class ListBusinessMembersUseCase:
     """Use case for listing business members."""
 
@@ -915,6 +1050,41 @@ class GetBusinessUseCase:
             business_id=self.business_id,
             user_id=self.user_id,
         )
+
+        return self._to_dto(business)
+
+    def _to_dto(self, business: Business) -> BusinessResponseDTO:
+        """Convert business entity to DTO."""
+        return business_to_dto(business)
+
+
+class GetBusinessPublicUseCase:
+    """Use case for getting business information via QR code (public read-only access)."""
+
+    def __init__(
+        self,
+        business_repository: BusinessRepository,
+        business_id: UUID,
+    ) -> None:
+        """Initialize use case."""
+        self.business_repository = business_repository
+        self.business_id = business_id
+
+    def execute(self) -> BusinessResponseDTO:
+        """Execute getting business (public read-only access)."""
+        business = self.business_repository.get_by_id(self.business_id)
+        if not business:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
+
+        # Only return active businesses for public access
+        if not business.is_active:
+            raise NotFoundError(
+                detail="Business not found",
+                code="BUSINESS_NOT_FOUND",
+            )
 
         return self._to_dto(business)
 

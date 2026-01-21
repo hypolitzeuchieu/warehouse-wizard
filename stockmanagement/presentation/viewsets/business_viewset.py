@@ -9,7 +9,7 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -19,10 +19,12 @@ from application.use_cases.business_use_cases import (
     AddBusinessMemberUseCase,
     CreateBusinessUseCase,
     DeleteBusinessUseCase,
+    GetBusinessPublicUseCase,
     GetBusinessUseCase,
     ListBusinessesUseCase,
     ListBusinessMembersUseCase,
     RemoveBusinessMemberUseCase,
+    UpdateBusinessMemberUseCase,
     UpdateBusinessUseCase,
 )
 from application.use_cases.inventory_use_cases import (
@@ -41,6 +43,7 @@ from presentation.serializers.business_serializers import (
     BusinessCreateSerializer,
     BusinessMemberCreateSerializer,
     BusinessMemberSerializer,
+    BusinessMemberUpdateSerializer,
     BusinessResponseSerializer,
     BusinessUpdateSerializer,
 )
@@ -110,7 +113,6 @@ class BusinessViewSet(BaseViewSet):
             user_repository = UserRepositoryImpl()
             businesses_with_members = []
             for business_dto in businesses:
-                # Get members for this business
                 members_use_case = ListBusinessMembersUseCase(
                     business_member_repository=business_member_repository,
                     business_domain_service=business_domain_service,
@@ -483,8 +485,51 @@ class BusinessViewSet(BaseViewSet):
             return self.handle_exception(e)
 
     @swagger_auto_schema(
+        operation_summary="Update business member",
+        operation_description="Update a member's role or status in the business.",
+        request_body=BusinessMemberUpdateSerializer,
+        responses={
+            200: BusinessMemberSerializer,
+            400: "Validation error",
+            403: "Permission denied",
+            404: "Member not found",
+        },
+        tags=["Business"],
+    )
+    @action(
+        detail=True, methods=["post"], url_path="members/(?P<member_id>[^/.]+)/edit-member-role"
+    )
+    def update_member(self, request: Request, pk: UUID, member_id: UUID) -> Response:
+        """Update a member's role or status in the business."""
+        serializer = BusinessMemberUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return self.handle_validation_error(serializer)
+
+        try:
+            dto = serializer.to_dto()
+            use_case = UpdateBusinessMemberUseCase(
+                business_repository=BusinessRepositoryImpl(),
+                business_member_repository=BusinessMemberRepositoryImpl(),
+                business_domain_service=self._get_business_domain_service(),
+                user_repository=UserRepositoryImpl(),
+                business_id=pk,
+                user_id=request.user.id,
+            )
+            member_dto = use_case.execute(member_id, dto)
+
+            member_data = BusinessMemberSerializer.from_dto(member_dto)
+
+            return self.success(
+                message="Business member updated successfully",
+                data=member_data,
+                status_code=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return self.handle_exception(e)
+
+    @swagger_auto_schema(
         operation_summary="Scan QR code",
-        operation_description="Scan QR code to get business information.",
+        operation_description="Scan QR code to get business information (public read-only access).",
         request_body=None,
         responses={
             200: BusinessResponseSerializer,
@@ -493,9 +538,14 @@ class BusinessViewSet(BaseViewSet):
         },
         tags=["Business"],
     )
-    @action(detail=False, methods=["post"], url_path="scan-qr")
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="scan-qr",
+        permission_classes=[AllowAny],  # Public access for QR code scanning
+    )
     def scan_qr_code(self, request: Request) -> Response:
-        """Scan QR code to get business information."""
+        """Scan QR code to get business information (public read-only access)."""
         try:
             qr_data = request.data.get("qr_data") or request.data.get("qr_code")
             if not qr_data:
@@ -510,12 +560,9 @@ class BusinessViewSet(BaseViewSet):
 
             business_id = parsed_data["business_id"]
 
-            # Get business details
-            use_case = GetBusinessUseCase(
+            use_case = GetBusinessPublicUseCase(
                 business_repository=BusinessRepositoryImpl(),
-                business_domain_service=self._get_business_domain_service(),
                 business_id=business_id,
-                user_id=request.user.id,
             )
             business_dto = use_case.execute()
 
