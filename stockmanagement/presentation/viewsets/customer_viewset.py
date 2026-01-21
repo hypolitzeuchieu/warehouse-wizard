@@ -148,23 +148,7 @@ class CustomerViewSet(BaseViewSet):
             return self.handle_validation_error(serializer)
 
         try:
-            # Get business_id from serializer validated data
-            business_id_str = serializer.validated_data.get("business_id")
-            if not business_id_str:
-                return self.error(
-                    message="business_id is required in request body",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    code="MISSING_BUSINESS_ID",
-                )
-
-            try:
-                business_id = UUID(str(business_id_str))
-            except (ValueError, TypeError):
-                return self.error(
-                    message="Invalid business_id format",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    code="INVALID_BUSINESS_ID",
-                )
+            business_id = serializer.validated_data["business_id"]
 
             dto = serializer.to_dto()
             use_case = CreateCustomerUseCase(
