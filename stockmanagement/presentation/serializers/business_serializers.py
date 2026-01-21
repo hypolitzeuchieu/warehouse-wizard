@@ -8,6 +8,7 @@ from application.dto.business_dto import (
     BusinessCreateDTO,
     BusinessMemberCreateDTO,
     BusinessMemberResponseDTO,
+    BusinessMemberUpdateDTO,
     BusinessResponseDTO,
     BusinessUpdateDTO,
 )
@@ -123,6 +124,38 @@ class BusinessMemberCreateSerializer(serializers.Serializer):
             name=self.validated_data.get("name"),
             password=self.validated_data.get("password"),
             role=self.validated_data["role"],
+        )
+
+
+class BusinessMemberUpdateSerializer(serializers.Serializer):
+    """Serializer for updating business member."""
+
+    role = serializers.ChoiceField(
+        choices=["manager", "cashier", "stock_keeper", "delivery", "partner", "wholesaler"],
+        required=False,
+        allow_null=True,
+    )
+    is_active = serializers.BooleanField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        """Validate serializer data."""
+        role = attrs.get("role")
+
+        if role == "owner":
+            raise serializers.ValidationError("Cannot set member role to owner")
+
+        if not attrs:
+            raise serializers.ValidationError(
+                "At least one field (role or is_active) must be provided"
+            )
+
+        return attrs
+
+    def to_dto(self) -> BusinessMemberUpdateDTO:
+        """Convert to DTO."""
+        return BusinessMemberUpdateDTO(
+            role=self.validated_data.get("role"),
+            is_active=self.validated_data.get("is_active"),
         )
 
 
