@@ -26,6 +26,7 @@ class CustomerListQuerySerializer(serializers.Serializer):
 class CustomerCreateSerializer(serializers.Serializer):
     """Serializer for customer creation."""
 
+    business_id = serializers.UUIDField(required=True)
     name = serializers.CharField(max_length=255, required=True)
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone_number = serializers.CharField(
