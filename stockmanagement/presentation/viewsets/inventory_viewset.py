@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.decorators import action
@@ -80,8 +81,48 @@ class InventoryViewSet(BaseViewSet):
 
     @swagger_auto_schema(
         operation_summary="List categories",
-        operation_description="List categories for a business.",
+        operation_description="List categories for a business with optional filters and pagination.",
         operation_id="inventory_list_categories",
+        manual_parameters=[
+            openapi.Parameter(
+                name="business_id",
+                in_=openapi.IN_PATH,
+                description="Business ID",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_UUID,
+                required=True,
+            ),
+            openapi.Parameter(
+                name="page",
+                in_=openapi.IN_QUERY,
+                description="Page number (defaults to 1).",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                name="page_size",
+                in_=openapi.IN_QUERY,
+                description="Number of records per page (defaults to 20).",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                name="search",
+                in_=openapi.IN_QUERY,
+                description="Search query to filter categories by name.",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                name="name",
+                in_=openapi.IN_QUERY,
+                description="Filter by exact category name.",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                name="order_by",
+                in_=openapi.IN_QUERY,
+                description="Order by field (name, created_at, updated_at). Prefix with '-' for descending order.",
+                type=openapi.TYPE_STRING,
+            ),
+        ],
         responses={
             200: CategoryResponseSerializer(many=True),
             403: "Permission denied",
@@ -95,7 +136,7 @@ class InventoryViewSet(BaseViewSet):
     @action(
         detail=False,
         methods=["get"],
-        url_path="businesses/(?P<business_id>[^/.]+)/categories",
+        url_path="businesses/(?P<business_id>[^/.]+)/list-categories",
         url_name="category-list",
     )
     def list_categories(self, request: Request, business_id: UUID) -> Response:
@@ -416,6 +457,7 @@ class InventoryViewSet(BaseViewSet):
         try:
             use_case = CheckExpiredProductsUseCaseFromAlert(
                 inventory_domain_service=self._get_inventory_domain_service(),
+                notification_domain_service=self._get_notification_domain_service(),
                 business_id=business_id,
             )
             notifications = use_case.execute()

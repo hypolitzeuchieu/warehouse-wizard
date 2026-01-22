@@ -22,7 +22,17 @@ from shared.services.s3_service import S3Service
 from shared.utils.upload_validation import validate_max_upload_size
 
 
-class CategoryCreateSerializer(serializers.Serializer):
+class OptionalDescriptionMixin:
+    """Mixin to handle optional description field that converts empty strings to None."""
+
+    def validate_description(self, value):
+        """Convert empty strings to None."""
+        if value == "":
+            return None
+        return value
+
+
+class CategoryCreateSerializer(OptionalDescriptionMixin, serializers.Serializer):
     """Serializer for category creation."""
 
     name = serializers.CharField(max_length=100)
@@ -31,11 +41,11 @@ class CategoryCreateSerializer(serializers.Serializer):
     def to_dto(self) -> CategoryCreateDTO:
         return CategoryCreateDTO(
             name=self.validated_data["name"],
-            description=self.validated_data.get("description"),
+            description=self.validated_data.get("description", None),
         )
 
 
-class CategoryUpdateSerializer(serializers.Serializer):
+class CategoryUpdateSerializer(OptionalDescriptionMixin, serializers.Serializer):
     """Serializer for category update."""
 
     name = serializers.CharField(max_length=100, required=False, allow_blank=False)
@@ -74,7 +84,7 @@ class CategoryResponseSerializer(serializers.Serializer):
         return serializer.data
 
 
-class SubCategoryCreateSerializer(serializers.Serializer):
+class SubCategoryCreateSerializer(OptionalDescriptionMixin, serializers.Serializer):
     """Serializer for subcategory creation."""
 
     category_id = serializers.UUIDField()
@@ -89,7 +99,7 @@ class SubCategoryCreateSerializer(serializers.Serializer):
         )
 
 
-class SubCategoryUpdateSerializer(serializers.Serializer):
+class SubCategoryUpdateSerializer(OptionalDescriptionMixin, serializers.Serializer):
     """Serializer for subcategory update."""
 
     name = serializers.CharField(max_length=100, required=False, allow_blank=False)
