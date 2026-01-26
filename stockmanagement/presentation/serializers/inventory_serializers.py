@@ -148,6 +148,7 @@ class ProductCreateSerializer(serializers.Serializer):
     barcode = serializers.CharField(
         max_length=100, required=False, allow_blank=True, allow_null=True
     )
+    business_id = serializers.UUIDField(required=True)
 
     def validate_barcode(self, value):
         """Validate barcode format if provided."""
@@ -232,6 +233,8 @@ class ProductCreateSerializer(serializers.Serializer):
 
         if attrs.get("image"):
             validate_max_upload_size(attrs.get("image"), field_name="image")
+        if not attrs.get("business_id"):
+            raise serializers.ValidationError({"business_id": "business_id is required"})
 
         return attrs
 
