@@ -1845,7 +1845,7 @@ class ScanBarcodeForSaleUseCase:
             id=product.id,
             name=product.name,
             barcode=product.barcode or "",
-            unit_price=product.get_current_price(),
+            unit_price=product.unit_price,
             promo_price=product.promo_price,
             quantity=product.quantity,
             category_name=None,
