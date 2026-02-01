@@ -82,10 +82,15 @@ class Product:
     created_by: UUID | None = None
 
     def get_current_price(self) -> Decimal:
-        """Get current price (promo price if on promotion, else unit price)."""
-        if self.on_promotion and self.promo_price is not None:
-            return self.promo_price
-        return self.unit_price
+        """Get current price (promo price only if promotion is active and within date window, else unit price)."""
+        if not self.on_promotion or self.promo_price is None:
+            return self.unit_price
+        now = timezone.now()
+        if self.promotion_start_date and now < self.promotion_start_date:
+            return self.unit_price
+        if self.promotion_end_date and now > self.promotion_end_date:
+            return self.unit_price
+        return self.promo_price
 
     def is_low_stock(self) -> bool:
         """Check if product is low in stock."""
