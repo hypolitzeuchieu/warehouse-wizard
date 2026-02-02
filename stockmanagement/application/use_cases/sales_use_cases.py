@@ -816,17 +816,11 @@ class ListInvoicesUseCase:
         self.status = None
         if status:
             status_upper = status.upper()
-            status_mapping = {
-                "PAID": InvoiceStatus.COMPLETED.value,
-                "PARTIAL": InvoiceStatus.CREDIT.value,
-                "REFUNDED": InvoiceStatus.CANCELLED.value,
-            }
-            mapped_status = status_mapping.get(status_upper, status_upper)
             try:
-                self.status = InvoiceStatus(mapped_status)
+                self.status = InvoiceStatus(status_upper)
             except ValueError as err:
                 raise BadRequestError(
-                    detail=f"Invalid status filter: {status}",
+                    detail=f"Invalid status filter: {status}. Use COMPLETED, CREDIT, or CANCELLED.",
                     code="INVALID_INVOICE_STATUS",
                 ) from err
         self.start_date = start_date

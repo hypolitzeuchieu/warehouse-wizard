@@ -134,7 +134,7 @@ class SalesViewSet(BaseViewSet):
                 filter_definitions={
                     "status": {
                         "type": "enum",
-                        "choices": ["PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
+                        "choices": ["COMPLETED", "CREDIT", "CANCELLED"],
                     },
                     "start_date": {"type": "datetime"},
                     "end_date": {"type": "datetime"},
@@ -209,7 +209,7 @@ class SalesViewSet(BaseViewSet):
                 filter_definitions={
                     "status": {
                         "type": "enum",
-                        "choices": ["PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
+                        "choices": ["COMPLETED", "CREDIT", "CANCELLED"],
                     },
                     "start_date": {"type": "datetime"},
                     "end_date": {"type": "datetime"},

@@ -415,7 +415,7 @@ class InvoiceListQuerySerializer(serializers.Serializer):
 
     business_id = serializers.UUIDField(required=True)
     status = serializers.ChoiceField(
-        choices=["PAID", "PARTIAL", "CANCELLED", "REFUNDED"],
+        choices=["COMPLETED", "CREDIT", "CANCELLED"],
         required=False,
         allow_null=True,
     )
