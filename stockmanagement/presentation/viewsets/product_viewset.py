@@ -279,6 +279,7 @@ class ProductViewSet(BaseViewSet):
         operation_description="Create a new product for a business. business_id must be provided in the request body.",
         operation_id="product_create",
         request_body=ProductCreateSerializer,
+        consumes=["multipart/form-data", "application/json"],
         responses={
             201: ProductResponseSerializer(),
             400: "Validation error",
@@ -291,12 +292,7 @@ class ProductViewSet(BaseViewSet):
     )
     def create(self, request: Request) -> Response:
         """Create a new product."""
-        # Merge files into data for serializer
-        data = request.data.copy()
-        if request.FILES:
-            data.update(request.FILES)
-
-        serializer = ProductCreateSerializer(data=data)
+        serializer = ProductCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return self.handle_validation_error(serializer)
 

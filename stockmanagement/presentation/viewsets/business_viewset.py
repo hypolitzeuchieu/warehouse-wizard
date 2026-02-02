@@ -146,6 +146,7 @@ class BusinessViewSet(BaseViewSet):
         operation_summary="Create business",
         operation_description="Create a new business. User becomes OWNER automatically.",
         request_body=BusinessCreateSerializer,
+        consumes=["multipart/form-data", "application/json"],
         responses={
             201: BusinessResponseSerializer,
             400: "Bad Request",

@@ -3,6 +3,7 @@
 from decimal import Decimal
 from uuid import uuid4
 
+from drf_yasg import openapi
 from rest_framework import serializers
 
 from application.dto.inventory_dto import (
@@ -140,6 +141,17 @@ class SubCategoryResponseSerializer(serializers.Serializer):
         return serializer.data
 
 
+class ProductImageField(serializers.ImageField):
+    """ImageField that appears in Swagger as file upload for multipart/form-data."""
+
+    class Meta:
+        swagger_schema_fields = {
+            "type": openapi.TYPE_STRING,
+            "format": openapi.FORMAT_BINARY,
+            "description": "Product image (file upload). Use multipart/form-data.",
+        }
+
+
 class ProductCreateSerializer(serializers.Serializer):
     """Serializer for product creation."""
 
@@ -165,7 +177,7 @@ class ProductCreateSerializer(serializers.Serializer):
     unit_price = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=True, min_value=Decimal("0.01")
     )
-    image = serializers.ImageField(required=False, allow_null=True)
+    image = ProductImageField(required=False, allow_null=True)
     quantity = serializers.IntegerField(required=False, default=0, min_value=0)
     min_quantity = serializers.IntegerField(required=False, default=10, min_value=0)
     expiry_date = serializers.DateTimeField(required=False, allow_null=True)
@@ -293,7 +305,7 @@ class ProductUpdateSerializer(serializers.Serializer):
     unit_price = serializers.DecimalField(
         max_digits=15, decimal_places=2, required=False, min_value=Decimal("0.01")
     )
-    image = serializers.ImageField(required=False, allow_null=True)
+    image = ProductImageField(required=False, allow_null=True)
     quantity = serializers.IntegerField(required=False, min_value=0)
     min_quantity = serializers.IntegerField(required=False, min_value=0)
     expiry_date = serializers.DateTimeField(required=False, allow_null=True)
