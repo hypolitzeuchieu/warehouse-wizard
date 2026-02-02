@@ -8,6 +8,7 @@ from domain.business.repositories import (
     BusinessMemberRepository,
     BusinessRepository,
 )
+from shared.utils.uuid_utils import compare_uuids, normalize_uuid
 
 
 class BusinessDomainService:
@@ -24,38 +25,52 @@ class BusinessDomainService:
 
     def can_user_delete_business(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user can delete business (only owner)."""
-        business = self.business_repository.get_by_id(business_id)
+        bid = normalize_uuid(business_id)
+        if bid is None:
+            return False
+        business = self.business_repository.get_by_id(bid)
         if not business:
             return False
-        return business.owner_id == user_id
+        return compare_uuids(business.owner_id, user_id)
 
     def can_user_manage_managers(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user can manage managers (only owner)."""
-        business = self.business_repository.get_by_id(business_id)
+        bid = normalize_uuid(business_id)
+        if bid is None:
+            return False
+        business = self.business_repository.get_by_id(bid)
         if not business:
             return False
-        return business.owner_id == user_id
+        return compare_uuids(business.owner_id, user_id)
 
     def can_user_manage_members(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user can manage members (owner or manager)."""
-        business = self.business_repository.get_by_id(business_id)
+        bid = normalize_uuid(business_id)
+        uid = normalize_uuid(user_id)
+        if bid is None or uid is None:
+            return False
+        business = self.business_repository.get_by_id(bid)
         if not business:
             return False
-
-        # Owner can always manage members
-        if business.owner_id == user_id:
+        if compare_uuids(business.owner_id, uid):
             return True
-
-        # Check if user is a manager
-        return self.business_member_repository.is_manager(business_id, user_id)
+        return self.business_member_repository.is_manager(bid, uid)
 
     def is_user_manager(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user is a manager of the business."""
-        return self.business_member_repository.is_manager(business_id, user_id)
+        bid = normalize_uuid(business_id)
+        uid = normalize_uuid(user_id)
+        if bid is None or uid is None:
+            return False
+        return self.business_member_repository.is_manager(bid, uid)
 
     def user_has_access(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user has access to business (owner or member)."""
-        return self.business_repository.user_has_access(business_id, user_id)
+        bid = normalize_uuid(business_id)
+        uid = normalize_uuid(user_id)
+        if bid is None or uid is None:
+            return False
+        return self.business_repository.user_has_access(bid, uid)
 
     def get_business(self, business_id: UUID):
         """Get business entity by ID."""
@@ -63,19 +78,20 @@ class BusinessDomainService:
 
     def get_user_role_in_business(self, business_id: UUID, user_id: UUID) -> str | None:
         """Get user's role in a specific business."""
-        business = self.business_repository.get_by_id(business_id)
+        bid = normalize_uuid(business_id)
+        uid = normalize_uuid(user_id)
+        if bid is None:
+            return None
+        business = self.business_repository.get_by_id(bid)
         if not business:
             return None
-
-        # Check if user is owner
-        if business.owner_id == user_id:
+        if uid is not None and compare_uuids(business.owner_id, uid):
             return "owner"
-
-        # Check if user is a member and get their role
-        member = self.business_member_repository.get_by_business_and_user(business_id, user_id)
+        if uid is None:
+            return None
+        member = self.business_member_repository.get_by_business_and_user(bid, uid)
         if member and member.is_active_member():
             return member.role
-
         return None
 
     def can_create_inventory(self, business_id: UUID, user_id: UUID) -> bool:
@@ -122,7 +138,10 @@ class BusinessDomainService:
 
     def is_user_owner(self, business_id: UUID, user_id: UUID) -> bool:
         """Check if user is the owner of the business."""
-        business = self.business_repository.get_by_id(business_id)
+        bid = normalize_uuid(business_id)
+        if bid is None:
+            return False
+        business = self.business_repository.get_by_id(bid)
         if not business:
             return False
-        return business.owner_id == user_id
+        return compare_uuids(business.owner_id, user_id)

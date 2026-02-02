@@ -29,6 +29,7 @@ from shared.exceptions.specific import BadRequestError, ForbiddenError, NotFound
 from shared.services.qr_code_service import QRCodeService
 from shared.services.s3_service import S3Service
 from shared.utils.password_generator import generate_secure_password
+from shared.utils.uuid_utils import compare_uuids
 from shared.utils.validation import validate_business_access
 from tasks.member_tasks import (
     send_member_credentials_email_task,
@@ -36,29 +37,6 @@ from tasks.member_tasks import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_uuid(value: UUID | str | None) -> UUID | None:
-    """Normalize UUID value to UUID type."""
-    if value is None:
-        return None
-    if isinstance(value, UUID):
-        return value
-    try:
-        return UUID(str(value))
-    except (ValueError, TypeError):
-        return None
-
-
-def _compare_uuids(uuid1: UUID | str | None, uuid2: UUID | str | None) -> bool:
-    """Compare two UUIDs safely, handling UUID and string types."""
-    normalized1 = _normalize_uuid(uuid1)
-    normalized2 = _normalize_uuid(uuid2)
-
-    if normalized1 is None or normalized2 is None:
-        return False
-
-    return normalized1 == normalized2
 
 
 def business_to_dto(business: Business) -> BusinessResponseDTO:
@@ -736,7 +714,7 @@ class RemoveBusinessMemberUseCase:
                 detail="Member not found",
                 code="MEMBER_NOT_FOUND",
             )
-        if not _compare_uuids(member.business_id, self.business_id):
+        if not compare_uuids(member.business_id, self.business_id):
             raise ForbiddenError(
                 detail="Member does not belong to this business",
                 code="MEMBER_NOT_IN_BUSINESS",
@@ -808,7 +786,7 @@ class UpdateBusinessMemberUseCase:
                 detail="Member not found",
                 code="MEMBER_NOT_FOUND",
             )
-        if not _compare_uuids(member.business_id, self.business_id):
+        if not compare_uuids(member.business_id, self.business_id):
             raise ForbiddenError(
                 detail="Member does not belong to this business",
                 code="MEMBER_NOT_IN_BUSINESS",

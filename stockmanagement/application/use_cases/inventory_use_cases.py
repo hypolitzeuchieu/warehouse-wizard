@@ -50,6 +50,7 @@ from shared.exceptions.specific import (
 )
 from shared.services.barcode_service import BarcodeService
 from shared.services.s3_service import S3Service
+from shared.utils.uuid_utils import normalize_uuid
 from shared.utils.validation import (
     validate_business_access,
     validate_entity_belongs_to_business,
@@ -102,26 +103,6 @@ def _product_to_dto(product: Product) -> ProductResponseDTO:
     )
 
 
-def _normalize_uuid(value: UUID | str | None) -> UUID | None:
-    """
-    Normalize UUID value to UUID type for consistent comparison.
-
-    Args:
-        value: UUID, string, or None value to normalize
-
-    Returns:
-        UUID object or None if value is None
-    """
-    if value is None:
-        return None
-    if isinstance(value, UUID):
-        return value
-    try:
-        return UUID(str(value))
-    except (ValueError, TypeError):
-        return None
-
-
 def _compare_business_ids(
     entity_business_id: UUID | str | None, target_business_id: UUID | str | None
 ) -> bool:
@@ -135,8 +116,8 @@ def _compare_business_ids(
     Returns:
         True if both IDs are equal, False otherwise
     """
-    normalized_entity = _normalize_uuid(entity_business_id)
-    normalized_target = _normalize_uuid(target_business_id)
+    normalized_entity = normalize_uuid(entity_business_id)
+    normalized_target = normalize_uuid(target_business_id)
 
     if normalized_entity is None or normalized_target is None:
         return False
@@ -160,8 +141,8 @@ def _validate_subcategory_belongs_to_category(
     Raises:
         BadRequestError: If subcategory doesn't belong to category
     """
-    normalized_subcategory_category = _normalize_uuid(subcategory.category_id)
-    normalized_target_category = _normalize_uuid(category_id)
+    normalized_subcategory_category = normalize_uuid(subcategory.category_id)
+    normalized_target_category = normalize_uuid(category_id)
 
     if normalized_subcategory_category != normalized_target_category:
         raise BadRequestError(
