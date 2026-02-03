@@ -46,6 +46,11 @@ class CreditRepository(ABC):
         pass
 
     @abstractmethod
+    def get_by_invoice_for_update(self, invoice_id: UUID) -> Credit | None:
+        """Get credit by invoice ID with row lock for update (prevents race conditions)."""
+        pass
+
+    @abstractmethod
     def create(self, credit: Credit) -> Credit:
         """Create a new credit."""
         pass

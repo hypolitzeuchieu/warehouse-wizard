@@ -955,22 +955,26 @@ class SalesViewSet(BaseViewSet):
             return self.handle_exception(e)
 
     @swagger_auto_schema(
-        operation_summary="Generate invoice receipt",
-        operation_description="Generate a receipt for an invoice in small format with QR code. business_id is retrieved from the invoice.",
+        operation_summary="Generate invoice receipt (PDF)",
+        operation_description=(
+            "Generate a PDF receipt for an invoice (small format with business logo and QR code). "
+            "Use disposition=inline to open in browser (read or print without downloading). "
+            "Use disposition=attachment to download the file."
+        ),
         manual_parameters=[
             openapi.Parameter(
-                "output_format",
+                "disposition",
                 openapi.IN_QUERY,
-                description="Receipt format (pdf or html).",
+                description="inline = open in browser (read/print). attachment = download file.",
                 type=openapi.TYPE_STRING,
-                enum=["pdf", "html"],
+                enum=["inline", "attachment"],
                 required=False,
-                default="pdf",
+                default="inline",
             ),
         ],
         responses={
             200: openapi.Response(
-                "Receipt generated successfully (PDF)",
+                "Receipt PDF (inline or attachment)",
                 schema=openapi.Schema(type=openapi.TYPE_FILE),
             ),
             400: "Bad Request",
@@ -997,12 +1001,12 @@ class SalesViewSet(BaseViewSet):
                     code="INVOICE_NOT_FOUND",
                 )
 
-            format_param = request.query_params.get("output_format", "pdf").lower()
-            if format_param not in ["pdf", "html"]:
+            disposition_param = request.query_params.get("disposition", "inline").lower()
+            if disposition_param not in ("inline", "attachment"):
                 return self.error(
-                    message="Invalid output_format. Must be 'pdf' or 'html'",
+                    message="Invalid disposition. Must be 'inline' or 'attachment'",
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    code="INVALID_FORMAT",
+                    code="INVALID_DISPOSITION",
                 )
 
             use_case = GenerateInvoiceReceiptUseCase(
@@ -1015,30 +1019,23 @@ class SalesViewSet(BaseViewSet):
                 invoice_id=pk,
                 business_id=invoice.business_id,
                 user_id=request.user.id,
-                format=format_param,
+                format="pdf",
             )
             receipt_dto = use_case.execute()
 
-            # Return PDF
-            if format_param == "pdf" and receipt_dto.receipt_pdf:
-                response = HttpResponse(
-                    receipt_dto.receipt_pdf,
-                    content_type="application/pdf",
-                )
-                response["Content-Disposition"] = (
-                    f'attachment; filename="receipt_{receipt_dto.invoice_number}.pdf"'
-                )
-                return response
-            elif format_param == "html" and receipt_dto.receipt_html:
-                return HttpResponse(
-                    receipt_dto.receipt_html,
-                    content_type="text/html",
-                )
-            else:
+            if not receipt_dto.receipt_pdf:
                 return self.error(
                     message="Receipt not generated",
                     status_code=status.HTTP_400_BAD_REQUEST,
                     code="RECEIPT_NOT_GENERATED",
                 )
+
+            response = HttpResponse(
+                receipt_dto.receipt_pdf,
+                content_type="application/pdf",
+            )
+            filename = f"receipt_{receipt_dto.invoice_number}.pdf"
+            response["Content-Disposition"] = f'{disposition_param}; filename="{filename}"'
+            return response
         except Exception as e:
             return self.handle_exception(e)

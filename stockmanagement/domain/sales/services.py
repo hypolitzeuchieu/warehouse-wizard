@@ -755,6 +755,7 @@ class ReceiptGenerationService:
         invoice_lines: list[dict[str, Any] | InvoiceLine],
         business_name: str,
         business_qr_code_url: str | None = None,
+        business_logo_url: str | None = None,
         business_address: str | None = None,
         business_phone: str | None = None,
         business_email: str | None = None,
@@ -768,6 +769,7 @@ class ReceiptGenerationService:
             invoice_lines: List of invoice lines
             business_name: Business name
             business_qr_code_url: Business QR code URL (optional)
+            business_logo_url: Business logo URL (optional)
             business_address: Business address (optional)
             business_phone: Business phone (optional)
             business_email: Business email (optional)
@@ -800,6 +802,7 @@ class ReceiptGenerationService:
                 "phone": business_phone,
                 "email": business_email,
                 "qr_code_url": business_qr_code_url,
+                "logo_url": business_logo_url,
             },
             "cashier": {
                 "name": cashier_name or "Cashier",

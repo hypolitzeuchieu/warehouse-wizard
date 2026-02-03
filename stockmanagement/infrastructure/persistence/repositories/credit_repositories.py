@@ -34,11 +34,7 @@ class CreditRepositoryImpl(CreditRepository):
     def get_by_id_for_update(self, credit_id: UUID) -> Credit | None:
         """Get credit by ID with row lock for update (prevents race conditions)."""
         try:
-            credit_model = (
-                CreditModel.objects.select_related("business", "customer", "invoice", "created_by")
-                .select_for_update()
-                .get(id=credit_id)
-            )
+            credit_model = CreditModel.objects.select_for_update().get(id=credit_id)
             return self._to_entity(credit_model)
         except CreditModel.DoesNotExist:
             return None
@@ -83,6 +79,14 @@ class CreditRepositoryImpl(CreditRepository):
             credit_model = CreditModel.objects.select_related(
                 "business", "customer", "invoice"
             ).get(invoice_id=invoice_id)
+            return self._to_entity(credit_model)
+        except CreditModel.DoesNotExist:
+            return None
+
+    def get_by_invoice_for_update(self, invoice_id: UUID) -> Credit | None:
+        """Get credit by invoice ID with row lock for update (prevents race conditions)."""
+        try:
+            credit_model = CreditModel.objects.select_for_update().get(invoice_id=invoice_id)
             return self._to_entity(credit_model)
         except CreditModel.DoesNotExist:
             return None

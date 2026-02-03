@@ -53,6 +53,23 @@
             margin: 2px 0;
         }
 
+        .header-media {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin: 6px 0;
+            padding: 4px 0;
+            flex-wrap: wrap;
+        }
+
+        .business-logo {
+            display: inline-block;
+            max-width: 48px;
+            max-height: 48px;
+            object-fit: contain;
+        }
+
         .qr-code-container {
             text-align: center;
             margin: 8px 0;
@@ -200,6 +217,16 @@
 </head>
 <body>
     <div class="receipt-header">
+        {% if business.logo_url or business.qr_code_url %}
+        <div class="header-media">
+            {% if business.logo_url %}
+            <img src="{{ business.logo_url }}" alt="Logo" class="business-logo">
+            {% endif %}
+            {% if business.qr_code_url %}
+            <img src="{{ business.qr_code_url }}" alt="Business QR Code" class="qr-code" style="width: 60px; height: 60px;">
+            {% endif %}
+        </div>
+        {% endif %}
         <div class="business-name">{{ business.name }}</div>
         {% if business.address %}
         <div class="business-info">{{ business.address }}</div>
@@ -211,15 +238,6 @@
         <div class="business-info">{{ business.email }}</div>
         {% endif %}
     </div>
-
-    {% if business.qr_code_url %}
-    <div class="qr-code-container">
-        <div class="qr-code">
-            <!-- Business QR Code from existing URL -->
-            <img src="{{ business.qr_code_url }}" alt="Business QR Code" style="width: 60px; height: 60px;">
-        </div>
-    </div>
-    {% endif %}
 
     <div class="receipt-body">
         <div class="invoice-info">
@@ -319,7 +337,7 @@
 
     <div class="receipt-footer">
         <div class="divider"></div>
-        <div class="footer-text">Thank you for your business!</div>
+        <div class="footer-text">Thank you for your purchase!</div>
         <div class="footer-text">Generated: {{ generated_at|date:"d/m/Y H:i" }}</div>
         <div class="thank-you">Have a great day!</div>
     </div>

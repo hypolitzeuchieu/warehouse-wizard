@@ -1617,7 +1617,7 @@ class ApplyCreditToInvoiceUseCase:
                 status_code=400,
             )
 
-        credit = self.credit_repository.get_by_id_for_update(self.invoice_id)
+        credit = self.credit_repository.get_by_invoice_for_update(self.invoice_id)
 
         if not credit:
             raise NotFoundError(
@@ -1901,15 +1901,21 @@ class GenerateInvoiceReceiptUseCase:
             )
 
         business_qr_code_url = business.qr_code_url
-        if business_qr_code_url:
-            try:
-                s3 = S3Service()
+        business_logo_url = business.logo_url
+        try:
+            s3 = S3Service()
+            if business_qr_code_url:
                 business_qr_code_url = (
                     s3.generate_presigned_get_url(business_qr_code_url, expires_in=86400)
                     or business_qr_code_url
                 )
-            except Exception:
-                pass
+            if business_logo_url:
+                business_logo_url = (
+                    s3.generate_presigned_get_url(business_logo_url, expires_in=86400)
+                    or business_logo_url
+                )
+        except Exception:
+            pass
 
         invoice_lines_with_names = []
         for line in invoice_lines:
@@ -1935,6 +1941,7 @@ class GenerateInvoiceReceiptUseCase:
             invoice_lines=invoice_lines_with_names,
             business_name=business.name,
             business_qr_code_url=business_qr_code_url,
+            business_logo_url=business_logo_url,
             business_address=business.address,
             business_phone=business.phone_number,
             business_email=business.email,
