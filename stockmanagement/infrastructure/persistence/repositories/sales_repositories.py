@@ -63,11 +63,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
     def get_by_id_for_update(self, invoice_id: UUID) -> Invoice | None:
         """Get invoice by ID with row lock for update (prevents race conditions)."""
         try:
-            invoice_model = (
-                InvoiceModel.objects.select_related("business", "customer", "cashier")
-                .select_for_update(of=(InvoiceModel,))
-                .get(id=invoice_id)
-            )
+            invoice_model = InvoiceModel.objects.select_for_update().get(id=invoice_id)
             return self._to_entity(invoice_model)
         except InvoiceModel.DoesNotExist:
             return None
