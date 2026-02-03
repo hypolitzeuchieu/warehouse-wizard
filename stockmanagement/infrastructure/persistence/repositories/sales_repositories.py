@@ -65,7 +65,7 @@ class InvoiceRepositoryImpl(InvoiceRepository):
         try:
             invoice_model = (
                 InvoiceModel.objects.select_related("business", "customer", "cashier")
-                .select_for_update()
+                .select_for_update(of=(InvoiceModel,))
                 .get(id=invoice_id)
             )
             return self._to_entity(invoice_model)
