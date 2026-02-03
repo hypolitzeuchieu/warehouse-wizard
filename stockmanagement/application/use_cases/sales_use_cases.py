@@ -890,8 +890,8 @@ class UpdateInvoiceUseCase:
 
     @transaction.atomic
     def execute(self, dto: InvoiceUpdateDTO) -> InvoiceResponseDTO:
-        """Execute invoice update."""
-        invoice = self.invoice_repository.get_by_id(self.invoice_id)
+        """Execute invoice update. Locks invoice to prevent double-update race."""
+        invoice = self.invoice_repository.get_by_id_for_update(self.invoice_id)
         if not invoice:
             raise NotFoundError(
                 detail="Invoice not found",
@@ -1169,8 +1169,8 @@ class CancelInvoiceUseCase:
 
     @transaction.atomic
     def execute(self, reason: str | None = None) -> InvoiceResponseDTO:
-        """Execute invoice cancellation."""
-        invoice = self.invoice_repository.get_by_id(self.invoice_id)
+        """Execute invoice cancellation. Locks invoice row to prevent double-cancel race."""
+        invoice = self.invoice_repository.get_by_id_for_update(self.invoice_id)
         if not invoice:
             raise NotFoundError(
                 detail="Invoice not found",
@@ -1271,8 +1271,8 @@ class ArchiveInvoiceUseCase:
 
     @transaction.atomic
     def execute(self, reason: str | None = None) -> InvoiceResponseDTO:
-        """Archive invoice without altering stock."""
-        invoice = self.invoice_repository.get_by_id(self.invoice_id)
+        """Archive invoice without altering stock. Locks invoice to prevent double-archive race."""
+        invoice = self.invoice_repository.get_by_id_for_update(self.invoice_id)
         if not invoice:
             raise NotFoundError(
                 detail="Invoice not found",
@@ -1346,8 +1346,8 @@ class DeleteInvoiceUseCase:
 
     @transaction.atomic
     def execute(self) -> None:
-        """Permanently delete invoice and all related records."""
-        invoice = self.invoice_repository.get_by_id(self.invoice_id)
+        """Permanently delete invoice and all related records. Locks invoice to prevent double-delete race."""
+        invoice = self.invoice_repository.get_by_id_for_update(self.invoice_id)
         if not invoice:
             raise NotFoundError(
                 detail="Invoice not found",
@@ -1500,7 +1500,7 @@ class DeleteInvoiceLineUseCase:
                 code="INVOICE_LINE_NOT_FOUND",
             )
 
-        invoice = self.invoice_repository.get_by_id(line_to_delete.invoice_id)
+        invoice = self.invoice_repository.get_by_id_for_update(line_to_delete.invoice_id)
 
         if not invoice:
             raise NotFoundError(
