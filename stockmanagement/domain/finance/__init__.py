@@ -1,0 +1,2 @@
+"""Finance domain for RetailPulse."""
+

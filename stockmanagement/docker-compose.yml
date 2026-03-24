@@ -4,8 +4,8 @@ services:
     image: postgres:13
     environment:
       POSTGRES_DB: stockmanagement_local
-      POSTGRES_USER: stockmanagement
-      POSTGRES_PASSWORD: stockmanagement
+      POSTGRES_USER: retailpulse
+      POSTGRES_PASSWORD: retailpulse
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -37,7 +37,7 @@ services:
 
   celery:
     build: .
-    command: celery -A stockmanagement worker --loglevel=info
+    command: celery -A retailpulse worker --loglevel=info
     env_file:
       - .env
     volumes:
@@ -45,6 +45,20 @@ services:
     depends_on:
       - db
       - redis
+    networks:
+      - backend
+
+  celery-beat:
+    build: .
+    command: celery -A retailpulse beat --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+      - celery
     networks:
       - backend
 

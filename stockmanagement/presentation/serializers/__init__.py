@@ -1,0 +1,2 @@
+"""Serializers for RetailPulse API."""
+

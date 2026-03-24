@@ -61,7 +61,7 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-
+celerybeat-schedule.db
 # Flask stuff:
 instance/
 .webassets-cache
@@ -165,3 +165,8 @@ cython_debug/
 .DS_Store/
 .venv/
 *.pyc
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+.pids/
+*.pid
